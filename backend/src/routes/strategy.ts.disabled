@@ -1,0 +1,665 @@
+import { Router } from 'express';
+import { authenticate } from '../middleware/auth';
+import prisma from '../utils/database';
+import { AuthenticatedRequest } from '../types';
+
+const router = Router();
+
+// Get all strategies with filtering and search
+router.get('/', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const {
+      search,
+      tags,
+      author,
+      page = 1,
+      limit = 12,
+      sortBy = 'createdAt',
+      sortOrder = 'desc'
+    } = req.query;
+
+    const skip = (Number(page) - 1) * Number(limit);
+
+    // Build filter conditions
+    const whereConditions: any = {
+      isActive: true
+    };
+
+    if (search) {
+      whereConditions.OR = [
+        { name: { contains: search as string, mode: 'insensitive' } },
+        { code: { contains: search as string, mode: 'insensitive' } },
+        { description: { contains: search as string, mode: 'insensitive' } }
+      ];
+    }
+
+    if (tags) {
+      const tagArray = (tags as string).split(',').map(tag => tag.trim());
+      whereConditions.tags = {
+        hasSome: tagArray
+      };
+    }
+
+    if (author) {
+      whereConditions.author = {
+        contains: author as string,
+        mode: 'insensitive'
+      };
+    }
+
+    // Get total count for pagination
+    const total = await prisma.strategy.count({
+      where: whereConditions
+    });
+
+    // Get strategies
+    const strategies = await prisma.strategy.findMany({
+      where: whereConditions,
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        description: true,
+        author: true,
+        instrument: true,
+        tags: true,
+        winRate: true,
+        riskReward: true,
+        maxDrawdown: true,
+        roi: true,
+        marginRequired: true,
+        deploymentCount: true,
+        createdAt: true,
+        updatedAt: true
+      },
+      orderBy: {
+        [sortBy as string]: sortOrder as 'asc' | 'desc'
+      },
+      skip,
+      take: Number(limit)
+    });
+
+    res.json({
+      strategies,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total,
+        totalPages: Math.ceil(total / Number(limit))
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get strategy by ID
+router.get('/:id', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const strategy = await prisma.strategy.findUnique({
+      where: { id },
+      include: {
+        versions: {
+          orderBy: { createdAt: 'desc' },
+          take: 5 // Latest 5 versions
+        },
+        backtestResults: {
+          orderBy: { createdAt: 'desc' },
+          take: 1 // Latest backtest result
+        },
+        reviews: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                email: true
+              }
+            }
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 10
+        },
+        _count: {
+          select: {
+            botDeployments: {
+              where: {
+                status: {
+                  in: ['ACTIVE', 'STARTING', 'DEPLOYING']
+                }
+              }
+            },
+            reviews: true
+          }
+        }
+      }
+    });
+
+    if (!strategy) {
+      return res.status(404).json({
+        error: 'Strategy not found'
+      });
+    }
+
+    if (!strategy.isActive) {
+      return res.status(404).json({
+        error: 'Strategy is not available'
+      });
+    }
+
+    // Calculate average rating
+    const avgRating = strategy.reviews.length > 0
+      ? strategy.reviews.reduce((sum, r) => sum + r.rating, 0) / strategy.reviews.length
+      : null;
+
+    res.json({
+      ...strategy,
+      activeDeployments: strategy._count.botDeployments,
+      totalReviews: strategy._count.reviews,
+      averageRating: avgRating,
+      latestBacktest: strategy.backtestResults[0] || null
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get popular tags
+router.get('/meta/tags', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const strategies = await prisma.strategy.findMany({
+      where: { isActive: true },
+      select: { tags: true }
+    });
+
+    const tagCounts: { [key: string]: number } = {};
+
+    strategies.forEach(strategy => {
+      if (strategy.tags && strategy.tags.trim()) {
+        const tagsArray = strategy.tags.split(',').map(tag => tag.trim()).filter(tag => tag);
+        tagsArray.forEach(tag => {
+          tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+        });
+      }
+    });
+
+    const popularTags = Object.entries(tagCounts)
+      .sort(([,a], [,b]) => b - a)
+      .slice(0, 20)
+      .map(([tag, count]) => ({ tag, count }));
+
+    res.json({ tags: popularTags });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get strategy authors
+router.get('/meta/authors', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const authors = await prisma.strategy.groupBy({
+      by: ['author'],
+      where: { isActive: true },
+      _count: {
+        author: true
+      },
+      orderBy: {
+        _count: {
+          author: 'desc'
+        }
+      },
+      take: 20
+    });
+
+    res.json({
+      authors: authors.map(item => ({
+        name: item.author,
+        strategyCount: item._count.author
+      }))
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Create or update strategy
+router.post('/', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const {
+      name,
+      code,
+      description,
+      detailedDescription,
+      author,
+      version = "1.0.0",
+      instrument,
+      tags,
+      gitRepository,
+      gitBranch = "main",
+      strategyCode,
+      configData,
+      requirements
+    } = req.body;
+
+    // Check if strategy with same code and version exists
+    const existingStrategy = await prisma.strategy.findUnique({
+      where: {
+        code_version: {
+          code,
+          version
+        }
+      }
+    });
+
+    if (existingStrategy) {
+      return res.status(400).json({
+        error: 'Strategy with this code and version already exists'
+      });
+    }
+
+    // Create new strategy
+    const strategy = await prisma.strategy.create({
+      data: {
+        name,
+        code,
+        description,
+        detailedDescription,
+        author,
+        version,
+        instrument,
+        tags,
+        gitRepository,
+        gitBranch,
+        validationStatus: 'PENDING',
+        isActive: false, // Requires validation first
+        isApproved: false
+      }
+    });
+
+    // Create first version
+    await prisma.strategyVersion.create({
+      data: {
+        strategyId: strategy.id,
+        version,
+        strategyCode,
+        configData,
+        requirements
+      }
+    });
+
+    res.status(201).json(strategy);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Create new version of existing strategy
+router.post('/:id/versions', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const { id } = req.params;
+    const {
+      version,
+      changeLog,
+      strategyCode,
+      configData,
+      requirements,
+      gitCommitHash
+    } = req.body;
+
+    const strategy = await prisma.strategy.findUnique({
+      where: { id }
+    });
+
+    if (!strategy) {
+      return res.status(404).json({
+        error: 'Strategy not found'
+      });
+    }
+
+    // Check if version already exists
+    const existingVersion = await prisma.strategyVersion.findUnique({
+      where: {
+        strategyId_version: {
+          strategyId: id,
+          version
+        }
+      }
+    });
+
+    if (existingVersion) {
+      return res.status(400).json({
+        error: 'Version already exists'
+      });
+    }
+
+    // Create new version
+    const strategyVersion = await prisma.strategyVersion.create({
+      data: {
+        strategyId: id,
+        version,
+        changeLog,
+        strategyCode,
+        configData,
+        requirements,
+        gitCommitHash
+      }
+    });
+
+    // Update strategy with latest version
+    await prisma.strategy.update({
+      where: { id },
+      data: {
+        version,
+        gitCommitHash,
+        validationStatus: 'PENDING', // Reset validation for new version
+        isActive: false
+      }
+    });
+
+    res.status(201).json(strategyVersion);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get strategy versions
+router.get('/:id/versions', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const { id } = req.params;
+    const { page = 1, limit = 10 } = req.query;
+
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const [versions, total] = await Promise.all([
+      prisma.strategyVersion.findMany({
+        where: { strategyId: id },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: Number(limit)
+      }),
+      prisma.strategyVersion.count({
+        where: { strategyId: id }
+      })
+    ]);
+
+    res.json({
+      versions,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total,
+        totalPages: Math.ceil(total / Number(limit))
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Submit backtest results
+router.post('/:id/backtest', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const { id } = req.params;
+    const {
+      version,
+      startDate,
+      endDate,
+      initialBalance,
+      timeframe,
+      finalBalance,
+      totalReturn,
+      totalReturnPct,
+      maxDrawdown,
+      sharpeRatio,
+      winRate,
+      profitFactor,
+      totalTrades,
+      avgTrade,
+      equityCurve,
+      tradeHistory,
+      monthlyReturns,
+      backtestDuration,
+      dataQuality
+    } = req.body;
+
+    const strategy = await prisma.strategy.findUnique({
+      where: { id }
+    });
+
+    if (!strategy) {
+      return res.status(404).json({
+        error: 'Strategy not found'
+      });
+    }
+
+    const backtestResult = await prisma.backtestResult.create({
+      data: {
+        strategyId: id,
+        version: version || strategy.version,
+        startDate: new Date(startDate),
+        endDate: new Date(endDate),
+        initialBalance,
+        timeframe,
+        finalBalance,
+        totalReturn,
+        totalReturnPct,
+        maxDrawdown,
+        sharpeRatio,
+        winRate,
+        profitFactor,
+        totalTrades,
+        avgTrade,
+        equityCurve,
+        tradeHistory,
+        monthlyReturns,
+        backtestDuration,
+        dataQuality
+      }
+    });
+
+    // Update strategy with latest backtest metrics
+    await prisma.strategy.update({
+      where: { id },
+      data: {
+        winRate,
+        riskReward: profitFactor,
+        maxDrawdown,
+        roi: totalReturnPct,
+        sharpeRatio,
+        totalTrades,
+        avgTradeReturn: avgTrade,
+        profitFactor
+      }
+    });
+
+    res.status(201).json(backtestResult);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get backtest results for strategy
+router.get('/:id/backtest', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const { id } = req.params;
+    const { version, page = 1, limit = 10 } = req.query;
+
+    const whereClause: any = { strategyId: id };
+    if (version) {
+      whereClause.version = version as string;
+    }
+
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const [results, total] = await Promise.all([
+      prisma.backtestResult.findMany({
+        where: whereClause,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: Number(limit)
+      }),
+      prisma.backtestResult.count({
+        where: whereClause
+      })
+    ]);
+
+    res.json({
+      results,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total,
+        totalPages: Math.ceil(total / Number(limit))
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Add strategy review
+router.post('/:id/reviews', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const { id } = req.params;
+    const { rating, comment } = req.body;
+    const userId = req.userId!;
+
+    if (rating < 1 || rating > 5) {
+      return res.status(400).json({
+        error: 'Rating must be between 1 and 5'
+      });
+    }
+
+    const strategy = await prisma.strategy.findUnique({
+      where: { id }
+    });
+
+    if (!strategy) {
+      return res.status(404).json({
+        error: 'Strategy not found'
+      });
+    }
+
+    // Check if user already reviewed this strategy
+    const existingReview = await prisma.strategyReview.findUnique({
+      where: {
+        strategyId_userId: {
+          strategyId: id,
+          userId
+        }
+      }
+    });
+
+    let review;
+    if (existingReview) {
+      // Update existing review
+      review = await prisma.strategyReview.update({
+        where: {
+          strategyId_userId: {
+            strategyId: id,
+            userId
+          }
+        },
+        data: {
+          rating,
+          comment
+        }
+      });
+    } else {
+      // Create new review
+      review = await prisma.strategyReview.create({
+        data: {
+          strategyId: id,
+          userId,
+          rating,
+          comment
+        }
+      });
+    }
+
+    // Update strategy average rating
+    const avgRating = await prisma.strategyReview.aggregate({
+      where: { strategyId: id },
+      _avg: { rating: true }
+    });
+
+    await prisma.strategy.update({
+      where: { id },
+      data: {
+        avgUserRating: avgRating._avg.rating
+      }
+    });
+
+    res.status(201).json(review);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get strategy reviews
+router.get('/:id/reviews', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const { id } = req.params;
+    const { page = 1, limit = 10 } = req.query;
+
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const [reviews, total] = await Promise.all([
+      prisma.strategyReview.findMany({
+        where: { strategyId: id },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true
+            }
+          }
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: Number(limit)
+      }),
+      prisma.strategyReview.count({
+        where: { strategyId: id }
+      })
+    ]);
+
+    res.json({
+      reviews,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total,
+        totalPages: Math.ceil(total / Number(limit))
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Validation endpoint (admin only)
+router.put('/:id/validate', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const { id } = req.params;
+    const { validationStatus, validationErrors, isApproved } = req.body;
+
+    const strategy = await prisma.strategy.update({
+      where: { id },
+      data: {
+        validationStatus,
+        validationErrors,
+        lastValidatedAt: new Date(),
+        isApproved: isApproved || false,
+        isActive: validationStatus === 'VALID' && isApproved
+      }
+    });
+
+    res.json(strategy);
+  } catch (error) {
+    next(error);
+  }
+});
+
+export { router as strategyRoutes };

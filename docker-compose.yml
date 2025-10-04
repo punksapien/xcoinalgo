@@ -1,0 +1,90 @@
+version: '3.8'
+
+services:
+  # Main backend service
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: coindcx-backend
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=file:./dev.db
+      - JWT_SECRET=${JWT_SECRET:-your-jwt-secret-key}
+      - SESSION_SECRET=${SESSION_SECRET:-your-session-secret-key}
+      - STRATEGY_RUNNER_URL=http://strategy-runner:8002
+      - FRONTEND_URL=http://localhost:3000
+    volumes:
+      - ./backend/prisma/dev.db:/app/prisma/dev.db
+      - ./backend/logs:/app/logs
+      - /var/run/docker.sock:/var/run/docker.sock  # For Docker-in-Docker strategy management
+    depends_on:
+      - strategy-runner
+    networks:
+      - coindcx-network
+    restart: unless-stopped
+
+  # Frontend service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: coindcx-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_BACKEND_URL=http://localhost:3001
+      - NODE_ENV=production
+    depends_on:
+      - backend
+    networks:
+      - coindcx-network
+    restart: unless-stopped
+
+  # Strategy runner service
+  strategy-runner:
+    build:
+      context: ./strategy-runner
+      dockerfile: Dockerfile
+    container_name: coindcx-strategy-runner
+    ports:
+      - "8002:8002"
+    environment:
+      - NODE_ENV=production
+      - PORT=8002
+      - BACKEND_URL=http://backend:3001
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock  # For managing strategy containers
+      - ./strategy-runner/logs:/app/logs
+      - strategy-data:/app/data
+    networks:
+      - coindcx-network
+    restart: unless-stopped
+
+  # Redis for caching and pub/sub (optional but recommended)
+  redis:
+    image: redis:7-alpine
+    container_name: coindcx-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - coindcx-network
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+networks:
+  coindcx-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  strategy-data:
+    driver: local
+  redis-data:
+    driver: local

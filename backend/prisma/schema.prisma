@@ -1,0 +1,276 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  password    String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  brokerCredentials BrokerCredential[]
+  botDeployments    BotDeployment[]
+  strategyReviews   StrategyReview[]
+
+  @@map("users")
+}
+
+model BrokerCredential {
+  id            String   @id @default(cuid())
+  userId        String
+  brokerName    String   @default("coindcx")
+  apiKey        String   // encrypted
+  apiSecret     String   // encrypted
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, brokerName])
+  @@map("broker_credentials")
+}
+
+model Strategy {
+  id              String   @id @default(cuid())
+  name            String
+  code            String
+  description     String?
+  detailedDescription String?
+  author          String
+  version         String   @default("1.0.0")
+  instrument      String
+  tags            String   @default("")
+
+  // Git integration
+  gitRepository   String?
+  gitBranch       String?  @default("main")
+  gitCommitHash   String?
+  gitPullRequestUrl String?
+
+  // File structure
+  strategyPath    String?  // Path to strategy.py file (renamed from scriptPath)
+  configPath      String?  // Path to config.yaml
+  requirementsPath String? // Path to requirements.txt
+  backtestDataPath String? // Path to backtest results
+
+  // Validation status
+  validationStatus StrategyValidationStatus @default(PENDING)
+  validationErrors String?
+  lastValidatedAt  DateTime?
+
+  // Basic metrics (from latest backtest)
+  winRate         Float?
+  riskReward      Float?
+  maxDrawdown     Float?
+  roi             Float?
+  marginRequired  Float?
+
+  // Enhanced metrics
+  sharpeRatio     Float?
+  totalTrades     Int?
+  avgTradeReturn  Float?
+  profitFactor    Float?
+
+  // Strategy metadata
+  supportedPairs  Json?    // Array of supported trading pairs
+  timeframes      Json?    // Array of supported timeframes
+  strategyType    String?  // e.g., "momentum", "mean-reversion", etc.
+  complexity      StrategyComplexity @default(MEDIUM)
+
+  // Status and deployment
+  isActive        Boolean  @default(false) // Changed default to false
+  isApproved      Boolean  @default(false) // Requires approval for production
+  isFeatured      Boolean  @default(false)
+  deploymentCount Int      @default(0)
+
+  // Performance tracking
+  totalPnl        Float?   @default(0)
+  totalUsers      Int      @default(0)
+  avgUserRating   Float?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  lastDeployedAt  DateTime?
+
+  // Relations
+  versions        StrategyVersion[]
+  backtestResults BacktestResult[]
+  botDeployments  BotDeployment[]
+  reviews         StrategyReview[]
+
+  @@unique([code, version])
+  @@map("strategies")
+}
+
+model StrategyVersion {
+  id              String   @id @default(cuid())
+  strategyId      String
+  version         String
+  changeLog       String?
+  gitCommitHash   String?
+
+  // File snapshots
+  strategyCode    String   // Full strategy code
+  configData      Json?    // Configuration data
+  requirements    String?  // Requirements.txt content
+
+  // Validation
+  isValidated     Boolean  @default(false)
+  validationErrors String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  strategy        Strategy @relation(fields: [strategyId], references: [id], onDelete: Cascade)
+
+  @@unique([strategyId, version])
+  @@map("strategy_versions")
+}
+
+model BacktestResult {
+  id              String   @id @default(cuid())
+  strategyId      String
+  version         String   @default("1.0.0")
+
+  // Backtest parameters
+  startDate       DateTime
+  endDate         DateTime
+  initialBalance  Float
+  timeframe       String
+
+  // Performance metrics
+  finalBalance    Float
+  totalReturn     Float
+  totalReturnPct  Float
+  maxDrawdown     Float
+  sharpeRatio     Float
+  winRate         Float
+  profitFactor    Float
+  totalTrades     Int
+  avgTrade        Float
+
+  // Advanced metrics
+  volatility      Float?
+  calmarRatio     Float?
+  sortinoRatio    Float?
+  maxDrawdownDuration Int?
+
+  // Detailed results
+  equityCurve     Json     // Time series of equity values
+  tradeHistory    Json     // Array of all trades
+  monthlyReturns  Json     // Monthly performance breakdown
+
+  // Metadata
+  backtestDuration Float   // How long the backtest took to run
+  dataQuality     String? // Data quality assessment
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  strategy        Strategy @relation(fields: [strategyId], references: [id], onDelete: Cascade)
+
+  @@map("backtest_results")
+}
+
+model StrategyReview {
+  id          String   @id @default(cuid())
+  strategyId  String
+  userId      String
+  rating      Int      // 1-5 stars
+  comment     String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  strategy    Strategy @relation(fields: [strategyId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([strategyId, userId])
+  @@map("strategy_reviews")
+}
+
+enum StrategyValidationStatus {
+  PENDING
+  VALIDATING
+  VALID
+  INVALID
+  NEEDS_REVIEW
+}
+
+enum StrategyComplexity {
+  BEGINNER
+  MEDIUM
+  ADVANCED
+  EXPERT
+}
+
+model BotDeployment {
+  id                String   @id @default(cuid())
+  userId            String
+  strategyId        String
+
+  // Execution management (replaces Docker/PM2)
+  executionInterval Int      @default(300) // Interval in seconds (default 5 minutes)
+  nextExecutionAt   DateTime?
+  executionCount    Int      @default(0)
+  lastExecutionDuration Float? // Last execution time in seconds
+  status            BotStatus @default(STOPPED)
+
+  // Configuration
+  leverage          Int      @default(10)
+  riskPerTrade      Float    @default(0.005)
+  marginCurrency    String   @default("USDT")
+
+  // Monitoring
+  deployedAt        DateTime @default(now())
+  lastHeartbeat     DateTime?
+  restartCount      Int      @default(0)
+  errorMessage      String?
+
+  // Execution stats
+  successfulExecutions Int    @default(0)
+  failedExecutions     Int    @default(0)
+  avgExecutionTime     Float  @default(0)
+
+  // Lifecycle
+  startedAt         DateTime?
+  stoppedAt         DateTime?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  strategy          Strategy @relation(fields: [strategyId], references: [id])
+
+  @@unique([userId, strategyId])
+  @@map("bot_deployments")
+}
+
+enum BotStatus {
+  STOPPED
+  DEPLOYING
+  STARTING
+  ACTIVE
+  UNHEALTHY
+  CRASHED
+  ERROR
+}
+
+model ProcessLog {
+  id            String   @id @default(cuid())
+  botDeploymentId String
+  level         String
+  message       String
+  metadata      Json?
+  createdAt     DateTime @default(now())
+
+  @@index([botDeploymentId])
+  @@map("process_logs")
+}

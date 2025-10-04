@@ -1,0 +1,21 @@
+{
+  "name": "Test MA Crossover Strategy",
+  "code": "test_ma_crossover",
+  "author": "Platform Testing",
+  "description": "Simple moving average crossover strategy for testing the deployment platform",
+  "leverage": 1,
+  "risk_per_trade": 0.001,
+  "pair": "BTCINR",
+  "margin_currency": "INR",
+  "resolution": "1m",
+  "lookback_period": 50,
+  "sl_atr_multiplier": 2.0,
+  "tp_atr_multiplier": 3.0,
+  "max_positions": 1,
+  "max_daily_loss": 0.01,
+  "custom_params": {
+    "short_ma_period": 10,
+    "long_ma_period": 20,
+    "min_trade_interval": 300
+  }
+}

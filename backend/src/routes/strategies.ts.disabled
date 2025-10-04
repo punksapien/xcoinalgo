@@ -1,0 +1,461 @@
+/**
+ * Strategy Routes - API endpoints for strategy management
+ */
+
+import { Router } from 'express';
+import { authenticate } from '../middleware/auth';
+import { strategyService, StrategyDeploymentRequest } from '../services/strategy-service';
+import { AuthenticatedRequest } from '../types';
+import prisma from '../utils/database';
+import { Logger } from '../utils/logger';
+
+const logger = new Logger('StrategyRoutes');
+const router = Router();
+
+// Get all user strategies
+router.get('/', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = req.userId!;
+
+    // Get deployments from database
+    const dbDeployments = await prisma.botDeployment.findMany({
+      where: { userId },
+      include: {
+        strategy: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            description: true,
+            author: true,
+            instrument: true,
+          },
+        },
+      },
+      orderBy: { deployedAt: 'desc' },
+    });
+
+    // Get process logs for deployments
+    const deploymentIds = dbDeployments.map(d => d.id);
+    let processLogs: any[] = [];
+    if (deploymentIds.length > 0) {
+      processLogs = await prisma.processLog.findMany({
+        where: {
+          botDeploymentId: { in: deploymentIds },
+        },
+        take: 10,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          botDeploymentId: true,
+          level: true,
+          message: true,
+          createdAt: true,
+        },
+      });
+    }
+
+    // Get live status from strategy service for active strategies
+    const activeDeployments = dbDeployments
+      .filter(s => s.pm2ProcessName && ['ACTIVE', 'STARTING'].includes(s.status));
+
+    let liveStatuses: Record<string, any> = {};
+    // In a real implementation, you would get live status from process manager
+    // For now, we'll use mock data
+
+    // Combine database and live data
+    const strategies = dbDeployments.map(deployment => {
+      const deploymentLogs = processLogs.filter(log => log.botDeploymentId === deployment.id);
+      return {
+        id: deployment.id,
+        name: deployment.strategy.name,
+        code: deployment.strategy.code,
+        description: deployment.strategy.description,
+        author: deployment.strategy.author,
+        status: deployment.status,
+        deployedAt: deployment.deployedAt,
+        startedAt: deployment.startedAt,
+        stoppedAt: deployment.stoppedAt,
+        leverage: deployment.leverage,
+        riskPerTrade: deployment.riskPerTrade,
+        marginCurrency: deployment.marginCurrency,
+        processName: deployment.pm2ProcessName,
+        recentLogs: deploymentLogs,
+        liveStatus: deployment.pm2ProcessName ? liveStatuses[deployment.pm2ProcessName] : null,
+      };
+    });
+
+    res.json({
+      strategies,
+      serviceHealth: await strategyService.healthCheck(),
+    });
+  } catch (error) {
+    logger.error('Failed to get user strategies:', error);
+    next(error);
+  }
+});
+
+// Deploy a new strategy
+router.post('/deploy', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = req.userId!;
+    const { name, code, strategyCode, config } = req.body;
+
+    if (!name || !code || !strategyCode || !config) {
+      return res.status(400).json({
+        error: 'Missing required fields: name, code, strategyCode, config'
+      });
+    }
+
+    // Validate strategy configuration
+    const requiredConfigFields = ['name', 'code', 'author', 'pair'];
+    for (const field of requiredConfigFields) {
+      if (!config[field]) {
+        return res.status(400).json({
+          error: `Missing required config field: ${field}`
+        });
+      }
+    }
+
+    // Create deployment request
+    const deploymentRequest: StrategyDeploymentRequest = {
+      user_id: userId,
+      strategy_code: strategyCode,
+      config: {
+        name: config.name,
+        code: config.code,
+        author: config.author,
+        description: config.description || '',
+        leverage: config.leverage || 1,
+        risk_per_trade: config.risk_per_trade || 0.01,
+        pair: config.pair,
+        margin_currency: config.margin_currency || 'USDT',
+        resolution: config.resolution || '5',
+        lookback_period: config.lookback_period || 200,
+        sl_atr_multiplier: config.sl_atr_multiplier || 2.0,
+        tp_atr_multiplier: config.tp_atr_multiplier || 2.5,
+        max_positions: config.max_positions || 1,
+        max_daily_loss: config.max_daily_loss || 0.05,
+        custom_params: config.custom_params || {},
+      },
+      auto_start: req.body.auto_start !== false,
+      environment: 'production',
+    };
+
+    // Deploy to strategy service
+    const deploymentResult = await strategyService.deployStrategy(deploymentRequest);
+
+    if (!deploymentResult.success) {
+      return res.status(400).json({
+        error: deploymentResult.message,
+        details: deploymentResult.error_details,
+      });
+    }
+
+    // Find or create strategy
+    let strategy = await prisma.strategy.findFirst({
+      where: { code: code }
+    });
+
+    if (!strategy) {
+      strategy = await prisma.strategy.create({
+        data: {
+          name: name,
+          code: code,
+          description: config.description || '',
+          author: config.author,
+          version: '1.0.0',
+          instrument: config.pair,
+          isActive: true,
+        },
+      });
+    }
+
+    // Save to database
+    const botDeployment = await prisma.botDeployment.create({
+      data: {
+        userId,
+        strategyId: strategy.id,
+        status: 'DEPLOYING',
+        leverage: config.leverage || 10,
+        riskPerTrade: config.risk_per_trade || 0.005,
+        marginCurrency: config.margin_currency || 'USDT',
+        pm2ProcessName: deploymentResult.strategy_id,
+      },
+    });
+
+    // Log deployment
+    await prisma.processLog.create({
+      data: {
+        botDeploymentId: botDeployment.id,
+        level: 'INFO',
+        message: `Strategy deployed with process name: ${deploymentResult.strategy_id}`,
+        metadata: {
+          strategyCode: code,
+          deploymentResult: deploymentResult,
+        },
+      },
+    });
+
+    res.json({
+      success: true,
+      deployment: {
+        id: botDeployment.id,
+        processName: deploymentResult.strategy_id,
+        status: deploymentResult.status,
+        message: deploymentResult.message,
+      },
+    });
+  } catch (error) {
+    logger.error('Failed to deploy strategy:', error);
+
+    if (error instanceof Error) {
+      return res.status(500).json({
+        error: 'Strategy deployment failed',
+        message: error.message,
+      });
+    }
+
+    next(error);
+  }
+});
+
+// Get specific strategy status
+router.get('/:id/status', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = req.userId!;
+    const strategyId = req.params.id;
+
+    // Get deployment from database
+    const deployment = await prisma.botDeployment.findFirst({
+      where: { id: strategyId, userId },
+      include: {
+        strategy: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            description: true,
+            author: true,
+          },
+        },
+      },
+    });
+
+    if (!deployment) {
+      return res.status(404).json({
+        error: 'Strategy not found'
+      });
+    }
+
+    // Get process logs
+    const logs = await prisma.processLog.findMany({
+      where: { botDeploymentId: strategyId },
+      take: 50,
+      orderBy: { createdAt: 'desc' },
+    });
+
+    let liveStatus = null;
+    if (deployment.pm2ProcessName) {
+      try {
+        // In a real implementation, get status from process manager
+        liveStatus = { status: deployment.status, processName: deployment.pm2ProcessName };
+      } catch (error) {
+        logger.error(`Failed to get live status for deployment ${deployment.pm2ProcessName}:`, error);
+      }
+    }
+
+    res.json({
+      strategy: {
+        id: deployment.id,
+        name: deployment.strategy.name,
+        code: deployment.strategy.code,
+        description: deployment.strategy.description,
+        author: deployment.strategy.author,
+        status: deployment.status,
+        deployedAt: deployment.deployedAt,
+        startedAt: deployment.startedAt,
+        stoppedAt: deployment.stoppedAt,
+        leverage: deployment.leverage,
+        riskPerTrade: deployment.riskPerTrade,
+        marginCurrency: deployment.marginCurrency,
+        processName: deployment.pm2ProcessName,
+        logs: logs,
+      },
+      liveStatus,
+    });
+  } catch (error) {
+    logger.error('Failed to get strategy status:', error);
+    next(error);
+  }
+});
+
+// Stop a strategy
+router.post('/:id/stop', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = req.userId!;
+    const strategyId = req.params.id;
+
+    // Get deployment from database
+    const deployment = await prisma.botDeployment.findFirst({
+      where: { id: strategyId, userId },
+    });
+
+    if (!deployment) {
+      return res.status(404).json({
+        error: 'Strategy not found'
+      });
+    }
+
+    if (!deployment.pm2ProcessName) {
+      return res.status(400).json({
+        error: 'Strategy has no active process to stop'
+      });
+    }
+
+    // Stop strategy in strategy service
+    const success = await strategyService.stopStrategy(deployment.pm2ProcessName);
+
+    if (!success) {
+      return res.status(500).json({
+        error: 'Failed to stop strategy'
+      });
+    }
+
+    // Update database
+    await prisma.botDeployment.update({
+      where: { id: strategyId },
+      data: {
+        status: 'STOPPED',
+        stoppedAt: new Date(),
+      },
+    });
+
+    // Log stop action
+    await prisma.processLog.create({
+      data: {
+        botDeploymentId: strategyId,
+        level: 'INFO',
+        message: 'Strategy stopped by user request',
+        metadata: {
+          action: 'STOP',
+          processName: deployment.pm2ProcessName,
+        },
+      },
+    });
+
+    res.json({
+      success: true,
+      message: 'Strategy stopped successfully',
+    });
+  } catch (error) {
+    logger.error('Failed to stop strategy:', error);
+
+    if (error instanceof Error) {
+      return res.status(500).json({
+        error: 'Failed to stop strategy',
+        message: error.message,
+      });
+    }
+
+    next(error);
+  }
+});
+
+// Get strategy signals
+router.get('/:id/signals', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = req.userId!;
+    const strategyId = req.params.id;
+    const limit = parseInt(req.query.limit as string) || 50;
+
+    // Get deployment from database
+    const deployment = await prisma.botDeployment.findFirst({
+      where: { id: strategyId, userId },
+    });
+
+    if (!deployment) {
+      return res.status(404).json({
+        error: 'Strategy not found'
+      });
+    }
+
+    if (!deployment.pm2ProcessName) {
+      return res.json({
+        signals: [],
+        message: 'No active strategy process',
+      });
+    }
+
+    // Get signals from strategy service
+    const signals = await strategyService.getStrategySignals(deployment.pm2ProcessName, limit);
+
+    res.json({
+      signals,
+      processName: deployment.pm2ProcessName,
+    });
+  } catch (error) {
+    logger.error('Failed to get strategy signals:', error);
+    next(error);
+  }
+});
+
+// Get strategy metrics
+router.get('/:id/metrics', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = req.userId!;
+    const strategyId = req.params.id;
+
+    // Get deployment from database
+    const deployment = await prisma.botDeployment.findFirst({
+      where: { id: strategyId, userId },
+    });
+
+    if (!deployment) {
+      return res.status(404).json({
+        error: 'Strategy not found'
+      });
+    }
+
+    if (!deployment.pm2ProcessName) {
+      return res.json({
+        metrics: null,
+        message: 'No active strategy process',
+      });
+    }
+
+    // Get live status with metrics
+    const liveStatus = await strategyService.getStrategyStatus(deployment.pm2ProcessName);
+
+    res.json({
+      metrics: liveStatus.metrics,
+      status: liveStatus.status,
+      processName: deployment.pm2ProcessName,
+    });
+  } catch (error) {
+    logger.error('Failed to get strategy metrics:', error);
+    next(error);
+  }
+});
+
+// Health check for strategy service
+router.get('/service/health', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const isHealthy = await strategyService.healthCheck();
+    const metrics = await strategyService.getServiceMetrics();
+
+    res.json({
+      healthy: isHealthy,
+      service: 'strategy-runner',
+      ...metrics,
+    });
+  } catch (error) {
+    logger.error('Strategy service health check failed:', error);
+    res.status(503).json({
+      healthy: false,
+      service: 'strategy-runner',
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+export { router as strategyRoutes };

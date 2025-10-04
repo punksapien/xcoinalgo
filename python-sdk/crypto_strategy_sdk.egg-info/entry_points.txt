@@ -1,0 +1,2 @@
+[console_scripts]
+crypto-strategy-cli = crypto_strategy_sdk.cli:main

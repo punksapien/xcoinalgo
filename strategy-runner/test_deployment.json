@@ -1,0 +1,31 @@
+{
+  "user_id": "test-user-123",
+  "strategy_code": "from base_strategy import BaseStrategy\nfrom typing import Dict, Any\nimport time\nimport logging\n\nclass TestStrategy(BaseStrategy):\n    def __init__(self):\n        super().__init__()\n        self.short_ma_period = self.config.custom_params.get('short_ma_period', 10)\n        self.long_ma_period = self.config.custom_params.get('long_ma_period', 20)\n        self.min_trade_interval = 60\n        self.last_trade_time = 0\n        self.price_history = []\n        self.position_size = 0\n        self.logger.info(f'Test Strategy initialized: {self.short_ma_period}/{self.long_ma_period} MA crossover')\n\n    def on_market_data(self, market_data: Dict[str, Any]):\n        try:\n            current_price = self._extract_price(market_data)\n            if not current_price:\n                return\n            self.price_history.append(current_price)\n            max_history = max(self.short_ma_period, self.long_ma_period) + 1\n            if len(self.price_history) > max_history:\n                self.price_history = self.price_history[-max_history:]\n            if len(self.price_history) >= self.long_ma_period:\n                self._check_signals(current_price)\n        except Exception as e:\n            self.logger.error(f'Error processing market data: {e}')\n\n    def _extract_price(self, market_data: Dict[str, Any]) -> float:\n        try:\n            if 'price' in market_data:\n                return float(market_data['price'])\n            elif 'close' in market_data:\n                return float(market_data['close'])\n            elif 'last_price' in market_data:\n                return float(market_data['last_price'])\n            elif 'ticker' in market_data and 'last_price' in market_data['ticker']:\n                return float(market_data['ticker']['last_price'])\n            else:\n                self.logger.warning(f'Could not extract price from market data: {market_data}')\n                return None\n        except (ValueError, KeyError) as e:\n            self.logger.error(f'Error extracting price: {e}')\n            return None\n\nif __name__ == '__main__':\n    try:\n        strategy = TestStrategy()\n        strategy.start()\n    except KeyboardInterrupt:\n        print('Strategy stopped by user')\n    except Exception as e:\n        print(f'Strategy error: {e}')\n        logging.error(f'Strategy startup error: {e}')",
+  "config": {
+    "name": "Test MA Crossover Strategy",
+    "code": "test_ma_crossover",
+    "author": "Platform Testing",
+    "description": "Simple moving average crossover strategy for testing the deployment platform",
+    "leverage": 1,
+    "risk_per_trade": 0.001,
+    "pair": "BTCINR",
+    "margin_currency": "INR",
+    "resolution": "1m",
+    "lookback_period": 50,
+    "sl_atr_multiplier": 2.0,
+    "tp_atr_multiplier": 3.0,
+    "max_positions": 1,
+    "max_daily_loss": 0.01,
+    "custom_params": {
+      "short_ma_period": 10,
+      "long_ma_period": 20,
+      "min_trade_interval": 300
+    }
+  },
+  "auto_start": true,
+  "environment": "development",
+  "resource_limits": {
+    "memory": "512m",
+    "cpu": "0.5"
+  }
+}

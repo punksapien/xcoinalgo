@@ -1,0 +1,15 @@
+include README.md
+include LICENSE
+include requirements.txt
+include CHANGELOG.md
+recursive-include coindcx_sdk *.py
+recursive-include examples *.py *.yaml *.json *.csv
+recursive-include docs *.md *.rst
+include coindcx_sdk/*.yaml
+include coindcx_sdk/*.json
+global-exclude *.pyc
+global-exclude __pycache__
+global-exclude .DS_Store
+global-exclude *.so
+global-exclude .git*
+prune tests
