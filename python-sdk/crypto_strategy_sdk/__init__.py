@@ -8,7 +8,7 @@ Author: Crypto Strategy Team
 Version: 1.0.0
 """
 
-from .base_strategy import BaseStrategy
+from .base_strategy import BaseStrategy, SignalType, PositionType
 from .strategy_config import StrategyConfig
 from .indicators import TechnicalIndicators
 from .risk_management import RiskManager
@@ -21,6 +21,8 @@ __author__ = "Crypto Strategy Team"
 
 __all__ = [
     "BaseStrategy",
+    "SignalType",
+    "PositionType",
     "StrategyConfig",
     "TechnicalIndicators",
     "RiskManager",
