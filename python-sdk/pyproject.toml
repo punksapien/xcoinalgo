@@ -3,12 +3,12 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "crypto-strategy-sdk"
+name = "xcoinalgo-strategy-sdk"
 version = "1.0.0"
 authors = [
-    {name = "Crypto Strategy Team", email = "team@cryptostrategy.dev"},
+    {name = "XCoinAlgo Quant Team", email = "quant@xcoinalgo.com"},
 ]
-description = "Cryptocurrency Trading Strategy Development Kit for algorithmic trading"
+description = "XCoinAlgo Strategy Development Kit for cryptocurrency trading strategies"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.8"
@@ -67,11 +67,11 @@ all = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/crypto-strategy/crypto-strategy-sdk"
-Documentation = "https://crypto-strategy-sdk.readthedocs.io"
-Repository = "https://github.com/crypto-strategy/crypto-strategy-sdk.git"
-Issues = "https://github.com/crypto-strategy/crypto-strategy-sdk/issues"
-Changelog = "https://github.com/crypto-strategy/crypto-strategy-sdk/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/punksapien/xcoinalgo"
+Documentation = "https://xcoinalgo.com/docs"
+Repository = "https://github.com/punksapien/xcoinalgo.git"
+Issues = "https://github.com/punksapien/xcoinalgo/issues"
+Changelog = "https://github.com/punksapien/xcoinalgo/blob/main/CHANGELOG.md"
 
 [project.scripts]
 crypto-strategy-cli = "crypto_strategy_sdk.cli:main"

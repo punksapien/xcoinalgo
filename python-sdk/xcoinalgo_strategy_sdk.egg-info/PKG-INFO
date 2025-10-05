@@ -1,16 +1,16 @@
 Metadata-Version: 2.4
-Name: crypto-strategy-sdk
+Name: xcoinalgo-strategy-sdk
 Version: 1.0.0
-Summary: Cryptocurrency Trading Strategy Development Kit for algorithmic trading
-Home-page: https://github.com/coindcx/coindcx-sdk
-Author: CoinDCX Quant Team
-Author-email: Crypto Strategy Team <team@cryptostrategy.dev>
+Summary: XCoinAlgo Strategy Development Kit for cryptocurrency trading strategies
+Home-page: https://github.com/punksapien/xcoinalgo
+Author: XCoinAlgo Quant Team
+Author-email: XCoinAlgo Quant Team <quant@xcoinalgo.com>
 License: MIT
-Project-URL: Homepage, https://github.com/crypto-strategy/crypto-strategy-sdk
-Project-URL: Documentation, https://crypto-strategy-sdk.readthedocs.io
-Project-URL: Repository, https://github.com/crypto-strategy/crypto-strategy-sdk.git
-Project-URL: Issues, https://github.com/crypto-strategy/crypto-strategy-sdk/issues
-Project-URL: Changelog, https://github.com/crypto-strategy/crypto-strategy-sdk/blob/main/CHANGELOG.md
+Project-URL: Homepage, https://github.com/punksapien/xcoinalgo
+Project-URL: Documentation, https://xcoinalgo.com/docs
+Project-URL: Repository, https://github.com/punksapien/xcoinalgo.git
+Project-URL: Issues, https://github.com/punksapien/xcoinalgo/issues
+Project-URL: Changelog, https://github.com/punksapien/xcoinalgo/blob/main/CHANGELOG.md
 Keywords: trading,cryptocurrency,strategy,algorithmic,bitcoin,fintech,quantitative
 Classifier: Development Status :: 4 - Beta
 Classifier: Intended Audience :: Financial and Insurance Industry

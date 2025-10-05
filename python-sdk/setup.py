@@ -8,14 +8,14 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setup(
-    name="coindcx-sdk",
+    name="xcoinalgo-strategy-sdk",
     version="1.0.0",
-    author="CoinDCX Quant Team",
-    author_email="quant@coindcx.com",
-    description="CoinDCX Strategy Development Kit for cryptocurrency trading strategies",
+    author="XCoinAlgo Quant Team",
+    author_email="quant@xcoinalgo.com",
+    description="XCoinAlgo Strategy Development Kit for cryptocurrency trading strategies",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/coindcx/coindcx-sdk",
+    url="https://github.com/punksapien/xcoinalgo",
     packages=find_packages(),
     classifiers=[
         "Development Status :: 4 - Beta",
