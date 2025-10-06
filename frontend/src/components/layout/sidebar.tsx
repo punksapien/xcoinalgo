@@ -10,7 +10,8 @@ import {
   LogOut,
   BarChart3,
   Moon,
-  Sun
+  Sun,
+  TrendingUp
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { useTheme } from '@/lib/theme';
@@ -48,7 +49,7 @@ export function Sidebar() {
       {/* Logo */}
       <div className="flex items-center justify-between h-16 px-4 border-b border-sidebar-border">
         <div className="flex items-center space-x-2">
-          <img src="/icon.png" alt="XcoinAlgo" className="h-8 w-8 object-contain" />
+          <TrendingUp className="h-8 w-8 text-primary" />
           <span className="text-xl font-bold text-sidebar-foreground">XcoinAlgo</span>
         </div>
         <button

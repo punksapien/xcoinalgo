@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Chrome } from 'lucide-react';
+import { Chrome, TrendingUp } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 
 export default function LoginPage() {
@@ -52,7 +52,7 @@ export default function LoginPage() {
         <div className="text-center">
           <div className="flex justify-center">
             <div className="flex items-center space-x-2">
-              <img src="/icon.png" alt="XcoinAlgo" className="h-10 w-10 object-contain" />
+              <TrendingUp className="h-10 w-10 text-blue-600" />
               <span className="text-2xl font-bold text-gray-900">XcoinAlgo</span>
             </div>
           </div>
