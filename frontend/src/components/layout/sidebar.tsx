@@ -14,7 +14,6 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { useTheme } from '@/lib/theme';
-import Image from 'next/image';
 
 const navigation = [
   {
@@ -49,7 +48,7 @@ export function Sidebar() {
       {/* Logo */}
       <div className="flex items-center justify-between h-16 px-4 border-b border-sidebar-border">
         <div className="flex items-center space-x-2">
-          <Image src="/icon.png" alt="XcoinAlgo" width={32} height={32} className="h-8 w-8" />
+          <img src="/icon.png" alt="XcoinAlgo" className="h-8 w-8 object-contain" />
           <span className="text-xl font-bold text-sidebar-foreground">XcoinAlgo</span>
         </div>
         <button
