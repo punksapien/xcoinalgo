@@ -60,3 +60,8 @@ Thumbs.db
 # Temporary files
 *.tmp
 .cache/
+
+# Documentation (exclude README files)
+*.md
+!README.md
+!**/README.md
