@@ -11,7 +11,7 @@ const PORT = 3001;
 
 // Session middleware
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'cryptobot-session-secret-key-2024',
+  secret: process.env.SESSION_SECRET || 'xcoinalgo-session-secret-key-2024',
   resave: false,
   saveUninitialized: false,
   cookie: { secure: false } // Set to true in production with HTTPS
@@ -322,10 +322,10 @@ app.post('/api/test-email', async (req, res) => {
 
     await sendEmail({
       to,
-      subject: 'Test Email from CryptoBot Platform 🚀',
+      subject: 'Test Email from XcoinAlgo Platform 🚀',
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <h1 style="color: #2563eb;">🤖 CryptoBot Platform</h1>
+          <h1 style="color: #2563eb;">XcoinAlgo Platform</h1>
           <h2>Email Service Test</h2>
           <p>This is a test email to verify that your email service is working correctly!</p>
           <p>✅ If you're reading this, your email configuration is working perfectly.</p>

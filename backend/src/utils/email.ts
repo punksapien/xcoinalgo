@@ -58,7 +58,7 @@ export interface EmailOptions {
 export const sendEmail = async (options: EmailOptions): Promise<void> => {
   try {
     const mailOptions = {
-      from: `"CryptoBot Platform" <${process.env.EMAIL_FROM || process.env.EMAIL_USER}>`,
+      from: `"XcoinAlgo Platform" <${process.env.EMAIL_FROM || process.env.EMAIL_USER}>`,
       to: options.to,
       subject: options.subject,
       html: options.html,
@@ -77,11 +77,11 @@ export const sendEmail = async (options: EmailOptions): Promise<void> => {
 export const emailTemplates = {
   welcome: (userEmail: string) => ({
     to: userEmail,
-    subject: 'Welcome to CryptoBot Trading Platform! 🚀',
+    subject: 'Welcome to XcoinAlgo Trading Platform! 🚀',
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
         <div style="text-align: center; margin-bottom: 30px;">
-          <h1 style="color: #2563eb; margin: 0;">🤖 CryptoBot</h1>
+          <h1 style="color: #2563eb; margin: 0;">XcoinAlgo</h1>
           <h2 style="color: #374151; margin: 10px 0;">Welcome to the Trading Platform!</h2>
         </div>
 
@@ -90,7 +90,7 @@ export const emailTemplates = {
             Hi there! 👋
           </p>
           <p style="color: #374151; font-size: 16px; line-height: 1.6;">
-            Welcome to CryptoBot Trading Platform! Your account has been successfully created and you're ready to start your algorithmic trading journey.
+            Welcome to XcoinAlgo Trading Platform! Your account has been successfully created and you're ready to start your algorithmic trading journey.
           </p>
 
           <div style="margin: 25px 0;">
@@ -117,7 +117,7 @@ export const emailTemplates = {
           </p>
           <p style="color: #6b7280; font-size: 12px;">
             Happy Trading! 📈<br>
-            The CryptoBot Team
+            The XcoinAlgo Team
           </p>
         </div>
       </div>
@@ -126,11 +126,11 @@ export const emailTemplates = {
 
   passwordReset: (userEmail: string, resetToken: string) => ({
     to: userEmail,
-    subject: 'Reset Your CryptoBot Password 🔐',
+    subject: 'Reset Your XcoinAlgo Password 🔐',
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
         <div style="text-align: center; margin-bottom: 30px;">
-          <h1 style="color: #2563eb; margin: 0;">🤖 CryptoBot</h1>
+          <h1 style="color: #2563eb; margin: 0;">XcoinAlgo</h1>
           <h2 style="color: #374151; margin: 10px 0;">Password Reset Request</h2>
         </div>
 
@@ -169,7 +169,7 @@ export const emailTemplates = {
           </p>
           <p style="color: #6b7280; font-size: 12px;">
             Stay secure! 🔐<br>
-            The CryptoBot Team
+            The XcoinAlgo Team
           </p>
         </div>
       </div>

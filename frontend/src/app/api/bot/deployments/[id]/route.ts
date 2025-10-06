@@ -4,16 +4,17 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:300
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const authHeader = request.headers.get('authorization');
 
     if (!authHeader) {
       return NextResponse.json({ error: 'Authorization header required' }, { status: 401 });
     }
 
-    const response = await fetch(`${BACKEND_URL}/api/bot/deployments/${params.id}`, {
+    const response = await fetch(`${BACKEND_URL}/api/bot/deployments/${id}`, {
       method: 'DELETE',
       headers: {
         'Authorization': authHeader,
@@ -39,16 +40,17 @@ export async function DELETE(
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const authHeader = request.headers.get('authorization');
 
     if (!authHeader) {
       return NextResponse.json({ error: 'Authorization header required' }, { status: 401 });
     }
 
-    const response = await fetch(`${BACKEND_URL}/api/bot/deployments/${params.id}`, {
+    const response = await fetch(`${BACKEND_URL}/api/bot/deployments/${id}`, {
       headers: {
         'Authorization': authHeader,
         'Content-Type': 'application/json',

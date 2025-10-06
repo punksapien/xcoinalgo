@@ -47,8 +47,8 @@ export function PerformanceCharts({ cumulativePnl, drawdown }: PerformanceCharts
     })
   }
 
-  const CustomTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
+  const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: Array<{ value: number; name: string }>; label?: string }) => {
+    if (active && payload && payload.length && label) {
       const value = payload[0].value
       const formattedDate = new Date(label).toLocaleDateString('en-US', {
         year: 'numeric',

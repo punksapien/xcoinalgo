@@ -4,8 +4,9 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Bot, Chrome } from 'lucide-react';
+import { Chrome } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
+import Image from 'next/image';
 
 export default function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false);
@@ -52,8 +53,8 @@ export default function RegisterPage() {
         <div className="text-center">
           <div className="flex justify-center">
             <div className="flex items-center space-x-2">
-              <Bot className="h-10 w-10 text-blue-600" />
-              <span className="text-2xl font-bold text-gray-900">CryptoBot</span>
+              <Image src="/icon.png" alt="XcoinAlgo" width={40} height={40} className="h-10 w-10" />
+              <span className="text-2xl font-bold text-gray-900">XcoinAlgo</span>
             </div>
           </div>
           <h2 className="mt-6 text-3xl font-extrabold text-gray-900">

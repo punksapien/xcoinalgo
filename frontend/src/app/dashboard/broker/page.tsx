@@ -422,7 +422,7 @@ export default function BrokerSetupPage() {
                                     },
                                     {
                                       step: '2',
-                                      title: 'How to Get Your API Key & Secret for The Cryptobots',
+                                      title: 'How to Get Your API Key & Secret for XcoinAlgo',
                                       content: 'Navigate to the API section and generate new credentials.'
                                     },
                                     {
@@ -442,7 +442,7 @@ export default function BrokerSetupPage() {
                                     },
                                     {
                                       step: '6',
-                                      title: 'Enter the following Label: The Cryptobots',
+                                      title: 'Enter the following Label: XcoinAlgo',
                                       content: 'Use this specific label for identification.'
                                     },
                                     {

@@ -117,7 +117,7 @@ export default function StrategyUploadPage() {
     }
   };
 
-  const updateConfigField = (field: string, value: any) => {
+  const updateConfigField = (field: string, value: string | number | boolean) => {
     try {
       const config = JSON.parse(formData.config);
       config[field] = value;

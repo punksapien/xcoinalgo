@@ -42,7 +42,7 @@ app.use(cors({
 
 // Session middleware for OAuth
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'cryptobot-session-secret-key-2024',
+  secret: process.env.SESSION_SECRET || 'xcoinalgo-session-secret-key-2024',
   resave: false,
   saveUninitialized: false,
   cookie: {

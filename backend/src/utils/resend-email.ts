@@ -13,7 +13,7 @@ export interface EmailOptions {
 export const sendEmail = async (options: EmailOptions): Promise<void> => {
   try {
     const result = await resend.emails.send({
-      from: process.env.EMAIL_FROM || 'CryptoBot Platform <noreply@yourdomain.com>',
+      from: process.env.EMAIL_FROM || 'XcoinAlgo Platform <noreply@yourdomain.com>',
       to: options.to,
       subject: options.subject,
       html: options.html,
@@ -31,21 +31,21 @@ export const sendEmail = async (options: EmailOptions): Promise<void> => {
 export const emailTemplates = {
   welcome: (userEmail: string) => ({
     to: userEmail,
-    subject: 'Welcome to CryptoBot Trading Platform! 🚀',
+    subject: 'Welcome to XcoinAlgo Trading Platform! 🚀',
     html: `
       <!DOCTYPE html>
       <html>
       <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Welcome to CryptoBot</title>
+        <title>Welcome to XcoinAlgo</title>
       </head>
       <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
 
         <!-- Header -->
         <div style="text-align: center; margin-bottom: 40px; padding: 20px 0; border-bottom: 3px solid #2563eb;">
           <h1 style="color: #2563eb; margin: 0; font-size: 32px; font-weight: bold;">
-            🤖 CryptoBot
+            XcoinAlgo
           </h1>
           <p style="color: #6b7280; margin: 5px 0 0 0; font-size: 16px;">
             Algorithmic Trading Platform
@@ -58,7 +58,7 @@ export const emailTemplates = {
             Welcome aboard! 🎉
           </h2>
           <p style="color: #374151; margin: 0 0 20px 0; font-size: 16px;">
-            Your CryptoBot account has been successfully created. You're now ready to explore the world of algorithmic trading with our powerful platform.
+            Your XcoinAlgo account has been successfully created. You're now ready to explore the world of algorithmic trading with our powerful platform.
           </p>
         </div>
 
@@ -126,7 +126,7 @@ export const emailTemplates = {
           </p>
           <p style="margin: 0; font-weight: bold; color: #2563eb;">
             Happy Trading! 📈<br>
-            The CryptoBot Team
+            The XcoinAlgo Team
           </p>
         </div>
 
@@ -137,7 +137,7 @@ export const emailTemplates = {
 
   passwordReset: (userEmail: string, resetToken: string) => ({
     to: userEmail,
-    subject: 'Reset Your CryptoBot Password 🔐',
+    subject: 'Reset Your XcoinAlgo Password 🔐',
     html: `
       <!DOCTYPE html>
       <html>
@@ -151,7 +151,7 @@ export const emailTemplates = {
         <!-- Header -->
         <div style="text-align: center; margin-bottom: 40px; padding: 20px 0; border-bottom: 3px solid #dc2626;">
           <h1 style="color: #dc2626; margin: 0; font-size: 32px; font-weight: bold;">
-            🤖 CryptoBot
+            XcoinAlgo
           </h1>
           <p style="color: #6b7280; margin: 5px 0 0 0; font-size: 16px;">
             Password Reset Request
@@ -165,7 +165,7 @@ export const emailTemplates = {
             <strong style="color: #92400e; font-size: 16px;">Security Alert</strong>
           </div>
           <p style="color: #92400e; margin: 0; font-size: 14px;">
-            A password reset was requested for your CryptoBot account. If this wasn't you, please ignore this email.
+            A password reset was requested for your XcoinAlgo account. If this wasn't you, please ignore this email.
           </p>
         </div>
 
@@ -220,7 +220,7 @@ export const emailTemplates = {
           </p>
           <p style="margin: 0; font-weight: bold; color: #dc2626;">
             Stay Secure! 🔐<br>
-            The CryptoBot Team
+            The XcoinAlgo Team
           </p>
         </div>
 

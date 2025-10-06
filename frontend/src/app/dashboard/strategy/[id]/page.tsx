@@ -235,7 +235,7 @@ export default function StrategyDetailPage() {
 
   useEffect(() => {
     const strategyId = params.id as string
-    const strategyData = (strategyDetailsData as any)[strategyId] as StrategyData
+    const strategyData = (strategyDetailsData as Record<string, StrategyData>)[strategyId] as StrategyData
 
     if (strategyData) {
       setStrategy(strategyData)

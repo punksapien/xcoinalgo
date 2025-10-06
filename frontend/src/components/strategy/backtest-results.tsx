@@ -3,7 +3,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import { TrendingUp, TrendingDown, Target, BarChart3, DollarSign, Clock, AlertTriangle } from 'lucide-react'
+import { TrendingUp, TrendingDown, Target, BarChart3, DollarSign, Clock, AlertTriangle, type LucideIcon } from 'lucide-react'
 
 interface BacktestMetrics {
   winPercentage: number
@@ -74,7 +74,7 @@ export function BacktestResults({ data }: BacktestResultsProps) {
     trend,
     className = ""
   }: {
-    icon: any,
+    icon: LucideIcon,
     title: string,
     value: string,
     subValue?: string,

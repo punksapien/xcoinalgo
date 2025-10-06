@@ -159,7 +159,7 @@ class StrategyService {
         result = new Set(termMatches);
       } else {
         // Intersection with previous results
-        result = new Set([...result].filter(index => termMatches.has(index)));
+        result = new Set([...result].filter((index: number) => termMatches.has(index)));
       }
 
       // Early exit if no matches
@@ -195,8 +195,8 @@ class StrategyService {
 
   private sortStrategies(strategies: Strategy[], sortBy: string = 'deploymentCount', sortOrder: 'asc' | 'desc' = 'desc'): Strategy[] {
     return strategies.sort((a, b) => {
-      let valueA: any;
-      let valueB: any;
+      let valueA: string | number;
+      let valueB: string | number;
 
       switch (sortBy) {
         case 'name':
