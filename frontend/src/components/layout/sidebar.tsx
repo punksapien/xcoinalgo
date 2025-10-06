@@ -39,7 +39,11 @@ const navigation = [
   },
 ];
 
-export function Sidebar() {
+interface SidebarProps {
+  onNavigate?: () => void;
+}
+
+export function Sidebar({ onNavigate }: SidebarProps = {}) {
   const pathname = usePathname();
   const { logout, user } = useAuth();
   const { isDark, toggleTheme } = useTheme();
@@ -73,6 +77,7 @@ export function Sidebar() {
             <Link
               key={item.name}
               href={item.href}
+              onClick={onNavigate}
               className={cn(
                 'sidebar-item flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-all duration-200',
                 isActive

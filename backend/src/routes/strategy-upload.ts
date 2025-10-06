@@ -90,19 +90,39 @@ router.post('/upload', authenticate, upload.single('strategyFile'), async (req: 
       });
     }
 
-    // Store strategy in database
+    // Store strategy code in a version
     const strategy = await prisma.strategy.create({
       data: {
         name,
         code: parsedConfig.code || generateStrategyCode(name),
         description: description || '',
+        detailedDescription: parsedConfig.detailedDescription || '',
         author: parsedConfig.author || 'Unknown',
-        strategyCode,
-        configuration: parsedConfig,
-        userId,
         version: '1.0.0',
-        isActive: true,
-        tags: parsedConfig.tags || [],
+        instrument: parsedConfig.pair || 'B-BTC_USDT',
+        tags: Array.isArray(parsedConfig.tags) ? parsedConfig.tags.join(',') : (parsedConfig.tags || ''),
+        validationStatus: validationResult.isValid ? 'VALID' : 'INVALID',
+        validationErrors: validationResult.errors?.join(', '),
+        lastValidatedAt: new Date(),
+        isActive: false,
+        isApproved: false,
+        winRate: parsedConfig.winRate,
+        riskReward: parsedConfig.riskReward,
+        maxDrawdown: parsedConfig.maxDrawdown,
+        roi: parsedConfig.roi,
+        marginRequired: parsedConfig.marginRequired,
+        supportedPairs: parsedConfig.supportedPairs ? JSON.stringify(parsedConfig.supportedPairs) : null,
+        timeframes: parsedConfig.timeframes ? JSON.stringify(parsedConfig.timeframes) : null,
+        strategyType: parsedConfig.strategyType,
+        versions: {
+          create: {
+            version: '1.0.0',
+            strategyCode,
+            configData: parsedConfig,
+            isValidated: validationResult.isValid,
+            validationErrors: validationResult.errors?.join(', ')
+          }
+        }
       }
     });
 
