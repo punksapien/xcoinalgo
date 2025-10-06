@@ -2,6 +2,7 @@ import { Request } from 'express';
 
 export interface AuthenticatedRequest extends Request {
   userId?: string;
+  file?: any; // Multer file
 }
 
 export interface BrokerCredentials {

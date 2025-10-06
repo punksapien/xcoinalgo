@@ -7,7 +7,7 @@ import dotenv from 'dotenv';
 
 import { authRoutes } from './routes/auth';
 import { brokerRoutes } from './routes/broker';
-// import { strategyUploadRoutes } from './routes/strategy-upload'; // Disabled due to schema compatibility issues
+import { strategyUploadRoutes } from './routes/strategy-upload';
 import { botRoutes } from './routes/bot';
 import { webhookRoutes } from './routes/webhooks';
 import { positionsRoutes } from './routes/positions';
@@ -69,7 +69,7 @@ app.get('/health', (req, res) => {
 // API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/broker', brokerRoutes);
-// app.use('/api/strategy-upload', strategyUploadRoutes); // Disabled due to schema compatibility issues
+app.use('/api/strategy-upload', strategyUploadRoutes);
 app.use('/api/bot', botRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/positions', positionsRoutes);

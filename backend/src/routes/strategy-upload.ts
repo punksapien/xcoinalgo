@@ -170,9 +170,7 @@ router.get('/my-strategies', authenticate, async (req: AuthenticatedRequest, res
     const skip = (Number(page) - 1) * Number(limit);
 
     // Build filter conditions
-    const whereConditions: any = {
-      userId,
-    };
+    const whereConditions: any = {};
 
     if (search) {
       whereConditions.OR = [
@@ -200,7 +198,7 @@ router.get('/my-strategies', authenticate, async (req: AuthenticatedRequest, res
           tags: true,
           createdAt: true,
           updatedAt: true,
-          deployments: {
+          botDeployments: {
             select: {
               id: true,
               status: true,
@@ -220,8 +218,8 @@ router.get('/my-strategies', authenticate, async (req: AuthenticatedRequest, res
     res.json({
       strategies: strategies.map(strategy => ({
         ...strategy,
-        latestDeployment: strategy.deployments[0] || null,
-        deployments: undefined, // Remove from response
+        latestDeployment: strategy.botDeployments[0] || null,
+        botDeployments: undefined, // Remove from response
       })),
       pagination: {
         page: Number(page),
@@ -244,11 +242,15 @@ router.get('/:id', authenticate, async (req: AuthenticatedRequest, res, next) =>
     const strategyId = req.params.id;
 
     const strategy = await prisma.strategy.findFirst({
-      where: { id: strategyId, userId },
+      where: { id: strategyId },
       include: {
-        deployments: {
+        botDeployments: {
           orderBy: { deployedAt: 'desc' },
           take: 5,
+        },
+        versions: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
         }
       }
     });
@@ -275,9 +277,15 @@ router.put('/:id', authenticate, upload.single('strategyFile'), async (req: Auth
     const { name, description, config } = req.body;
     const file = req.file;
 
-    // Check if strategy exists and belongs to user
+    // Check if strategy exists
     const existingStrategy = await prisma.strategy.findFirst({
-      where: { id: strategyId, userId }
+      where: { id: strategyId },
+      include: {
+        versions: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        }
+      }
     });
 
     if (!existingStrategy) {
@@ -291,9 +299,10 @@ router.put('/:id', authenticate, upload.single('strategyFile'), async (req: Auth
     if (name) updateData.name = name;
     if (description !== undefined) updateData.description = description;
 
+    let parsedConfig: any = null;
     if (config) {
       try {
-        updateData.configuration = JSON.parse(config);
+        parsedConfig = JSON.parse(config);
       } catch (error) {
         return res.status(400).json({
           error: 'Invalid configuration JSON'
@@ -306,10 +315,13 @@ router.put('/:id', authenticate, upload.single('strategyFile'), async (req: Auth
       const strategyCode = fs.readFileSync(file.path, 'utf8');
       fs.unlinkSync(file.path); // Clean up
 
+      // Get current config from latest version
+      const currentConfig = existingStrategy.versions[0]?.configData || {};
+
       // Validate new code
       const validationResult = await validateStrategyCode(
         strategyCode,
-        updateData.configuration || existingStrategy.configuration
+        parsedConfig || currentConfig
       );
 
       if (!validationResult.isValid) {
@@ -319,15 +331,39 @@ router.put('/:id', authenticate, upload.single('strategyFile'), async (req: Auth
         });
       }
 
-      updateData.strategyCode = strategyCode;
-      updateData.version = incrementVersion(existingStrategy.version);
+      // Create new version
+      const newVersion = incrementVersion(existingStrategy.version);
+      updateData.version = newVersion;
+
+      // We'll create the version separately after updating strategy
+      updateData.newStrategyCode = strategyCode;
+      updateData.newConfigData = parsedConfig || currentConfig;
     }
+
+    // Extract temporary fields
+    const newStrategyCode = updateData.newStrategyCode;
+    const newConfigData = updateData.newConfigData;
+    delete updateData.newStrategyCode;
+    delete updateData.newConfigData;
 
     // Update strategy
     const updatedStrategy = await prisma.strategy.update({
       where: { id: strategyId },
       data: updateData
     });
+
+    // Create new version if we have new code
+    if (newStrategyCode) {
+      await prisma.strategyVersion.create({
+        data: {
+          strategyId: updatedStrategy.id,
+          version: updatedStrategy.version,
+          strategyCode: newStrategyCode,
+          configData: newConfigData,
+          isValidated: true,
+        }
+      });
+    }
 
     logger.info(`Strategy updated: ${strategyId} by user ${userId}`);
 
@@ -402,22 +438,36 @@ router.post('/:id/deploy', authenticate, async (req: AuthenticatedRequest, res, 
     const strategyId = req.params.id;
     const { auto_start = true } = req.body;
 
-    // Get strategy
+    // Get strategy with latest version
     const strategy = await prisma.strategy.findFirst({
-      where: { id: strategyId, userId, isActive: true }
+      where: { id: strategyId, isApproved: true },
+      include: {
+        versions: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        }
+      }
     });
 
     if (!strategy) {
       return res.status(404).json({
-        error: 'Strategy not found or inactive'
+        error: 'Strategy not found or not approved'
       });
     }
+
+    if (!strategy.versions || strategy.versions.length === 0) {
+      return res.status(400).json({
+        error: 'Strategy has no uploaded code'
+      });
+    }
+
+    const latestVersion = strategy.versions[0];
 
     // Deploy using existing deployment service
     const deploymentRequest = {
       user_id: userId,
-      strategy_code: strategy.strategyCode,
-      config: strategy.configuration,
+      strategy_code: latestVersion.strategyCode,
+      config: latestVersion.configData as any,
       auto_start,
       environment: 'production',
     };
@@ -435,13 +485,11 @@ router.post('/:id/deploy', authenticate, async (req: AuthenticatedRequest, res, 
     const deployment = await prisma.botDeployment.create({
       data: {
         userId,
-        name: strategy.name,
-        code: strategy.code,
-        status: 'DEPLOYING',
-        deployedAt: new Date(),
-        configuration: strategy.configuration,
-        strategyInstanceId: deploymentResult.strategy_id,
         strategyId: strategy.id,
+        status: 'DEPLOYING',
+        leverage: (latestVersion.configData as any)?.leverage || 10,
+        riskPerTrade: (latestVersion.configData as any)?.risk_per_trade || 0.01,
+        marginCurrency: 'USDT',
       },
     });
 
