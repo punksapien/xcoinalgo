@@ -311,7 +311,7 @@ pm2 save       # Save current process list
 
 1. **Always use the SSH key** when connecting to EC2 or GitHub
 2. **Work from the correct directory**: `/Users/macintosh/Developer/coindcx_client/coindcx-trading-platform/`
-3. **Frontend is running in DEV MODE** (not production) due to build issues
+3. **Frontend is running in PRODUCTION MODE** with optimized builds
 4. **SSL is active** - site accessible via HTTPS with auto-renewal enabled
 5. **EC2 is t2.micro** - limited resources, builds may freeze (build locally instead)
 6. **SSL certificate auto-renews** every 90 days via Certbot systemd timer
