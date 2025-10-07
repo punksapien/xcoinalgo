@@ -6,6 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { useAuth } from '@/lib/auth';
+import { StrategyExecutionAPI } from '@/lib/api/strategy-execution-api';
+import { SubscribeModal } from '@/components/strategy/subscribe-modal';
 import {
   Upload,
   Search,
@@ -18,7 +21,8 @@ import {
   FileText,
   Clock,
   User,
-  TrendingUp
+  TrendingUp,
+  Users
 } from "lucide-react";
 
 interface Strategy {
@@ -29,25 +33,38 @@ interface Strategy {
   author: string;
   version: string;
   isActive: boolean;
-  tags: string[];
+  tags: string;
   createdAt: string;
   updatedAt: string;
-  latestDeployment?: {
-    id: string;
-    status: string;
-    deployedAt: string;
+  subscriberCount: number;
+  executionConfig?: {
+    symbol: string;
+    resolution: string;
   };
 }
 
+interface UserSubscription {
+  strategyId: string;
+  isActive: boolean;
+  isPaused: boolean;
+}
+
 export default function StrategiesPage() {
+  const { token } = useAuth();
   const [strategies, setStrategies] = useState<Strategy[]>([]);
+  const [userSubscriptions, setUserSubscriptions] = useState<Map<string, UserSubscription>>(new Map());
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [subscribeModalOpen, setSubscribeModalOpen] = useState(false);
+  const [selectedStrategy, setSelectedStrategy] = useState<Strategy | null>(null);
 
   useEffect(() => {
     fetchStrategies();
-  }, [searchTerm, statusFilter]);
+    if (token) {
+      fetchUserSubscriptions();
+    }
+  }, [searchTerm, statusFilter, token]);
 
   const fetchStrategies = async () => {
     try {
@@ -55,7 +72,11 @@ export default function StrategiesPage() {
       if (searchTerm) params.append('search', searchTerm);
       if (statusFilter !== 'all') params.append('status', statusFilter);
 
-      const response = await fetch(`/api/strategy-upload/my-strategies?${params}`);
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/strategy-upload/my-strategies?${params}`, {
+        headers: token ? {
+          'Authorization': `Bearer ${token}`,
+        } : {},
+      });
       const data = await response.json();
 
       if (response.ok) {
@@ -66,6 +87,37 @@ export default function StrategiesPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchUserSubscriptions = async () => {
+    if (!token) return;
+
+    try {
+      const response = await StrategyExecutionAPI.getUserSubscriptions(token);
+      const subsMap = new Map<string, UserSubscription>();
+
+      response.subscriptions.forEach(sub => {
+        subsMap.set(sub.strategyId, {
+          strategyId: sub.strategyId,
+          isActive: sub.isActive,
+          isPaused: sub.isPaused,
+        });
+      });
+
+      setUserSubscriptions(subsMap);
+    } catch (error) {
+      console.error('Failed to fetch user subscriptions:', error);
+    }
+  };
+
+  const handleSubscribe = (strategy: Strategy) => {
+    setSelectedStrategy(strategy);
+    setSubscribeModalOpen(true);
+  };
+
+  const handleSubscribeSuccess = () => {
+    fetchUserSubscriptions();
+    fetchStrategies();
   };
 
   const getStatusColor = (status: string) => {
@@ -79,10 +131,12 @@ export default function StrategiesPage() {
   };
 
   const filteredStrategies = strategies.filter(strategy => {
+    const tagsString = typeof strategy.tags === 'string' ? strategy.tags : '';
     const matchesSearch = searchTerm === '' ||
       strategy.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      strategy.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      strategy.author.toLowerCase().includes(searchTerm.toLowerCase());
+      (strategy.description && strategy.description.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      strategy.author.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      tagsString.toLowerCase().includes(searchTerm.toLowerCase());
 
     const matchesStatus = statusFilter === 'all' ||
       (statusFilter === 'active' && strategy.isActive) ||
@@ -90,6 +144,10 @@ export default function StrategiesPage() {
 
     return matchesSearch && matchesStatus;
   });
+
+  const getUserSubscriptionStatus = (strategyId: string) => {
+    return userSubscriptions.get(strategyId);
+  };
 
   if (loading) {
     return (
@@ -201,37 +259,44 @@ export default function StrategiesPage() {
                     <Clock className="h-4 w-4 text-gray-500" />
                     <span>v{strategy.version}</span>
                   </div>
+                  <div className="flex items-center gap-2">
+                    <Users className="h-4 w-4 text-gray-500" />
+                    <span>{strategy.subscriberCount || 0} subscriber{strategy.subscriberCount !== 1 ? 's' : ''}</span>
+                  </div>
+                  {strategy.executionConfig && (
+                    <div className="flex items-center gap-2">
+                      <TrendingUp className="h-4 w-4 text-gray-500" />
+                      <span>{strategy.executionConfig.symbol} • {strategy.executionConfig.resolution}m</span>
+                    </div>
+                  )}
                 </div>
 
-                {/* Latest Deployment Status */}
-                {strategy.latestDeployment && (
-                  <div className="p-3 bg-gray-50 rounded-lg">
+                {/* Subscription Status */}
+                {getUserSubscriptionStatus(strategy.id) && (
+                  <div className="p-3 bg-blue-50 rounded-lg">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-medium text-gray-700">Latest Deployment</span>
+                      <span className="text-xs font-medium text-blue-700">Your Subscription</span>
                       <Badge
-                        className={getStatusColor(strategy.latestDeployment.status)}
+                        className={getUserSubscriptionStatus(strategy.id)?.isPaused ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}
                         variant="secondary"
                       >
-                        {strategy.latestDeployment.status}
+                        {getUserSubscriptionStatus(strategy.id)?.isPaused ? 'Paused' : 'Active'}
                       </Badge>
-                    </div>
-                    <div className="text-xs text-gray-600">
-                      {new Date(strategy.latestDeployment.deployedAt).toLocaleDateString()}
                     </div>
                   </div>
                 )}
 
                 {/* Tags */}
-                {strategy.tags.length > 0 && (
+                {strategy.tags && typeof strategy.tags === 'string' && strategy.tags.trim() && (
                   <div className="flex flex-wrap gap-1">
-                    {strategy.tags.slice(0, 3).map((tag, index) => (
+                    {strategy.tags.split(',').slice(0, 3).map((tag, index) => (
                       <Badge key={index} variant="outline" className="text-xs">
-                        {tag}
+                        {tag.trim()}
                       </Badge>
                     ))}
-                    {strategy.tags.length > 3 && (
+                    {strategy.tags.split(',').length > 3 && (
                       <Badge variant="outline" className="text-xs">
-                        +{strategy.tags.length - 3}
+                        +{strategy.tags.split(',').length - 3}
                       </Badge>
                     )}
                   </div>
@@ -239,22 +304,29 @@ export default function StrategiesPage() {
 
                 {/* Actions */}
                 <div className="flex gap-2 pt-2">
-                  <Link href={`/dashboard/strategies/${strategy.id}`} className="flex-1">
+                  <Link href={`/dashboard/strategy/${strategy.id}`} className="flex-1">
                     <Button variant="outline" size="sm" className="w-full">
                       <FileText className="h-4 w-4 mr-1" />
                       View
                     </Button>
                   </Link>
 
-                  {strategy.latestDeployment?.status === 'ACTIVE' ? (
-                    <Button variant="outline" size="sm" className="flex-1">
-                      <Pause className="h-4 w-4 mr-1" />
-                      Stop
-                    </Button>
+                  {getUserSubscriptionStatus(strategy.id) ? (
+                    <Link href="/dashboard/subscriptions" className="flex-1">
+                      <Button variant="outline" size="sm" className="w-full">
+                        <Users className="h-4 w-4 mr-1" />
+                        Manage
+                      </Button>
+                    </Link>
                   ) : (
-                    <Button variant="outline" size="sm" className="flex-1">
-                      <Play className="h-4 w-4 mr-1" />
-                      Deploy
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => handleSubscribe(strategy)}
+                    >
+                      <Plus className="h-4 w-4 mr-1" />
+                      Subscribe
                     </Button>
                   )}
                 </div>
@@ -262,6 +334,17 @@ export default function StrategiesPage() {
             </Card>
           ))}
         </div>
+      )}
+
+      {/* Subscribe Modal */}
+      {selectedStrategy && (
+        <SubscribeModal
+          open={subscribeModalOpen}
+          onOpenChange={setSubscribeModalOpen}
+          strategyId={selectedStrategy.id}
+          strategyName={selectedStrategy.name}
+          onSuccess={handleSubscribeSuccess}
+        />
       )}
 
       {/* Quick Stats */}

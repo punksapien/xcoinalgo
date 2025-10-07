@@ -18,13 +18,13 @@ import { useTheme } from '@/lib/theme';
 
 const navigation = [
   {
-    name: 'Ready Bots',
-    href: '/dashboard',
+    name: 'Strategies',
+    href: '/dashboard/strategies',
     icon: Bot,
   },
   {
-    name: 'Deployed & Live',
-    href: '/dashboard/deployed',
+    name: 'My Subscriptions',
+    href: '/dashboard/subscriptions',
     icon: Activity,
   },
   {

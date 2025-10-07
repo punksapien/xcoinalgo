@@ -45,6 +45,8 @@ ecosystem.config.js
 # IDE
 .vscode/
 .idea/
+.cursor/
+.claude/
 *.swp
 *.swo
 *~
@@ -65,3 +67,4 @@ Thumbs.db
 *.md
 !README.md
 !**/README.md
+deployment_guide.md

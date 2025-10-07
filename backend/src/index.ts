@@ -11,6 +11,7 @@ import { strategyUploadRoutes } from './routes/strategy-upload';
 import { botRoutes } from './routes/bot';
 import { webhookRoutes } from './routes/webhooks';
 import { positionsRoutes } from './routes/positions';
+import { strategyExecutionRoutes } from './routes/strategy-execution';
 import { errorHandler } from './middleware/errorHandler';
 import { startHealthCheckMonitoring } from './services/strategyExecutor';
 import './config/passport'; // Initialize passport configuration
@@ -33,9 +34,28 @@ app.use(helmet({
   },
 }));
 
+// CORS configuration for Vercel frontend
+const allowedOrigins = [
+  process.env.FRONTEND_URL || 'http://localhost:3000',
+  'https://xcoinalgo.com',
+  'https://www.xcoinalgo.com',
+  'http://localhost:3000' // For local development
+];
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-  credentials: true
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps or curl)
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 
 // Session middleware for OAuth
@@ -73,6 +93,7 @@ app.use('/api/strategy-upload', strategyUploadRoutes);
 app.use('/api/bot', botRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/positions', positionsRoutes);
+app.use('/api/strategies', strategyExecutionRoutes);
 
 // Error handling middleware
 app.use(errorHandler);

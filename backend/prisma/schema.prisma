@@ -14,9 +14,10 @@ model User {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  brokerCredentials BrokerCredential[]
-  botDeployments    BotDeployment[]
-  strategyReviews   StrategyReview[]
+  brokerCredentials     BrokerCredential[]
+  botDeployments        BotDeployment[]        // Legacy
+  strategySubscriptions StrategySubscription[] // New multi-tenant
+  strategyReviews       StrategyReview[]
 
   @@map("users")
 }
@@ -31,7 +32,8 @@ model BrokerCredential {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user                  User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  strategySubscriptions StrategySubscription[] // New multi-tenant
 
   @@unique([userId, brokerName])
   @@map("broker_credentials")
@@ -99,11 +101,21 @@ model Strategy {
   updatedAt       DateTime @updatedAt
   lastDeployedAt  DateTime?
 
+  // Multi-tenant execution fields
+  subscriberCount Int      @default(0)
+  isPublic        Boolean  @default(false) // Can others subscribe?
+  isMarketplace   Boolean  @default(false) // Listed in marketplace?
+
+  // Execution parameters (stored as JSON for flexibility)
+  executionConfig Json?    // { pair, resolution, lookbackPeriod, indicators, etc. }
+
   // Relations
   versions        StrategyVersion[]
   backtestResults BacktestResult[]
-  botDeployments  BotDeployment[]
+  botDeployments  BotDeployment[] // Legacy - will migrate to subscriptions
   reviews         StrategyReview[]
+  subscriptions   StrategySubscription[] // New multi-tenant model
+  executions      StrategyExecution[]    // Execution history
 
   @@unique([code, version])
   @@map("strategies")
@@ -273,4 +285,142 @@ model ProcessLog {
 
   @@index([botDeploymentId])
   @@map("process_logs")
+}
+
+// ============================================
+// Multi-Tenant Strategy Execution Models
+// ============================================
+
+model StrategySubscription {
+  id           String   @id @default(cuid())
+  userId       String
+  strategyId   String
+
+  // User-specific execution settings
+  capital          Float
+  riskPerTrade     Float
+  leverage         Int      @default(1)
+  maxPositions     Int      @default(1)
+  maxDailyLoss     Float    @default(0.05)
+
+  // Risk management overrides (optional)
+  slAtrMultiplier  Float?
+  tpAtrMultiplier  Float?
+
+  // Credentials reference (not raw keys)
+  brokerCredentialId String
+
+  // Status and lifecycle
+  isActive         Boolean  @default(true)
+  isPaused         Boolean  @default(false)
+  subscribedAt     DateTime @default(now())
+  pausedAt         DateTime?
+  unsubscribedAt   DateTime?
+
+  // Execution stats
+  totalTrades      Int      @default(0)
+  winningTrades    Int      @default(0)
+  losingTrades     Int      @default(0)
+  totalPnl         Float    @default(0)
+
+  // Relations
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  strategy         Strategy          @relation(fields: [strategyId], references: [id], onDelete: Cascade)
+  brokerCredential BrokerCredential  @relation(fields: [brokerCredentialId], references: [id])
+  trades           Trade[]
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([userId, strategyId])
+  @@index([strategyId, isActive])
+  @@index([userId, isActive])
+  @@map("strategy_subscriptions")
+}
+
+model StrategyExecution {
+  id               String   @id @default(cuid())
+  strategyId       String
+
+  // Execution metadata
+  executedAt       DateTime
+  intervalKey      String   // e.g., "2025-10-06T12:05:00Z"
+  workerId         String   // Which worker executed
+  duration         Float    // Execution time in seconds
+
+  // Market data at execution
+  symbol           String
+  resolution       String
+  closePrice       Float?
+
+  // Signal generated
+  signalType       String?  // "LONG", "SHORT", "CLOSE_LONG", "CLOSE_SHORT", "HOLD"
+  confidence       Float?   // 0.0 to 1.0
+  indicators       Json?    // Snapshot of indicator values
+
+  // Execution result
+  status           String   // "success", "failed", "skipped", "no_signal"
+  subscribersCount Int      @default(0)
+  tradesGenerated  Int      @default(0)
+  error            String?
+
+  // Relations
+  strategy         Strategy @relation(fields: [strategyId], references: [id], onDelete: Cascade)
+
+  createdAt        DateTime @default(now())
+
+  @@index([strategyId, executedAt])
+  @@index([intervalKey])
+  @@map("strategy_executions")
+}
+
+model Trade {
+  id                    String   @id @default(cuid())
+  subscriptionId        String
+  executionId           String?  // Optional link to StrategyExecution
+
+  // Trade details
+  symbol                String
+  side                  String   // "buy", "sell"
+  quantity              Float
+  entryPrice            Float
+
+  // Risk management
+  stopLoss              Float?
+  takeProfit            Float?
+
+  // Order details
+  orderType             String   @default("market") // "market", "limit"
+  orderId               String?  // Exchange order ID
+
+  // Execution result
+  status                String   // "pending", "filled", "partial", "rejected", "cancelled"
+  filledQuantity        Float?
+  filledPrice           Float?
+  filledAt              DateTime?
+
+  // Exit details
+  exitPrice             Float?
+  exitedAt              DateTime?
+  exitReason            String?  // "stop_loss", "take_profit", "signal", "manual"
+
+  // PnL tracking
+  pnl                   Float?
+  pnlPercentage         Float?
+  fees                  Float    @default(0)
+
+  // Metadata
+  signalConfidence      Float?
+  metadata              Json?    // Additional trade data
+
+  // Relations
+  subscription          StrategySubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([subscriptionId, createdAt])
+  @@index([symbol, createdAt])
+  @@index([status])
+  @@map("trades")
 }

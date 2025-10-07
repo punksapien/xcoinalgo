@@ -1,478 +1,590 @@
-# CoinDCX Trading Platform
+# Multi-Tenant Trading Strategy Execution Platform
 
-A comprehensive Docker-based trading platform for automated strategy execution with CoinDCX integration.
+A scalable, multi-tenant platform for deploying and executing algorithmic trading strategies. Multiple users can subscribe to strategies with personalized risk parameters, while strategies execute once per candle and distribute signals to all subscribers.
 
-## 🏗️ Architecture Overview
+---
+
+## 🎯 Key Features
+
+- **Multi-Tenant Architecture**: One strategy execution shared by many subscribers
+- **Real-Time Execution**: Cron-based scheduling at candle boundaries (1m, 5m, 15m, etc.)
+- **Distributed Coordination**: Redis-based locking for multi-worker deployments
+- **Personalized Risk Management**: Each subscriber configures capital, leverage, risk per trade
+- **Python Strategy Support**: Write strategies in Python with pandas, numpy, TA-Lib
+- **Modern Stack**: Next.js 14, TypeScript, Prisma, Redis, Express
+- **Type-Safe**: Full TypeScript coverage across frontend and backend
+
+---
+
+## 📊 System Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     Docker Network                          │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
-│  │   Frontend  │  │   Backend   │  │ Strategy    │         │
-│  │   Next.js   │  │   Node.js   │  │ Runner      │         │
-│  │   :3000     │  │   :3001     │  │ :8002       │         │
-│  └─────────────┘  └─────────────┘  └─────────────┘         │
-│         │                │                 │               │
-│         └────────────────┼─────────────────┘               │
-│                          │                                 │
-│  ┌─────────────┐        │        ┌─────────────────────┐   │
-│  │   Redis     │        │        │  Strategy Container │   │
-│  │   :6379     │        │        │  (Dynamic Python)   │   │
-│  └─────────────┘        │        └─────────────────────┘   │
-│                         │                                  │
-│                         ▼                                  │
-│                 Docker Socket                              │
-│                 (Strategy Management)                      │
-└─────────────────────────────────────────────────────────────┘
+│                    Frontend (Next.js 14)                     │
+│  - Strategy browsing and subscription                        │
+│  - Real-time subscription management                         │
+│  - Performance monitoring dashboard                          │
+└──────────────────────┬──────────────────────────────────────┘
+                       │ REST API
+┌──────────────────────▼──────────────────────────────────────┐
+│                 API Server (Express + TypeScript)            │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │  Strategy Upload API  │  Strategy Execution API        │ │
+│  │  - CRUD operations    │  - Subscribe/pause/cancel      │ │
+│  │  - Version control    │  - Performance tracking        │ │
+│  └────────────────────────────────────────────────────────┘ │
+└───────────────┬──────────────────────┬──────────────────────┘
+                │                      │
+       ┌────────▼────────┐    ┌───────▼────────┐
+       │   Database      │    │     Redis      │
+       │   (Prisma)      │    │  (ioredis)     │
+       │  - Strategies   │    │  - Settings    │
+       │  - Subscriptions│    │  - Registry    │
+       │  - Executions   │    │  - Locks       │
+       │  - Trades       │    │  - Cache       │
+       └─────────────────┘    └────────┬───────┘
+                                       │
+┌──────────────────────────────────────▼──────────────────────┐
+│         Strategy Scheduler (Node-Cron Background Worker)     │
+│  - Monitors active candles (symbol:resolution pairs)         │
+│  - Triggers executions at candle close boundaries            │
+│  - Refreshes registry every 5 minutes                        │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+┌──────────────────────────▼──────────────────────────────────┐
+│         Execution Coordinator (TypeScript Orchestrator)      │
+│  1. Acquires distributed lock (Redis NX/EX)                  │
+│  2. Fetches strategy settings from Redis cache               │
+│  3. Fetches active subscriptions from database               │
+│  4. Spawns Python subprocess for strategy execution          │
+│  5. Processes signals and creates trades for subscribers     │
+│  6. Updates metrics and releases lock                        │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+┌──────────────────────────▼──────────────────────────────────┐
+│         Python Strategy Executor (Subprocess)                │
+│  - Executes user-provided Python strategy code               │
+│  - Returns signals: BUY, SELL, HOLD                          │
+│  - Sandboxed execution environment                           │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-## 📋 Project Structure
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- **Node.js** v18+
+- **Python** 3.8+
+- **Redis** 6.0+
+- **npm** or **yarn**
+
+### Installation
+
+```bash
+# Clone repository
+git clone <repository-url>
+cd coindcx-trading-platform
+
+# Install backend dependencies
+cd backend
+npm install
+
+# Install frontend dependencies
+cd ../frontend
+npm install
+
+# Install Python dependencies
+cd ../backend
+pip3 install pandas numpy requests python-dotenv
+```
+
+### Environment Setup
+
+**Backend (.env):**
+```env
+DATABASE_URL="file:./dev.db"
+JWT_SECRET="your-secret-key-change-in-production"
+REDIS_HOST="localhost"
+REDIS_PORT=6379
+PORT=3001
+NODE_ENV="development"
+```
+
+**Frontend (.env.local):**
+```env
+NEXT_PUBLIC_API_URL="http://localhost:3001"
+```
+
+### Database Setup
+
+```bash
+cd backend
+npx prisma generate
+npx prisma migrate dev --name init
+```
+
+### Running the Application
+
+**Terminal 1: Redis**
+```bash
+redis-server
+```
+
+**Terminal 2: Backend API**
+```bash
+cd backend
+npm run dev
+```
+
+**Terminal 3: Strategy Scheduler**
+```bash
+cd backend
+npm run worker
+```
+
+**Terminal 4: Frontend**
+```bash
+cd frontend
+npm run dev
+```
+
+**Access:**
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:3001
+
+---
+
+## 📚 Documentation
+
+### **Start Here**
+
+1. **[SYSTEM_ARCHITECTURE.md](./SYSTEM_ARCHITECTURE.md)**
+   - High-level system design
+   - Multi-tenant architecture (Pattern A vs Pattern B)
+   - Design patterns (Singleton, Repository, Strategy, etc.)
+   - Technology stack decisions
+   - Execution flow diagrams
+
+2. **[BACKEND_GUIDE.md](./BACKEND_GUIDE.md)**
+   - Project structure and organization
+   - Core services (Registry, Settings, Subscriptions, Coordinator)
+   - API endpoints and routing
+   - Database schema and Prisma ORM
+   - Redis integration patterns
+   - Background workers and cron scheduling
+   - Error handling and testing
+
+3. **[FRONTEND_GUIDE.md](./FRONTEND_GUIDE.md)**
+   - Next.js App Router architecture
+   - React patterns and custom hooks
+   - State management with Zustand
+   - API integration layer
+   - Component architecture
+   - Styling with Tailwind CSS
+   - Type safety with TypeScript
+
+4. **[DEPLOYMENT.md](./DEPLOYMENT.md)**
+   - Development setup
+   - Environment configuration
+   - Production deployment (PM2, Docker)
+   - Monitoring and logging
+   - Troubleshooting guide
+   - Performance optimization
+
+### Documentation Reading Path
+
+**For Understanding the System:**
+```
+SYSTEM_ARCHITECTURE.md → BACKEND_GUIDE.md → FRONTEND_GUIDE.md
+```
+
+**For Deploying:**
+```
+DEPLOYMENT.md → SYSTEM_ARCHITECTURE.md (for troubleshooting)
+```
+
+**For Learning Software Development:**
+```
+All four documents, in order, from top to bottom
+```
+
+---
+
+## 🏗️ Project Structure
 
 ```
 coindcx-trading-platform/
-├── backend/                    # Node.js/Express backend
+├── backend/
+│   ├── prisma/
+│   │   ├── schema.prisma              # Database schema
+│   │   └── migrations/                # Database migrations
+│   ├── routes/
+│   │   ├── auth.ts                    # Authentication endpoints
+│   │   ├── strategy-upload.ts         # Strategy CRUD
+│   │   └── strategy-execution.ts      # Subscription management
+│   ├── services/
+│   │   └── strategy-execution/
+│   │       ├── strategy-registry.ts   # Active candles tracking
+│   │       ├── settings-service.ts    # Redis settings cache
+│   │       ├── subscription-service.ts# Subscription management
+│   │       └── execution-coordinator.ts# Orchestration
+│   ├── workers/
+│   │   └── strategy-scheduler.ts      # Cron scheduler
+│   ├── lib/
+│   │   ├── time-utils.ts              # Time/cron utilities
+│   │   └── auth.ts                    # JWT middleware
+│   └── server.ts                      # Express app
+├── frontend/
 │   ├── src/
-│   │   ├── routes/            # API endpoints
-│   │   ├── services/          # Business logic
-│   │   │   ├── dockerProcessManager.ts  # Docker-based strategy management
-│   │   │   └── processManager.ts        # Legacy PM2 management
-│   │   ├── middleware/        # Express middleware
-│   │   ├── config/           # Configuration files
-│   │   └── utils/            # Utility functions
-│   ├── prisma/               # Database schema & migrations
-│   ├── Dockerfile            # Backend container config
+│   │   ├── app/
+│   │   │   ├── dashboard/
+│   │   │   │   ├── strategies/        # Strategy listing
+│   │   │   │   ├── strategy/[id]/     # Strategy detail
+│   │   │   │   ├── subscriptions/     # User subscriptions
+│   │   │   │   └── subscription/[id]/ # Subscription detail
+│   │   │   ├── login/                 # Login page
+│   │   │   └── register/              # Registration
+│   │   ├── components/
+│   │   │   ├── layout/                # Layout components
+│   │   │   ├── strategy/              # Strategy components
+│   │   │   └── ui/                    # Shadcn/ui components
+│   │   └── lib/
+│   │       ├── api/                   # API clients
+│   │       ├── auth.ts                # Auth state (Zustand)
+│   │       └── theme.ts               # Theme state (Zustand)
 │   └── package.json
-├── frontend/                   # Next.js frontend
-│   ├── src/
-│   │   ├── app/              # Next.js app router
-│   │   ├── components/       # React components
-│   │   └── lib/              # Frontend utilities
-│   ├── Dockerfile            # Frontend container config
-│   └── package.json
-├── strategy-runner/            # Docker strategy execution service
-│   ├── src/
-│   │   ├── strategyManager.ts # Core strategy management
-│   │   ├── index.ts          # Service entry point
-│   │   └── utils/            # Service utilities
-│   ├── Dockerfile            # Strategy runner container
-│   └── package.json
-├── strategy-templates/         # Python strategy framework
-│   ├── base_strategy.py      # Base strategy class
-│   ├── coindcx_client.py     # CoinDCX API client
-│   ├── Dockerfile.strategy   # Strategy container template
-│   ├── requirements.txt      # Python dependencies
-│   └── example_config.json   # Strategy configuration example
-├── docker-compose.yml          # Multi-service orchestration
-├── .env.example               # Environment configuration template
-└── README.md                  # This file
+├── SYSTEM_ARCHITECTURE.md             # System design guide
+├── BACKEND_GUIDE.md                   # Backend implementation
+├── FRONTEND_GUIDE.md                  # Frontend implementation
+├── DEPLOYMENT.md                      # Deployment guide
+└── README.md                          # This file
 ```
 
-## 🚀 Features Implemented
+---
 
-### Core Platform Features
-- **User Authentication**: Google OAuth integration with session management
-- **Strategy Management**: Upload, validate, and deploy Python trading strategies
-- **Bot Deployment**: Deploy strategies as isolated Docker containers
-- **Real-time Monitoring**: Strategy performance tracking and health monitoring
-- **Position Management**: Track and manage trading positions
-- **Order Management**: Execute and monitor trading orders
-- **P&L Tracking**: Profit/Loss analysis and reporting
+## 🔑 Key Concepts
 
-### Docker Infrastructure
-- **Containerized Deployment**: All services run in isolated Docker containers
-- **Microservice Architecture**: Separate services for frontend, backend, and strategy execution
-- **Resource Management**: Configurable CPU and memory limits per strategy
-- **Auto-scaling**: Dynamic strategy container management
-- **Health Monitoring**: Built-in health checks and automatic recovery
+### Multi-Tenant Architecture (Pattern A)
 
-### Strategy Framework
-- **Base Strategy Class**: Comprehensive Python framework for strategy development
-- **CoinDCX Integration**: Direct API integration for trading operations
-- **WebSocket Support**: Real-time market data streaming
-- **Risk Management**: Built-in position sizing and risk controls
-- **Signal Generation**: Automated trading signal processing
+**Traditional Approach (Pattern B):**
+- Each user gets their own bot instance
+- 1000 users = 1000 separate executions per candle
+- Higher resource usage, more complexity
 
-## 🛠️ Technology Stack
+**Our Approach (Pattern A):**
+- Strategy executes once per candle
+- Signals distributed to all active subscribers
+- 1000 users = 1 execution per candle
+- Efficient, scalable, easier to monitor
 
-### Backend
-- **Runtime**: Node.js 18+
-- **Framework**: Express.js 5.x
-- **Database**: SQLite with Prisma ORM
-- **Authentication**: Passport.js with Google OAuth
-- **Container Management**: Dockerode
-- **Process Management**: Docker (replacing PM2)
+### Execution Flow
 
-### Frontend
-- **Framework**: Next.js 14+ (App Router)
-- **Styling**: Tailwind CSS
-- **State Management**: Zustand
-- **Form Handling**: React Hook Form with Zod validation
-- **UI Components**: Custom components with Lucide icons
-
-### Strategy Execution
-- **Language**: Python 3.11+
-- **API Client**: Custom CoinDCX client
-- **Data Processing**: Pandas, NumPy
-- **WebSocket**: Real-time market data
-- **Containerization**: Docker with resource limits
-
-### Infrastructure
-- **Orchestration**: Docker Compose
-- **Networking**: Custom bridge network with subnet isolation
-- **Storage**: Named volumes for persistent data
-- **Monitoring**: Winston logging with health checks
-- **Caching**: Redis for session storage and pub/sub
-
-## 📦 Installation & Setup
-
-### Prerequisites
-- Docker Desktop
-- Node.js 18+
-- Python 3.11+
-- Git
-
-### Environment Configuration
-1. Copy environment template:
-   ```bash
-   cp .env.example .env
-   ```
-
-2. Configure required environment variables:
-   ```bash
-   # Database
-   DATABASE_URL="file:./dev.db"
-
-   # Authentication
-   JWT_SECRET=your-jwt-secret-key-change-in-production
-   SESSION_SECRET=your-session-secret-key-change-in-production
-
-   # Service URLs
-   FRONTEND_URL=http://localhost:3000
-   BACKEND_URL=http://localhost:3001
-   STRATEGY_RUNNER_URL=http://localhost:8002
-
-   # CoinDCX API (Optional - for default credentials)
-   COINDCX_API_KEY=your-coindcx-api-key
-   COINDCX_API_SECRET=your-coindcx-api-secret
-
-   # Google OAuth (Optional)
-   GOOGLE_CLIENT_ID=your-google-client-id
-   GOOGLE_CLIENT_SECRET=your-google-client-secret
-   ```
-
-### Development Setup
-
-#### Option 1: Docker Compose (Recommended)
-```bash
-# Start all services
-docker-compose up --build
-
-# Start specific service
-docker-compose up backend
-
-# View logs
-docker-compose logs -f strategy-runner
+```
+1. Cron triggers at candle close (e.g., 15:05:00 for 5m candle)
+2. Scheduler calls Execution Coordinator
+3. Coordinator acquires distributed lock (Redis)
+4. Fetches strategy settings from Redis cache
+5. Fetches active subscriptions from database
+6. Spawns Python subprocess to execute strategy
+7. Python returns signal (BUY, SELL, HOLD)
+8. For each subscriber:
+   - Calculate position size based on risk params
+   - Create trade record
+   - Send order to broker (future: real API)
+9. Update execution history
+10. Release lock
 ```
 
-#### Option 2: Local Development
-```bash
-# Backend
-cd backend
-npm install
-npm run db:generate
-npm run db:migrate
-npm run dev
+### Distributed Locking
 
-# Frontend
-cd frontend
-npm install
-npm run dev
+Multiple scheduler workers can run simultaneously. Redis locks ensure only one worker executes each strategy per candle:
 
-# Strategy Runner
-cd strategy-runner
-npm install
-npm run build
-npm run dev
-```
+```typescript
+// Acquire lock with 60s TTL
+const lockKey = `execution:sma_crossover:BTCUSDT:5:2024-01-15T15:00:00`;
+const acquired = await redis.set(lockKey, workerId, 'NX', 'EX', 60);
 
-### Production Deployment
-```bash
-# Build and start all services
-docker-compose -f docker-compose.yml up -d
-
-# Monitor services
-docker-compose ps
-docker-compose logs -f
-```
-
-## 🔧 API Documentation
-
-### Backend API (Port 3001)
-
-#### Authentication
-- `GET /api/auth/google` - Initiate Google OAuth
-- `GET /api/auth/google/callback` - OAuth callback
-- `POST /api/auth/logout` - User logout
-- `GET /api/auth/me` - Get current user
-
-#### Bot Management
-- `POST /api/bot/deploy` - Deploy a trading bot
-- `GET /api/bot/deployments` - List user's bot deployments
-- `POST /api/bot/:id/start` - Start a bot
-- `POST /api/bot/:id/stop` - Stop a bot
-- `DELETE /api/bot/:id` - Delete a bot deployment
-
-#### Position Management
-- `GET /api/positions` - Get user positions
-- `GET /api/positions/orders` - Get order history
-- `GET /api/positions/pnl` - Get P&L summary
-
-#### Broker Integration
-- `POST /api/broker/credentials` - Set broker credentials
-- `GET /api/broker/credentials` - Get broker credentials
-- `GET /api/broker/balance` - Get account balance
-
-### Strategy Runner API (Port 8002)
-
-#### Strategy Management
-- `POST /strategies/deploy` - Deploy strategy container
-- `GET /strategies/:id/status` - Get strategy status
-- `POST /strategies/:id/stop` - Stop strategy container
-- `GET /strategies` - List all strategies
-- `POST /strategies/validate` - Validate strategy code
-
-#### Monitoring
-- `GET /health` - Service health check
-- `GET /signals/:id` - Get strategy signals
-- `POST /market-data/feed` - Broadcast market data
-
-## 🐍 Strategy Development
-
-### Base Strategy Class
-```python
-from base_strategy import BaseStrategy
-from typing import Dict, Any
-
-class MyStrategy(BaseStrategy):
-    def __init__(self):
-        super().__init__()
-        self.short_ma_period = 10
-        self.long_ma_period = 20
-
-    def on_market_data(self, market_data: Dict[str, Any]):
-        """Handle incoming market data"""
-        # Implement your strategy logic here
-        pass
-
-    def on_signal(self, signal: Dict[str, Any]):
-        """Handle trading signals"""
-        if signal['action'] == 'BUY':
-            self.place_order('BUY', signal['quantity'])
-        elif signal['action'] == 'SELL':
-            self.place_order('SELL', signal['quantity'])
-
-if __name__ == "__main__":
-    strategy = MyStrategy()
-    strategy.start()
-```
-
-### Strategy Configuration
-```json
-{
-  "name": "My Trading Strategy",
-  "code": "my_strategy",
-  "author": "Your Name",
-  "description": "Strategy description",
-  "leverage": 10,
-  "risk_per_trade": 0.01,
-  "pair": "BTCINR",
-  "margin_currency": "INR",
-  "resolution": "1m",
-  "lookback_period": 100,
-  "sl_atr_multiplier": 2.0,
-  "tp_atr_multiplier": 3.0,
-  "max_positions": 1,
-  "max_daily_loss": 0.05,
-  "custom_params": {
-    "short_ma_period": 10,
-    "long_ma_period": 20
+if (acquired === 'OK') {
+  // This worker got the lock, proceed with execution
+  try {
+    await executeStrategy();
+  } finally {
+    await redis.del(lockKey); // Always release lock
   }
 }
 ```
 
-## 🔒 Security Features
+---
 
-### Authentication & Authorization
-- Google OAuth 2.0 integration
-- JWT token-based authentication
-- Session-based authorization
-- CORS protection with specific origins
+## 🛠️ Tech Stack
 
-### Data Security
-- Environment variable configuration
-- Encrypted broker credentials storage
-- Secure API key management
-- Database connection security
+### Backend
+- **Node.js** + **TypeScript** - Type-safe server-side JavaScript
+- **Express.js** - Minimal web framework
+- **Prisma** - Type-safe ORM with migrations
+- **Redis (ioredis)** - Caching and distributed locking
+- **Node-Cron** - Scheduling at candle boundaries
+- **Python** (subprocess) - Strategy execution runtime
+- **JWT** - Authentication
+- **Bcrypt** - Password hashing
 
-### Container Security
-- Non-root user execution
-- Resource limits enforcement
-- Network isolation
-- Read-only container filesystems where possible
+### Frontend
+- **Next.js 14** - React framework with App Router
+- **TypeScript** - Type safety
+- **Tailwind CSS** - Utility-first styling
+- **Shadcn/ui** - Component library
+- **Zustand** - State management
+- **Lucide React** - Icons
 
-## 📊 Monitoring & Logging
-
-### Health Checks
-- Service-level health endpoints
-- Container health monitoring
-- Automatic restart on failure
-- Resource usage monitoring
-
-### Logging
-- Structured logging with Winston
-- Centralized log collection
-- Error tracking and alerting
-- Performance metrics
-
-### Strategy Monitoring
-- Real-time P&L tracking
-- Trade execution monitoring
-- Risk metric calculation
-- Performance analytics
-
-## 🚀 Deployment
-
-### Docker Services
-```bash
-# Build all services
-docker-compose build
-
-# Start in production mode
-docker-compose up -d
-
-# Scale strategy runners
-docker-compose up --scale strategy-runner=3
-
-# Update a service
-docker-compose up -d --no-deps backend
-```
-
-### Resource Configuration
-Default resource limits per strategy container:
-- **Memory**: 512MB
-- **CPU**: 0.5 cores
-- **Network**: Isolated bridge network
-- **Storage**: Persistent volumes for data
-
-## 🔧 Configuration
-
-### Environment Variables
-See `.env.example` for all available configuration options.
-
-### Docker Compose Override
-Create `docker-compose.override.yml` for local customizations:
-```yaml
-version: '3.8'
-services:
-  backend:
-    environment:
-      - DEBUG=true
-    volumes:
-      - ./backend/src:/app/src
-```
-
-## 📈 Performance Optimization
-
-### Backend Optimizations
-- Database connection pooling
-- Request/response caching
-- API rate limiting
-- Efficient Docker image layers
-
-### Frontend Optimizations
-- Next.js static generation
-- Image optimization
-- Bundle size optimization
-- Performance monitoring
-
-### Strategy Optimizations
-- Efficient market data processing
-- Optimized container startup time
-- Resource-aware scaling
-- Memory usage monitoring
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-#### Docker Connection Issues
-```bash
-# Check Docker daemon
-docker version
-
-# Restart Docker service
-sudo systemctl restart docker
-
-# Check container logs
-docker-compose logs backend
-```
-
-#### Strategy Deployment Failures
-```bash
-# Check strategy runner logs
-docker-compose logs strategy-runner
-
-# Validate strategy code
-curl -X POST http://localhost:8002/strategies/validate \
-  -H "Content-Type: application/json" \
-  -d @strategy-config.json
-```
-
-#### Database Issues
-```bash
-# Reset database
-cd backend
-npm run db:reset
-
-# Run migrations
-npm run db:migrate
-```
-
-## 🤝 Contributing
-
-### Development Workflow
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
-
-### Code Standards
-- TypeScript for backend/frontend
-- Python 3.11+ for strategies
-- ESLint/Prettier for code formatting
-- Conventional commits
-
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🔗 Related Links
-
-- [CoinDCX API Documentation](https://docs.coindcx.com/)
-- [Docker Documentation](https://docs.docker.com/)
-- [Next.js Documentation](https://nextjs.org/docs)
-- [Express.js Documentation](https://expressjs.com/)
-
-## 📞 Support
-
-For support and questions:
-- Create an issue in the repository
-- Check the troubleshooting section
-- Review the API documentation
+### Database & Cache
+- **SQLite** (development) / **PostgreSQL** (production)
+- **Redis** - Settings cache, registry, locks
 
 ---
 
-**Last Updated**: September 28, 2025
-**Version**: 1.0.0
-**Status**: Production Ready ✅
+## 📖 Core Services
+
+### Strategy Registry
+Tracks which strategies need execution for which candles:
+```typescript
+await strategyRegistry.registerStrategy('sma_crossover', 'BTCUSDT', '5');
+const strategies = await strategyRegistry.getStrategiesForCandle('BTCUSDT', '5');
+```
+
+### Settings Service
+Fast access to strategy settings via Redis cache:
+```typescript
+const settings = await settingsService.getStrategySettings('strategy-id');
+// Returns: { strategyCode, executionConfig }
+```
+
+### Subscription Service
+Manage user subscriptions:
+```typescript
+await subscriptionService.subscribeUser(userId, strategyId, {
+  capital: 10000,
+  riskPerTrade: 0.02,
+  leverage: 10,
+  brokerCredentialId: 'broker-id'
+});
+```
+
+### Execution Coordinator
+Orchestrates the entire execution workflow with distributed locking, signal processing, and trade creation.
+
+---
+
+## 🔐 Authentication
+
+JWT-based authentication with bcrypt password hashing:
+
+```typescript
+// Register
+POST /auth/register
+{ "email": "user@example.com", "password": "securepassword" }
+
+// Login
+POST /auth/login
+{ "email": "user@example.com", "password": "securepassword" }
+
+// Returns: { user: {...}, token: "jwt-token" }
+
+// Use token in headers
+Authorization: Bearer <token>
+```
+
+---
+
+## 📊 API Endpoints
+
+### Strategy Upload
+- `GET /api/strategy-upload/strategies` - List strategies
+- `GET /api/strategy-upload/strategies/:id` - Get strategy
+- `POST /api/strategy-upload/strategies` - Create strategy (auth)
+- `PUT /api/strategy-upload/strategies/:id` - Update strategy (auth)
+- `DELETE /api/strategy-upload/strategies/:id` - Delete strategy (auth)
+
+### Strategy Execution
+- `POST /api/strategies/:strategyId/subscribe` - Subscribe to strategy (auth)
+- `GET /api/strategies/subscriptions` - Get user subscriptions (auth)
+- `GET /api/strategies/subscriptions/:id/stats` - Get subscription stats (auth)
+- `POST /api/strategies/subscriptions/:id/pause` - Pause subscription (auth)
+- `POST /api/strategies/subscriptions/:id/resume` - Resume subscription (auth)
+- `DELETE /api/strategies/subscriptions/:id` - Cancel subscription (auth)
+
+---
+
+## 🧪 Example Strategy
+
+```python
+# backend/strategies/sma_crossover.py
+import pandas as pd
+
+def main(data):
+    """
+    Simple Moving Average Crossover Strategy
+
+    Args:
+        data: DataFrame with OHLCV data
+
+    Returns:
+        dict with action (BUY, SELL, HOLD)
+    """
+    # Calculate SMAs
+    data['SMA_20'] = data['close'].rolling(window=20).mean()
+    data['SMA_50'] = data['close'].rolling(window=50).mean()
+
+    # Get latest values
+    current_sma20 = data['SMA_20'].iloc[-1]
+    current_sma50 = data['SMA_50'].iloc[-1]
+    prev_sma20 = data['SMA_20'].iloc[-2]
+    prev_sma50 = data['SMA_50'].iloc[-2]
+
+    # Crossover logic
+    if prev_sma20 <= prev_sma50 and current_sma20 > current_sma50:
+        return {
+            "action": "BUY",
+            "symbol": data['symbol'].iloc[-1],
+            "entryPrice": data['close'].iloc[-1],
+            "stopLoss": data['close'].iloc[-1] * 0.98,
+            "takeProfit": data['close'].iloc[-1] * 1.04
+        }
+    elif prev_sma20 >= prev_sma50 and current_sma20 < current_sma50:
+        return {
+            "action": "SELL",
+            "symbol": data['symbol'].iloc[-1],
+            "entryPrice": data['close'].iloc[-1],
+            "stopLoss": data['close'].iloc[-1] * 1.02,
+            "takeProfit": data['close'].iloc[-1] * 0.96
+        }
+
+    return {"action": "HOLD"}
+```
+
+---
+
+## 🎨 Frontend Features
+
+- **Strategy Browsing** - Search, filter, and view strategies
+- **Subscription Management** - Subscribe with custom risk parameters
+- **Real-Time Updates** - See subscription status and performance
+- **Dark Mode** - Toggle between light and dark themes
+- **Responsive Design** - Works on desktop, tablet, and mobile
+- **Type-Safe** - Full TypeScript coverage with autocomplete
+
+---
+
+## 🚢 Production Deployment
+
+### Using PM2
+```bash
+npm install -g pm2
+pm2 start ecosystem.config.js
+pm2 save
+pm2 startup
+```
+
+### Using Docker
+```bash
+docker-compose up -d
+```
+
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed instructions.
+
+---
+
+## 🐛 Troubleshooting
+
+**Redis connection failed:**
+```bash
+redis-cli ping  # Should return PONG
+redis-server    # Start if not running
+```
+
+**Database locked (SQLite):**
+- Use PostgreSQL in production for concurrent writes
+
+**Port already in use:**
+```bash
+lsof -i :3001   # Find process
+kill -9 <PID>   # Kill process
+```
+
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for more troubleshooting.
+
+---
+
+## 📈 Roadmap
+
+### Phase 1: Core Platform ✅
+- [x] Multi-tenant architecture
+- [x] Strategy upload and management
+- [x] Subscription system with risk parameters
+- [x] Distributed execution coordination
+- [x] Cron-based scheduling
+- [x] Redis caching and locking
+- [x] Frontend integration
+
+### Phase 2: Production Ready (In Progress)
+- [ ] Real broker API integration (CoinDCX, Binance)
+- [ ] Backtest engine
+- [ ] Performance analytics dashboard
+- [ ] Trade history and P&L tracking
+- [ ] Email notifications
+- [ ] Webhook support
+
+### Phase 3: Advanced Features
+- [ ] Strategy marketplace
+- [ ] Paper trading mode
+- [ ] Multi-exchange support
+- [ ] Portfolio management
+- [ ] Risk analytics
+- [ ] Social trading features
+
+---
+
+## 🤝 Contributing
+
+This is a learning project. Feel free to:
+1. Study the code and documentation
+2. Build your own trading platform based on this architecture
+3. Experiment with different strategies
+4. Improve the documentation
+
+---
+
+## 📄 License
+
+MIT License - See LICENSE file for details
+
+---
+
+## 📞 Support
+
+For questions about the architecture or implementation:
+1. Read the documentation guides in order
+2. Check the troubleshooting section in DEPLOYMENT.md
+3. Review the code comments in key files
+
+---
+
+## 🎓 Learning Resources
+
+This project demonstrates:
+- **Multi-tenant SaaS architecture**
+- **Distributed systems** (locking, coordination)
+- **Background job processing** (cron, workers)
+- **API design** (REST, authentication)
+- **Database design** (Prisma, migrations)
+- **Caching strategies** (Redis)
+- **Frontend architecture** (Next.js, React)
+- **State management** (Zustand)
+- **Type safety** (TypeScript)
+
+Read all four documentation files from top to bottom to learn how to build production-grade software.
+
+---
+
+**Built with ❤️ for learning and experimentation**
