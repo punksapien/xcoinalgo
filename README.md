@@ -624,46 +624,6 @@ See [DEPLOYMENT.md](./DEPLOYMENT.md) for more troubleshooting.
 
 ---
 
-## 🤝 Contributing
-
-This is a learning project. Feel free to:
-1. Study the code and documentation
-2. Build your own trading platform based on this architecture
-3. Experiment with different strategies
-4. Improve the documentation
-
----
-
 ## 📄 License
 
 MIT License - See LICENSE file for details
-
----
-
-## 📞 Support
-
-For questions about the architecture or implementation:
-1. Read the documentation guides in order
-2. Check the troubleshooting section in DEPLOYMENT.md
-3. Review the code comments in key files
-
----
-
-## 🎓 Learning Resources
-
-This project demonstrates:
-- **Multi-tenant SaaS architecture**
-- **Distributed systems** (locking, coordination)
-- **Background job processing** (cron, workers)
-- **API design** (REST, authentication)
-- **Database design** (Prisma, migrations)
-- **Caching strategies** (Redis)
-- **Frontend architecture** (Next.js, React)
-- **State management** (Zustand)
-- **Type safety** (TypeScript)
-
-Read all four documentation files from top to bottom to learn how to build production-grade software.
-
----
-
-**Built with ❤️ for learning and experimentation**
