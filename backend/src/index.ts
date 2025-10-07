@@ -12,8 +12,10 @@ import { botRoutes } from './routes/bot';
 import { webhookRoutes } from './routes/webhooks';
 import { positionsRoutes } from './routes/positions';
 import { strategyExecutionRoutes } from './routes/strategy-execution';
+import { backtestRoutes } from './routes/backtest';
 import { errorHandler } from './middleware/errorHandler';
 import { startHealthCheckMonitoring } from './services/strategyExecutor';
+import { startOrderMonitoring } from '../workers/order-monitor';
 import './config/passport'; // Initialize passport configuration
 
 dotenv.config();
@@ -94,6 +96,7 @@ app.use('/api/bot', botRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/positions', positionsRoutes);
 app.use('/api/strategies', strategyExecutionRoutes);
+app.use('/api/backtest', backtestRoutes);
 
 // Error handling middleware
 app.use(errorHandler);
@@ -107,6 +110,10 @@ app.listen(PORT, () => {
   // Start health check monitoring for strategy executor
   startHealthCheckMonitoring();
   console.log(`💓 Strategy executor health monitoring started`);
+
+  // Start order monitoring for SL/TP
+  startOrderMonitoring();
+  console.log(`📊 Order monitoring service started`);
 });
 
 export default app;

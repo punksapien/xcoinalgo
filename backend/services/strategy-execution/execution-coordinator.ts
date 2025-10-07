@@ -17,8 +17,11 @@ import { eventBus } from '../../lib/event-bus'
 import { formatIntervalKey, computeLockTTL, validateExecutionTiming } from '../../lib/time-utils'
 import { spawn } from 'child_process'
 import path from 'path'
+import CoinDCXClient from '../coindcx-client'
+import { Logger } from '../../utils/logger'
 
 const prisma = new PrismaClient()
+const logger = new Logger('ExecutionCoordinator')
 
 interface ExecutionResult {
   success: boolean
@@ -394,8 +397,8 @@ class ExecutionCoordinator {
 
       const { apiKey, apiSecret } = subscription.brokerCredential
 
-      // Place order via exchange API (placeholder - will be implemented separately)
-      const orderPlaced = await this.placeOrder(
+      // Place order via CoinDCX exchange API
+      const orderResult = await this.placeOrderWithTracking(
         strategySettings.symbol,
         signal.signal,
         positionSize,
@@ -406,12 +409,12 @@ class ExecutionCoordinator {
         apiSecret
       )
 
-      if (!orderPlaced) {
-        console.warn(`Failed to place order for subscriber ${subscription.id}`)
+      if (!orderResult.success) {
+        console.warn(`Failed to place order for subscriber ${subscription.id}: ${orderResult.error}`)
         return false
       }
 
-      // Create trade record in database
+      // Create trade record in database with all order IDs
       const trade = await prisma.trade.create({
         data: {
           subscriptionId: subscription.id,
@@ -424,7 +427,21 @@ class ExecutionCoordinator {
           takeProfit: signal.takeProfit,
           status: 'OPEN',
           entryTime: new Date(),
-          metadata: signal.metadata || {},
+          metadata: {
+            ...signal.metadata,
+            orderId: orderResult.orderId,
+            orderStatus: orderResult.orderStatus,
+            stopLossOrderId: orderResult.stopLossOrderId,
+            takeProfitOrderId: orderResult.takeProfitOrderId,
+            allOrderIds: orderResult.allOrderIds,
+            exchange: 'coindcx',
+            riskManagement: {
+              stopLoss: signal.stopLoss,
+              takeProfit: signal.takeProfit,
+              hasStopLoss: !!orderResult.stopLossOrderId,
+              hasTakeProfit: !!orderResult.takeProfitOrderId,
+            },
+          },
         },
       })
 
@@ -482,8 +499,148 @@ class ExecutionCoordinator {
   }
 
   /**
-   * Place order via exchange API
-   * TODO: Implement actual exchange integration
+   * Place order via CoinDCX exchange API with tracking
+   */
+  private async placeOrderWithTracking(
+    symbol: string,
+    side: string,
+    quantity: number,
+    price: number,
+    stopLoss?: number,
+    takeProfit?: number,
+    apiKey?: string,
+    apiSecret?: string
+  ): Promise<{
+    success: boolean
+    orderId?: string
+    orderStatus?: string
+    error?: string
+  }> {
+    if (!apiKey || !apiSecret) {
+      logger.error('Missing broker credentials for order placement')
+      return {
+        success: false,
+        error: 'Missing broker credentials',
+      }
+    }
+
+    try {
+      // Convert symbol format to CoinDCX market format
+      // e.g., "BTC-USDT" -> "BTCINR", "ETH-USDT" -> "ETHINR"
+      const market = CoinDCXClient.normalizeMarket(symbol) + 'INR'
+
+      // Determine order side (buy/sell)
+      const orderSide: 'buy' | 'sell' = side.includes('LONG') || side === 'BUY' ? 'buy' : 'sell'
+
+      logger.info(`Placing ${orderSide} order: ${quantity} ${market} @ ${price}`)
+
+      // Place market order for immediate execution
+      const order = await CoinDCXClient.placeMarketOrder(
+        apiKey,
+        apiSecret,
+        {
+          market,
+          side: orderSide,
+          total_quantity: quantity,
+          client_order_id: `xcoin_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        }
+      )
+
+      if (!order || !order.id) {
+        logger.error('Order placement failed: No order ID returned')
+        return {
+          success: false,
+          error: 'No order ID returned from exchange',
+        }
+      }
+
+      logger.info(`Order placed successfully: ${order.id} (status: ${order.status})`)
+
+      const orderIds = [order.id];
+      let stopLossOrderId: string | undefined;
+      let takeProfitOrderId: string | undefined;
+
+      // Place stop loss order if provided
+      if (stopLoss && stopLoss > 0) {
+        try {
+          logger.info(`Placing stop loss order at ${stopLoss}`);
+
+          const stopLossOrder = await CoinDCXClient.placeLimitOrder(
+            apiKey,
+            apiSecret,
+            {
+              market,
+              side: orderSide === 'buy' ? 'sell' : 'buy', // Opposite side to close position
+              price_per_unit: stopLoss,
+              total_quantity: quantity,
+              client_order_id: `xcoin_sl_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            }
+          );
+
+          if (stopLossOrder && stopLossOrder.id) {
+            stopLossOrderId = stopLossOrder.id;
+            orderIds.push(stopLossOrder.id);
+            logger.info(`Stop loss order placed: ${stopLossOrder.id} at ${stopLoss}`);
+          }
+        } catch (error) {
+          logger.error('Failed to place stop loss order:', error);
+          // Don't fail the main order if SL fails
+        }
+      }
+
+      // Place take profit order if provided
+      if (takeProfit && takeProfit > 0) {
+        try {
+          logger.info(`Placing take profit order at ${takeProfit}`);
+
+          const takeProfitOrder = await CoinDCXClient.placeLimitOrder(
+            apiKey,
+            apiSecret,
+            {
+              market,
+              side: orderSide === 'buy' ? 'sell' : 'buy', // Opposite side to close position
+              price_per_unit: takeProfit,
+              total_quantity: quantity,
+              client_order_id: `xcoin_tp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            }
+          );
+
+          if (takeProfitOrder && takeProfitOrder.id) {
+            takeProfitOrderId = takeProfitOrder.id;
+            orderIds.push(takeProfitOrder.id);
+            logger.info(`Take profit order placed: ${takeProfitOrder.id} at ${takeProfit}`);
+          }
+        } catch (error) {
+          logger.error('Failed to place take profit order:', error);
+          // Don't fail the main order if TP fails
+        }
+      }
+
+      return {
+        success: true,
+        orderId: order.id,
+        orderStatus: order.status,
+        stopLossOrderId,
+        takeProfitOrderId,
+        allOrderIds: orderIds,
+      }
+    } catch (error) {
+      logger.error('Failed to place order:', error)
+      logger.error('Order details:', {
+        symbol,
+        side,
+        quantity,
+        price,
+      })
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      }
+    }
+  }
+
+  /**
+   * Place order via CoinDCX exchange API (legacy method)
    */
   private async placeOrder(
     symbol: string,
@@ -495,18 +652,71 @@ class ExecutionCoordinator {
     apiKey?: string,
     apiSecret?: string
   ): Promise<boolean> {
-    // Placeholder - will be implemented with actual exchange API
-    console.log(
-      `[PLACEHOLDER] Placing order: ${side} ${quantity} ${symbol} @ ${price}`
-    )
+    if (!apiKey || !apiSecret) {
+      logger.error('Missing broker credentials for order placement')
+      return false
+    }
 
-    // TODO: Integrate with exchange API service
-    // - Create market/limit order
-    // - Set stop loss if provided
-    // - Set take profit if provided
-    // - Return order ID and status
+    try {
+      // Convert symbol format to CoinDCX market format
+      // e.g., "BTC-USDT" -> "BTCINR", "ETH-USDT" -> "ETHINR"
+      const market = CoinDCXClient.normalizeMarket(symbol) + 'INR'
 
-    return true
+      // Determine order side (buy/sell)
+      const orderSide: 'buy' | 'sell' = side.includes('LONG') || side === 'BUY' ? 'buy' : 'sell'
+
+      logger.info(`Placing ${orderSide} order: ${quantity} ${market} @ ${price}`)
+
+      // Place market order for immediate execution
+      const order = await CoinDCXClient.placeMarketOrder(
+        apiKey,
+        apiSecret,
+        {
+          market,
+          side: orderSide,
+          total_quantity: quantity,
+          client_order_id: `xcoin_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        }
+      )
+
+      if (!order || !order.id) {
+        logger.error('Order placement failed: No order ID returned')
+        return false
+      }
+
+      logger.info(`Order placed successfully: ${order.id} (status: ${order.status})`)
+
+      // TODO: Set stop loss if provided
+      // CoinDCX doesn't support stop loss in market orders
+      // Would need to place a separate stop-limit order
+      if (stopLoss) {
+        logger.warn(`Stop loss ${stopLoss} not implemented yet - requires separate order`)
+        // Could implement as:
+        // await CoinDCXClient.placeLimitOrder(apiKey, apiSecret, {
+        //   market,
+        //   side: orderSide === 'buy' ? 'sell' : 'buy',
+        //   price_per_unit: stopLoss,
+        //   total_quantity: quantity,
+        // })
+      }
+
+      // TODO: Set take profit if provided
+      // Similar to stop loss, needs separate limit order
+      if (takeProfit) {
+        logger.warn(`Take profit ${takeProfit} not implemented yet - requires separate order`)
+      }
+
+      return true
+    } catch (error) {
+      logger.error('Failed to place order:', error)
+      logger.error('Order details:', {
+        symbol,
+        side,
+        quantity,
+        price,
+      })
+      return false
+    }
   }
 
   /**

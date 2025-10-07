@@ -8,10 +8,15 @@ A scalable, multi-tenant platform for deploying and executing algorithmic tradin
 
 - **Multi-Tenant Architecture**: One strategy execution shared by many subscribers
 - **Real-Time Execution**: Cron-based scheduling at candle boundaries (1m, 5m, 15m, etc.)
+- **Live Trading on CoinDCX**: Real order execution with actual position tracking
+- **Automatic Risk Management**: Stop loss & take profit orders placed automatically
+- **Order Monitoring**: Background service monitors SL/TP triggers every minute
+- **Backtest Engine**: Test strategies on historical data before deploying live
+- **Real Performance Analytics**: Live P&L tracking from actual trades
 - **Distributed Coordination**: Redis-based locking for multi-worker deployments
 - **Personalized Risk Management**: Each subscriber configures capital, leverage, risk per trade
 - **Python Strategy Support**: Write strategies in Python with pandas, numpy, TA-Lib
-- **Modern Stack**: Next.js 14, TypeScript, Prisma, Redis, Express
+- **Modern Stack**: Next.js 15, TypeScript, Prisma, Redis, Express
 - **Type-Safe**: Full TypeScript coverage across frontend and backend
 
 ---
@@ -346,6 +351,24 @@ if (acquired === 'OK') {
 
 ## 📖 Core Services
 
+### CoinDCX Client (`services/coindcx-client.ts`)
+Complete API wrapper for CoinDCX exchange:
+```typescript
+// Account management
+await CoinDCXClient.getBalances(apiKey, apiSecret);
+await CoinDCXClient.getBalance(apiKey, apiSecret, 'BTC');
+
+// Order placement
+await CoinDCXClient.placeMarketOrder(apiKey, apiSecret, {
+  market: 'BTCINR',
+  side: 'buy',
+  total_quantity: 0.001
+});
+
+// Historical data for backtesting
+await CoinDCXClient.getHistoricalCandles('BTCINR', '1h', 500);
+```
+
 ### Strategy Registry
 Tracks which strategies need execution for which candles:
 ```typescript
@@ -372,7 +395,37 @@ await subscriptionService.subscribeUser(userId, strategyId, {
 ```
 
 ### Execution Coordinator
-Orchestrates the entire execution workflow with distributed locking, signal processing, and trade creation.
+Orchestrates the entire execution workflow:
+- Distributed locking (Redis)
+- Signal processing
+- Real order placement on CoinDCX
+- Stop loss & take profit order management
+- Trade record creation
+
+### Backtest Engine (`services/backtest-engine.ts`)
+Simulate strategies on historical data:
+```typescript
+const result = await backtestEngine.runBacktest({
+  strategyId: 'strategy-id',
+  symbol: 'BTCUSDT',
+  resolution: '1h',
+  startDate: new Date('2024-01-01'),
+  endDate: new Date('2024-12-31'),
+  initialCapital: 10000,
+  riskPerTrade: 0.02,
+  leverage: 1,
+  commission: 0.001
+});
+
+// Returns: trades, metrics (Sharpe, drawdown, win rate, etc.)
+```
+
+### Order Manager (`services/order-manager.ts`)
+Monitors and manages stop loss/take profit orders:
+- Checks order status every minute
+- Auto-cancels opposite order when one fills
+- Updates trade records with realized P&L
+- Handles manual trade closures
 
 ---
 
@@ -405,6 +458,24 @@ Authorization: Bearer <token>
 - `POST /api/strategy-upload/strategies` - Create strategy (auth)
 - `PUT /api/strategy-upload/strategies/:id` - Update strategy (auth)
 - `DELETE /api/strategy-upload/strategies/:id` - Delete strategy (auth)
+
+### Broker Integration
+- `POST /api/broker/keys` - Store broker API credentials (encrypted)
+- `POST /api/broker/test` - Test broker connection
+- `GET /api/broker/status` - Get broker connection status
+- `DELETE /api/broker/keys` - Disconnect broker
+
+### Positions & Orders
+- `GET /api/positions/current` - Get real-time positions from CoinDCX
+- `GET /api/positions/orders` - Get order history
+- `GET /api/positions/pnl` - Get P&L summary and metrics
+
+### Backtesting
+- `POST /api/backtest/run` - Run backtest on historical data
+- `GET /api/backtest/history/:strategyId` - Get backtest history
+- `GET /api/backtest/latest/:strategyId` - Get latest backtest result
+- `GET /api/backtest/result/:backtestId` - Get detailed backtest result
+- `DELETE /api/backtest/result/:backtestId` - Delete backtest result
 
 ### Strategy Execution
 - `POST /api/strategies/:strategyId/subscribe` - Subscribe to strategy (auth)
@@ -526,22 +597,30 @@ See [DEPLOYMENT.md](./DEPLOYMENT.md) for more troubleshooting.
 - [x] Cron-based scheduling
 - [x] Redis caching and locking
 - [x] Frontend integration
+- [x] Strategy marketplace UI
+- [x] Broker setup UI (CoinDCX)
+- [x] Positions & Orders dashboard
+- [x] Webhook routes
 
-### Phase 2: Production Ready (In Progress)
-- [ ] Real broker API integration (CoinDCX, Binance)
-- [ ] Backtest engine
-- [ ] Performance analytics dashboard
-- [ ] Trade history and P&L tracking
-- [ ] Email notifications
-- [ ] Webhook support
+### Phase 2: Production Ready ✅ (COMPLETED)
+- [x] Broker API integration UI (CoinDCX) - **LIVE with real data**
+- [x] Complete CoinDCX broker integration - **Real positions, orders, balances**
+- [x] Trade history and P&L tracking - **Real calculations from actual trades**
+- [x] Real performance analytics - **Live metrics from CoinDCX API**
+- [x] Backtest engine service - **Historical simulation with metrics**
+- [x] Stop Loss & Take Profit orders - **Automatic risk management**
+- [x] Order monitoring service - **Background worker tracks SL/TP triggers**
+- [x] Live trading execution - **Strategies place real orders on CoinDCX**
+- [ ] Email notifications (trade alerts, reports) - **Optional**
+- [ ] Paper trading mode - **Optional safety feature**
 
 ### Phase 3: Advanced Features
-- [ ] Strategy marketplace
-- [ ] Paper trading mode
-- [ ] Multi-exchange support
-- [ ] Portfolio management
-- [ ] Risk analytics
+- [ ] Multi-exchange support (Binance, Bybit)
+- [ ] Portfolio management across strategies
+- [ ] Risk analytics dashboard
 - [ ] Social trading features
+- [ ] Advanced backtesting with custom parameters
+- [ ] Strategy versioning and A/B testing
 
 ---
 
