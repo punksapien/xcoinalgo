@@ -152,7 +152,7 @@ class OrderManager {
         data: {
           status: 'CLOSED',
           exitPrice,
-          exitTime: new Date(),
+          exitedAt: new Date(),
           pnl,
           pnlPct: (pnl / (trade.entryPrice * trade.quantity)) * 100,
           metadata: {

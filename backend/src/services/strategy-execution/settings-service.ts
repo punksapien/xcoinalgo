@@ -253,7 +253,7 @@ class SettingsService {
       const lockKey = `lock:strategy:${strategyId}:run:${intervalKey}`
 
       // Atomic set with NX (only if not exists) and EX (expiry)
-      const acquired = await redis.set(lockKey, workerId, 'NX', 'EX', ttlSeconds)
+      const acquired = await redis.set(lockKey, workerId, 'EX', ttlSeconds, 'NX')
 
       if (acquired === 'OK') {
         console.log(

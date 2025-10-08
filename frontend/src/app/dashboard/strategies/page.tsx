@@ -9,6 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { useAuth } from '@/lib/auth';
 import { StrategyExecutionAPI } from '@/lib/api/strategy-execution-api';
 import { SubscribeModal } from '@/components/strategy/subscribe-modal';
+import { showErrorToast, showSuccessToast } from '@/lib/toast-utils';
+import { getUserFriendlyError } from '@/lib/error-messages';
 import {
   Upload,
   Search,
@@ -77,13 +79,17 @@ export default function StrategiesPage() {
           'Authorization': `Bearer ${token}`,
         } : {},
       });
-      const data = await response.json();
 
-      if (response.ok) {
-        setStrategies(data.strategies || []);
+      if (!response.ok) {
+        throw new Error('Failed to fetch strategies');
       }
+
+      const data = await response.json();
+      setStrategies(data.strategies || []);
     } catch (error) {
       console.error('Failed to fetch strategies:', error);
+      const friendlyError = getUserFriendlyError(error as Error);
+      showErrorToast(friendlyError.title, friendlyError.message);
     } finally {
       setLoading(false);
     }
@@ -107,6 +113,8 @@ export default function StrategiesPage() {
       setUserSubscriptions(subsMap);
     } catch (error) {
       console.error('Failed to fetch user subscriptions:', error);
+      const friendlyError = getUserFriendlyError(error as Error);
+      showErrorToast(friendlyError.title, friendlyError.message);
     }
   };
 
@@ -116,6 +124,7 @@ export default function StrategiesPage() {
   };
 
   const handleSubscribeSuccess = () => {
+    showSuccessToast('Successfully Subscribed', 'You can now manage your subscription from the Subscriptions page');
     fetchUserSubscriptions();
     fetchStrategies();
   };

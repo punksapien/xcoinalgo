@@ -64,7 +64,7 @@ interface BacktestResult {
     sharpeRatio: number;
     maxDrawdown: number;
     maxDrawdownPct: number;
-    averageTradeDuration: number; // in minutes
+    avgTradeDuration: number; // in minutes
     totalCommission: number;
     netPnl: number;
     finalCapital: number;
@@ -549,7 +549,7 @@ class BacktestEngine {
       sharpeRatio,
       maxDrawdown,
       maxDrawdownPct,
-      averageTradeDuration,
+      avgTradeDuration,
       totalCommission,
       netPnl,
       finalCapital,
@@ -567,11 +567,24 @@ class BacktestEngine {
       await prisma.backtestResult.create({
         data: {
           strategyId,
-          config: result.config as any,
-          metrics: result.metrics as any,
-          tradeHistory: result.trades as any,
+          version: '1.0.0',
+          startDate: result.config.startDate,
+          endDate: result.config.endDate,
+          initialBalance: result.config.initialCapital,
+          timeframe: result.config.resolution,
+          finalBalance: result.metrics.finalCapital,
+          totalReturn: result.metrics.netPnl,
+          totalReturnPct: result.metrics.totalPnlPct,
+          maxDrawdown: result.metrics.maxDrawdown,
+          sharpeRatio: result.metrics.sharpeRatio,
+          winRate: result.metrics.winRate,
+          profitFactor: result.metrics.profitFactor,
+          totalTrades: result.metrics.totalTrades,
+          avgTrade: result.metrics.totalPnl / result.metrics.totalTrades,
           equityCurve: result.equityCurve as any,
-          executionTime: result.executionTime,
+          tradeHistory: result.trades as any,
+          monthlyReturns: {} as any, // TODO: Calculate monthly returns
+          backtestDuration: result.executionTime / 1000, // Convert ms to seconds
         },
       });
 

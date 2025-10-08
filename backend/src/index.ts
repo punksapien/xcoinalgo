@@ -15,7 +15,7 @@ import { strategyExecutionRoutes } from './routes/strategy-execution';
 import { backtestRoutes } from './routes/backtest';
 import { errorHandler } from './middleware/errorHandler';
 import { startHealthCheckMonitoring } from './services/strategyExecutor';
-import { startOrderMonitoring } from '../workers/order-monitor';
+import { startOrderMonitoring } from './workers/order-monitor';
 import './config/passport'; // Initialize passport configuration
 
 dotenv.config();

@@ -2,9 +2,9 @@ import { Router } from 'express';
 import { authenticate } from '../middleware/auth';
 import prisma from '../utils/database';
 import { AuthenticatedRequest } from '../types';
-import { subscriptionService } from '../../services/strategy-execution/subscription-service';
-import { settingsService } from '../../services/strategy-execution/settings-service';
-import { executionCoordinator } from '../../services/strategy-execution/execution-coordinator';
+import { subscriptionService } from '../services/strategy-execution/subscription-service';
+import { settingsService } from '../services/strategy-execution/settings-service';
+import { executionCoordinator } from '../services/strategy-execution/execution-coordinator';
 
 const router = Router();
 
@@ -162,21 +162,15 @@ router.put('/:id/settings', authenticate, async (req: AuthenticatedRequest, res,
     const userId = req.userId!;
     const updates = req.body;
 
-    // Verify user owns the strategy or is admin
+    // Verify strategy exists and is active
     const strategy = await prisma.strategy.findUnique({
       where: { id: strategyId },
-      select: { userId: true, isActive: true }
+      select: { isActive: true }
     });
 
     if (!strategy) {
       return res.status(404).json({
         error: 'Strategy not found'
-      });
-    }
-
-    if (strategy.userId !== userId) {
-      return res.status(403).json({
-        error: 'Only the strategy owner can update settings'
       });
     }
 

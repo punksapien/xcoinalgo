@@ -9,10 +9,17 @@ import prisma from '../utils/database';
 import { AuthenticatedRequest } from '../types';
 import { BotStatus } from '@prisma/client';
 import { Logger } from '../utils/logger';
-import CoinDCXClient from '../../services/coindcx-client';
+import CoinDCXClient from '../services/coindcx-client';
 
 const logger = new Logger('Positions');
 const router = Router();
+
+// Type for CoinDCX ticker data
+interface CoinDCXTicker {
+  market: string;
+  last_price: number;
+  [key: string]: any;
+}
 
 // Get current active positions from running bots
 router.get('/current', authenticate, async (req: AuthenticatedRequest, res, next) => {
@@ -125,7 +132,7 @@ router.get('/current', authenticate, async (req: AuthenticatedRequest, res, next
         });
 
       // Fetch current prices for all positions
-      const tickers = await CoinDCXClient.getAllTickers();
+      const tickers = await CoinDCXClient.getAllTickers() as CoinDCXTicker[];
       const tickerMap = new Map(tickers.map(t => [t.market, t]));
 
       // Update positions with current prices
@@ -426,7 +433,7 @@ router.get('/pnl', authenticate, async (req: AuthenticatedRequest, res, next) =>
         brokerCredential.apiSecret
       );
 
-      const tickers = await CoinDCXClient.getAllTickers();
+      const tickers = await CoinDCXClient.getAllTickers() as CoinDCXTicker[];
       const tickerMap = new Map(tickers.map(t => [t.market, t]));
 
       let totalUnrealizedPnl = 0;

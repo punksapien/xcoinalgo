@@ -5,7 +5,7 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/auth';
 import { AuthenticatedRequest } from '../types';
-import { backtestEngine } from '../../services/backtest-engine';
+import { backtestEngine } from '../services/backtest-engine';
 import { Logger } from '../utils/logger';
 
 const logger = new Logger('BacktestRoutes');
@@ -53,18 +53,15 @@ router.post('/run', authenticate, async (req: AuthenticatedRequest, res, next) =
       });
     }
 
-    // Check if user owns the strategy
+    // Check if strategy exists (strategies are public/shared)
     const { default: prisma } = await import('../utils/database');
-    const strategy = await prisma.strategy.findFirst({
-      where: {
-        id: strategyId,
-        userId,
-      },
+    const strategy = await prisma.strategy.findUnique({
+      where: { id: strategyId },
     });
 
     if (!strategy) {
       return res.status(404).json({
-        error: 'Strategy not found or access denied',
+        error: 'Strategy not found',
       });
     }
 
@@ -109,18 +106,15 @@ router.get('/history/:strategyId', authenticate, async (req: AuthenticatedReques
     const { strategyId } = req.params;
     const { limit = 10 } = req.query;
 
-    // Check if user owns the strategy
+    // Check if strategy exists (strategies are public/shared)
     const { default: prisma } = await import('../utils/database');
-    const strategy = await prisma.strategy.findFirst({
-      where: {
-        id: strategyId,
-        userId,
-      },
+    const strategy = await prisma.strategy.findUnique({
+      where: { id: strategyId },
     });
 
     if (!strategy) {
       return res.status(404).json({
-        error: 'Strategy not found or access denied',
+        error: 'Strategy not found',
       });
     }
 
@@ -133,9 +127,13 @@ router.get('/history/:strategyId', authenticate, async (req: AuthenticatedReques
       results: results.map(result => ({
         id: result.id,
         createdAt: result.createdAt,
-        config: result.config,
-        metrics: result.metrics,
-        executionTime: result.executionTime,
+        startDate: result.startDate,
+        endDate: result.endDate,
+        totalReturn: result.totalReturn,
+        totalReturnPct: result.totalReturnPct,
+        winRate: result.winRate,
+        totalTrades: result.totalTrades,
+        backtestDuration: result.backtestDuration,
       })),
     });
   } catch (error) {
@@ -159,7 +157,6 @@ router.get('/result/:backtestId', authenticate, async (req: AuthenticatedRequest
       include: {
         strategy: {
           select: {
-            userId: true,
             name: true,
             code: true,
           },
@@ -173,22 +170,25 @@ router.get('/result/:backtestId', authenticate, async (req: AuthenticatedRequest
       });
     }
 
-    // Check if user owns the strategy
-    if (result.strategy.userId !== userId) {
-      return res.status(403).json({
-        error: 'Access denied',
-      });
-    }
-
     res.json({
       result: {
         id: result.id,
         createdAt: result.createdAt,
-        config: result.config,
-        metrics: result.metrics,
+        startDate: result.startDate,
+        endDate: result.endDate,
+        initialBalance: result.initialBalance,
+        finalBalance: result.finalBalance,
+        totalReturn: result.totalReturn,
+        totalReturnPct: result.totalReturnPct,
+        maxDrawdown: result.maxDrawdown,
+        sharpeRatio: result.sharpeRatio,
+        winRate: result.winRate,
+        profitFactor: result.profitFactor,
+        totalTrades: result.totalTrades,
         tradeHistory: result.tradeHistory,
         equityCurve: result.equityCurve,
-        executionTime: result.executionTime,
+        monthlyReturns: result.monthlyReturns,
+        backtestDuration: result.backtestDuration,
         strategy: {
           name: result.strategy.name,
           code: result.strategy.code,
@@ -210,18 +210,15 @@ router.get('/latest/:strategyId', authenticate, async (req: AuthenticatedRequest
     const userId = req.userId!;
     const { strategyId } = req.params;
 
-    // Check if user owns the strategy
+    // Check if strategy exists (strategies are public/shared)
     const { default: prisma } = await import('../utils/database');
-    const strategy = await prisma.strategy.findFirst({
-      where: {
-        id: strategyId,
-        userId,
-      },
+    const strategy = await prisma.strategy.findUnique({
+      where: { id: strategyId },
     });
 
     if (!strategy) {
       return res.status(404).json({
-        error: 'Strategy not found or access denied',
+        error: 'Strategy not found',
       });
     }
 
@@ -238,9 +235,13 @@ router.get('/latest/:strategyId', authenticate, async (req: AuthenticatedRequest
       result: {
         id: result.id,
         createdAt: result.createdAt,
-        config: result.config,
-        metrics: result.metrics,
-        executionTime: result.executionTime,
+        startDate: result.startDate,
+        endDate: result.endDate,
+        totalReturn: result.totalReturn,
+        totalReturnPct: result.totalReturnPct,
+        winRate: result.winRate,
+        totalTrades: result.totalTrades,
+        backtestDuration: result.backtestDuration,
         tradeCount: (result.tradeHistory as any[]).length,
       },
     });
@@ -265,7 +266,7 @@ router.delete('/result/:backtestId', authenticate, async (req: AuthenticatedRequ
       include: {
         strategy: {
           select: {
-            userId: true,
+            name: true,
           },
         },
       },
@@ -274,13 +275,6 @@ router.delete('/result/:backtestId', authenticate, async (req: AuthenticatedRequ
     if (!result) {
       return res.status(404).json({
         error: 'Backtest result not found',
-      });
-    }
-
-    // Check if user owns the strategy
-    if (result.strategy.userId !== userId) {
-      return res.status(403).json({
-        error: 'Access denied',
       });
     }
 

@@ -23,6 +23,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { showSuccessToast, showErrorToast, showInfoToast } from '@/lib/toast-utils';
+import { getUserFriendlyError } from '@/lib/error-messages';
 import {
   Shield,
   Globe,
@@ -154,12 +156,15 @@ export default function BrokerSetupPage() {
         throw new Error(errorData.error || 'Failed to store credentials');
       }
 
+      showSuccessToast('Broker Connected!', 'Your CoinDCX credentials have been connected successfully');
       setSuccess('CoinDCX credentials connected successfully!');
       setApiKey('');
       setSecretKey('');
       handleModalChange(false); // Close modal on success
       await fetchBrokerStatus(); // Refresh status
     } catch (err) {
+      const friendlyError = getUserFriendlyError(err as Error);
+      showErrorToast(friendlyError.title, friendlyError.message);
       setError(err instanceof Error ? err.message : 'Connection failed');
     } finally {
       setLoading(false);
@@ -190,9 +195,12 @@ export default function BrokerSetupPage() {
         throw new Error(errorData.error || 'Connection test failed');
       }
 
+      showSuccessToast('Connection Test Successful!', 'Your CoinDCX credentials are valid and working');
       setSuccess('Connection test successful! ✅');
       setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
+      const friendlyError = getUserFriendlyError(err as Error);
+      showErrorToast(friendlyError.title, friendlyError.message);
       setError(err instanceof Error ? err.message : 'Connection test failed');
     } finally {
       setTesting(false);
@@ -218,9 +226,12 @@ export default function BrokerSetupPage() {
         throw new Error(errorData.error || 'Failed to disconnect');
       }
 
+      showSuccessToast('Broker Disconnected', 'Your CoinDCX credentials have been removed');
       setSuccess('CoinDCX disconnected successfully');
       await fetchBrokerStatus();
     } catch (err) {
+      const friendlyError = getUserFriendlyError(err as Error);
+      showErrorToast(friendlyError.title, friendlyError.message);
       setError(err instanceof Error ? err.message : 'Failed to disconnect');
     } finally {
       setLoading(false);

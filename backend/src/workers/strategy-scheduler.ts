@@ -12,7 +12,7 @@
  *   pm2 start backend/workers/strategy-scheduler.ts --name strategy-scheduler
  */
 
-import cron from 'node-cron';
+import * as cron from 'node-cron';
 import dotenv from 'dotenv';
 import { strategyRegistry } from '../services/strategy-execution/strategy-registry';
 import { executionCoordinator } from '../services/strategy-execution/execution-coordinator';

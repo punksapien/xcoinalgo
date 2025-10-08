@@ -59,6 +59,8 @@ class ExecutionCoordinator {
   ): Promise<ExecutionResult> {
     const startTime = Date.now()
     const actualTime = new Date()
+    let symbol = 'UNKNOWN'
+    let resolution = '1m'
 
     console.log(
       `\n${'='.repeat(80)}\n` +
@@ -79,7 +81,8 @@ class ExecutionCoordinator {
         throw new Error(`Strategy ${strategyId} settings not found`)
       }
 
-      const { symbol, resolution } = strategySettings
+      symbol = strategySettings.symbol
+      resolution = strategySettings.resolution
       const intervalKey = formatIntervalKey(scheduledTime, resolution)
 
       // Acquire distributed lock
@@ -107,9 +110,7 @@ class ExecutionCoordinator {
       // Emit execution start event
       eventBus.emit('strategy.execution.start', {
         strategyId,
-        intervalKey,
-        workerId,
-        scheduledTime: scheduledTime.toISOString(),
+        interval: resolution,
       })
 
       // Get active subscribers
@@ -118,7 +119,7 @@ class ExecutionCoordinator {
       if (subscribers.length === 0) {
         console.log(`No active subscribers for strategy ${strategyId}, skipping execution`)
 
-        await this.logExecution(strategyId, intervalKey, {
+        await this.logExecution(strategyId, symbol, resolution, intervalKey, {
           status: 'SKIPPED',
           subscribersCount: 0,
           tradesGenerated: 0,
@@ -146,7 +147,7 @@ class ExecutionCoordinator {
       if (!pythonResult.success || !pythonResult.signal) {
         console.warn(`Strategy execution failed or returned no signal`)
 
-        await this.logExecution(strategyId, intervalKey, {
+        await this.logExecution(strategyId, symbol, resolution, intervalKey, {
           status: pythonResult.success ? 'NO_SIGNAL' : 'FAILED',
           subscribersCount: subscribers.length,
           tradesGenerated: 0,
@@ -195,7 +196,7 @@ class ExecutionCoordinator {
       console.log(`Signal processed for ${subscribers.length} subscribers, ${tradesGenerated} trades generated`)
 
       // Log execution to database
-      await this.logExecution(strategyId, intervalKey, {
+      await this.logExecution(strategyId, symbol, resolution, intervalKey, {
         status: 'SUCCESS',
         signalType: signal.signal,
         subscribersCount: subscribers.length,
@@ -217,11 +218,9 @@ class ExecutionCoordinator {
       // Emit completion event
       eventBus.emit('strategy.execution.complete', {
         strategyId,
-        intervalKey,
+        interval: resolution,
         success: true,
-        signal: signal.signal,
-        subscribersProcessed: subscribers.length,
-        tradesGenerated,
+        duration: Date.now() - startTime,
       })
 
       console.log(
@@ -247,7 +246,8 @@ class ExecutionCoordinator {
       // Emit error event
       eventBus.emit('strategy.execution.error', {
         strategyId,
-        error: error instanceof Error ? error.message : String(error),
+        interval: resolution,
+        error: error instanceof Error ? error : new Error(String(error)),
       })
 
       return {
@@ -406,7 +406,8 @@ class ExecutionCoordinator {
         signal.stopLoss,
         signal.takeProfit,
         apiKey,
-        apiSecret
+        apiSecret,
+        subscription  // Pass subscription for trading type and leverage
       )
 
       if (!orderResult.success) {
@@ -414,11 +415,10 @@ class ExecutionCoordinator {
         return false
       }
 
-      // Create trade record in database with all order IDs
+      // Create trade record in database with all order IDs and futures fields
       const trade = await prisma.trade.create({
         data: {
           subscriptionId: subscription.id,
-          strategyId: subscription.strategyId,
           symbol: strategySettings.symbol,
           side: signal.signal.includes('LONG') ? 'LONG' : 'SHORT',
           quantity: positionSize,
@@ -426,20 +426,30 @@ class ExecutionCoordinator {
           stopLoss: signal.stopLoss,
           takeProfit: signal.takeProfit,
           status: 'OPEN',
-          entryTime: new Date(),
+          // Futures-specific fields
+          tradingType: subscription.tradingType || 'spot',
+          leverage: subscription.leverage || 1,
+          marginCurrency: subscription.marginCurrency || 'USDT',
+          positionId: orderResult.positionId,
+          liquidationPrice: orderResult.liquidationPrice,
+          orderId: orderResult.orderId,
           metadata: {
             ...signal.metadata,
             orderId: orderResult.orderId,
+            positionId: orderResult.positionId,
             orderStatus: orderResult.orderStatus,
             stopLossOrderId: orderResult.stopLossOrderId,
             takeProfitOrderId: orderResult.takeProfitOrderId,
             allOrderIds: orderResult.allOrderIds,
+            liquidationPrice: orderResult.liquidationPrice,
             exchange: 'coindcx',
+            tradingType: subscription.tradingType || 'spot',
+            leverage: subscription.leverage || 1,
             riskManagement: {
               stopLoss: signal.stopLoss,
               takeProfit: signal.takeProfit,
-              hasStopLoss: !!orderResult.stopLossOrderId,
-              hasTakeProfit: !!orderResult.takeProfitOrderId,
+              hasStopLoss: !!orderResult.stopLossOrderId || !!signal.stopLoss,
+              hasTakeProfit: !!orderResult.takeProfitOrderId || !!signal.takeProfit,
             },
           },
         },
@@ -454,8 +464,7 @@ class ExecutionCoordinator {
       eventBus.emit('trade.created', {
         tradeId: trade.id,
         subscriptionId: subscription.id,
-        strategyId: subscription.strategyId,
-        signal: signal.signal,
+        symbol: strategySettings.symbol,
       })
 
       return true
@@ -500,6 +509,7 @@ class ExecutionCoordinator {
 
   /**
    * Place order via CoinDCX exchange API with tracking
+   * Supports both spot and futures trading
    */
   private async placeOrderWithTracking(
     symbol: string,
@@ -509,11 +519,17 @@ class ExecutionCoordinator {
     stopLoss?: number,
     takeProfit?: number,
     apiKey?: string,
-    apiSecret?: string
+    apiSecret?: string,
+    subscription?: any
   ): Promise<{
     success: boolean
     orderId?: string
+    positionId?: string
     orderStatus?: string
+    stopLossOrderId?: string
+    takeProfitOrderId?: string
+    allOrderIds?: string[]
+    liquidationPrice?: number
     error?: string
   }> {
     if (!apiKey || !apiSecret) {
@@ -525,14 +541,97 @@ class ExecutionCoordinator {
     }
 
     try {
-      // Convert symbol format to CoinDCX market format
-      // e.g., "BTC-USDT" -> "BTCINR", "ETH-USDT" -> "ETHINR"
-      const market = CoinDCXClient.normalizeMarket(symbol) + 'INR'
+      const tradingType = subscription?.tradingType || 'spot';
+      const leverage = subscription?.leverage || 1;
+      const marginCurrency = subscription?.marginCurrency || 'USDT';
+      const marginConversionRate = subscription?.marginConversionRate || 1;
 
       // Determine order side (buy/sell)
-      const orderSide: 'buy' | 'sell' = side.includes('LONG') || side === 'BUY' ? 'buy' : 'sell'
+      const orderSide: 'buy' | 'sell' = side.includes('LONG') || side === 'BUY' ? 'buy' : 'sell';
 
-      logger.info(`Placing ${orderSide} order: ${quantity} ${market} @ ${price}`)
+      logger.info(`Placing ${tradingType} ${orderSide} order: ${quantity} ${symbol} @ ${leverage}x leverage`);
+
+      // FUTURES TRADING
+      if (tradingType === 'futures') {
+        // Fetch instrument details for quantity precision and max leverage
+        const instrument = await CoinDCXClient.getFuturesInstrumentDetails(symbol, marginCurrency);
+        const quantityIncrement = parseFloat(instrument.quantity_increment);
+        const maxAllowedLeverage = instrument.max_leverage;
+
+        // Validate leverage against exchange limits
+        if (leverage > maxAllowedLeverage) {
+          logger.error(
+            `Leverage ${leverage}x exceeds exchange limit of ${maxAllowedLeverage}x for ${symbol}`
+          );
+          return {
+            success: false,
+            error: `Leverage ${leverage}x exceeds exchange limit of ${maxAllowedLeverage}x for this instrument`,
+          };
+        }
+
+        logger.info(`Using ${leverage}x leverage (max allowed: ${maxAllowedLeverage}x)`);
+
+        // Adjust quantity to match instrument precision
+        const adjustedQuantity = Math.floor(quantity / quantityIncrement) * quantityIncrement;
+
+        if (adjustedQuantity <= 0) {
+          logger.error(`Adjusted quantity is zero for ${symbol}. Raw: ${quantity}, Increment: ${quantityIncrement}`);
+          return {
+            success: false,
+            error: 'Calculated quantity is too small for instrument precision',
+          };
+        }
+
+        logger.info(`Adjusted quantity: ${adjustedQuantity} (raw: ${quantity}, increment: ${quantityIncrement})`);
+
+        // Create futures order with leverage and SL/TP built-in
+        const orders = await CoinDCXClient.createFuturesOrder(
+          apiKey,
+          apiSecret,
+          {
+            pair: symbol,
+            side: orderSide,
+            order_type: 'market_order',
+            total_quantity: adjustedQuantity,
+            leverage,
+            stop_loss_price: stopLoss,
+            take_profit_price: takeProfit,
+            margin_currency_short_name: marginCurrency,
+            position_margin_type: subscription?.positionMarginType || 'isolated',
+            client_order_id: `xcoin_fut_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          }
+        );
+
+        if (!orders || orders.length === 0) {
+          logger.error('Futures order placement failed: No orders returned');
+          return {
+            success: false,
+            error: 'No orders returned from exchange',
+          };
+        }
+
+        const primaryOrder = orders[0];
+        logger.info(`Futures order placed: ${primaryOrder.id}`);
+
+        // Fetch position to get position ID and liquidation price
+        const positions = await CoinDCXClient.listFuturesPositions(apiKey, apiSecret, {
+          margin_currency_short_name: [marginCurrency],
+        });
+
+        const position = positions.find(p => p.pair === symbol && p.side === orderSide);
+
+        return {
+          success: true,
+          orderId: primaryOrder.id,
+          positionId: position?.id,
+          orderStatus: primaryOrder.status,
+          liquidationPrice: position?.liquidation_price,
+          allOrderIds: orders.map(o => o.id),
+        };
+      }
+
+      // SPOT TRADING (existing logic)
+      const market = CoinDCXClient.normalizeMarket(symbol) + 'INR';
 
       // Place market order for immediate execution
       const order = await CoinDCXClient.placeMarketOrder(
@@ -544,17 +643,17 @@ class ExecutionCoordinator {
           total_quantity: quantity,
           client_order_id: `xcoin_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         }
-      )
+      );
 
       if (!order || !order.id) {
-        logger.error('Order placement failed: No order ID returned')
+        logger.error('Order placement failed: No order ID returned');
         return {
           success: false,
           error: 'No order ID returned from exchange',
-        }
+        };
       }
 
-      logger.info(`Order placed successfully: ${order.id} (status: ${order.status})`)
+      logger.info(`Order placed successfully: ${order.id} (status: ${order.status})`);
 
       const orderIds = [order.id];
       let stopLossOrderId: string | undefined;
@@ -570,7 +669,7 @@ class ExecutionCoordinator {
             apiSecret,
             {
               market,
-              side: orderSide === 'buy' ? 'sell' : 'buy', // Opposite side to close position
+              side: orderSide === 'buy' ? 'sell' : 'buy',
               price_per_unit: stopLoss,
               total_quantity: quantity,
               client_order_id: `xcoin_sl_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -584,7 +683,6 @@ class ExecutionCoordinator {
           }
         } catch (error) {
           logger.error('Failed to place stop loss order:', error);
-          // Don't fail the main order if SL fails
         }
       }
 
@@ -598,7 +696,7 @@ class ExecutionCoordinator {
             apiSecret,
             {
               market,
-              side: orderSide === 'buy' ? 'sell' : 'buy', // Opposite side to close position
+              side: orderSide === 'buy' ? 'sell' : 'buy',
               price_per_unit: takeProfit,
               total_quantity: quantity,
               client_order_id: `xcoin_tp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -612,7 +710,6 @@ class ExecutionCoordinator {
           }
         } catch (error) {
           logger.error('Failed to place take profit order:', error);
-          // Don't fail the main order if TP fails
         }
       }
 
@@ -623,19 +720,19 @@ class ExecutionCoordinator {
         stopLossOrderId,
         takeProfitOrderId,
         allOrderIds: orderIds,
-      }
+      };
     } catch (error) {
-      logger.error('Failed to place order:', error)
+      logger.error('Failed to place order:', error);
       logger.error('Order details:', {
         symbol,
         side,
         quantity,
         price,
-      })
+      });
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
-      }
+      };
     }
   }
 
@@ -724,6 +821,8 @@ class ExecutionCoordinator {
    */
   private async logExecution(
     strategyId: string,
+    symbol: string,
+    resolution: string,
     intervalKey: string,
     metadata: {
       status: 'SUCCESS' | 'FAILED' | 'SKIPPED' | 'NO_SIGNAL'
@@ -739,13 +838,15 @@ class ExecutionCoordinator {
       await prisma.strategyExecution.create({
         data: {
           strategyId,
+          symbol,
+          resolution,
           intervalKey,
           executedAt: new Date(),
           status: metadata.status,
           signalType: metadata.signalType,
           subscribersCount: metadata.subscribersCount,
           tradesGenerated: metadata.tradesGenerated,
-          durationMs: metadata.duration,
+          duration: metadata.duration / 1000, // Convert ms to seconds
           workerId: metadata.workerId,
           error: metadata.error,
         },
@@ -821,7 +922,7 @@ class ExecutionCoordinator {
         0
       )
       const avgDuration =
-        executions.reduce((sum, e) => sum + e.durationMs, 0) / totalExecutions
+        executions.reduce((sum, e) => sum + e.duration, 0) / totalExecutions
 
       return {
         totalExecutions,

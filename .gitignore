@@ -63,8 +63,9 @@ Thumbs.db
 *.tmp
 .cache/
 
-# Documentation (exclude README files)
-*.md
-!README.md
-!**/README.md
+# Sensitive documentation (contains AWS IPs, keys, credentials)
 deployment_guide.md
+DEPLOYMENT_GUIDE.md
+TESTING_GUIDE.md
+AWS_*.md
+*credentials*.md

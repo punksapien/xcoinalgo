@@ -106,8 +106,20 @@ function getAuthHeaders(token: string): HeadersInit {
 
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Request failed' }));
-    throw new Error(error.error || error.message || 'Request failed');
+    let errorMessage = 'Request failed';
+    try {
+      const errorData = await response.json();
+      errorMessage = errorData.error || errorData.message || errorMessage;
+    } catch {
+      // If JSON parsing fails, use default message
+      errorMessage = `Request failed with status ${response.status}`;
+    }
+
+    // Throw error with status code for better error handling
+    const error: any = new Error(errorMessage);
+    error.status = response.status;
+    error.statusText = response.statusText;
+    throw error;
   }
   return response.json();
 }
@@ -266,6 +278,20 @@ export class StrategyExecutionAPI {
     token: string
   ): Promise<{ strategyId: string; stats: ExecutionStats }> {
     const response = await fetch(`${API_BASE_URL}/api/strategies/${strategyId}/stats`, {
+      method: 'GET',
+      headers: getAuthHeaders(token),
+    });
+
+    return handleResponse(response);
+  }
+
+  /**
+   * Get user's available balance from broker
+   */
+  static async getUserBalance(
+    token: string
+  ): Promise<{ totalAvailable: number; balances: any[]; currency: string }> {
+    const response = await fetch(`${API_BASE_URL}/api/broker/balance`, {
       method: 'GET',
       headers: getAuthHeaders(token),
     });

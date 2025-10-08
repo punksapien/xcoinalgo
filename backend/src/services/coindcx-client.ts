@@ -81,6 +81,60 @@ interface OHLCVCandle {
   volume: number;
 }
 
+interface FuturesInstrument {
+  id: string;
+  pair: string;
+  base_currency_short_name: string;
+  target_currency_short_name: string;
+  margin_currency_short_name: string;
+  quantity_increment: string;
+  price_tick_size: string;
+  max_leverage: number;
+  min_quantity: string;
+  max_quantity: string;
+  status: string;
+}
+
+interface FuturesWallet {
+  id: string;
+  currency_short_name: string;
+  balance: number;
+  locked_balance: number;
+  unrealized_pnl: number;
+}
+
+interface FuturesPosition {
+  id: string;
+  pair: string;
+  side: 'buy' | 'sell';
+  active_pos: number;
+  mark_price: number;
+  entry_price: number;
+  liquidation_price: number;
+  leverage: number;
+  margin: number;
+  unrealized_pnl: number;
+  realized_pnl: number;
+  margin_currency_short_name: string;
+}
+
+interface FuturesOrder {
+  id: string;
+  pair: string;
+  side: 'buy' | 'sell';
+  order_type: string;
+  total_quantity: number;
+  remaining_quantity: number;
+  price: number | null;
+  stop_price: number | null;
+  status: string;
+  leverage: number;
+  take_profit_price: number | null;
+  stop_loss_price: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
 /**
  * Wait for rate limit compliance
  */
@@ -476,6 +530,182 @@ export async function getMarkets(): Promise<Array<{
 }
 
 // =============================================================================
+// FUTURES TRADING
+// =============================================================================
+
+/**
+ * Get futures instrument details including quantity increment
+ */
+export async function getFuturesInstrumentDetails(
+  pair: string,
+  marginCurrencyShortName: string = 'USDT'
+): Promise<FuturesInstrument> {
+  const response = await makePublicRequest<{ instrument: FuturesInstrument }>(
+    `/exchange/v1/derivatives/futures/data/instrument?pair=${pair}&margin_currency_short_name=${marginCurrencyShortName}`
+  );
+
+  logger.info(`Fetched futures instrument details for ${pair}`);
+  return response.instrument;
+}
+
+/**
+ * Get futures wallet balances
+ */
+export async function getFuturesWallets(
+  encryptedApiKey: string,
+  encryptedApiSecret: string
+): Promise<FuturesWallet[]> {
+  const credentials = prepareCredentials(encryptedApiKey, encryptedApiSecret);
+
+  const wallets = await makeAuthenticatedRequest<FuturesWallet[]>(
+    '/exchange/v1/derivatives/futures/wallets',
+    credentials
+  );
+
+  logger.info(`Fetched ${wallets.length} futures wallets`);
+  return wallets;
+}
+
+/**
+ * Create futures order with leverage
+ */
+export async function createFuturesOrder(
+  encryptedApiKey: string,
+  encryptedApiSecret: string,
+  params: {
+    pair: string; // e.g., "B-SOL_USDT", "B-BTC_USDT"
+    side: 'buy' | 'sell';
+    order_type: 'market_order' | 'limit_order' | 'stop_limit';
+    total_quantity: number;
+    leverage: number;
+    price?: number; // Required for limit orders
+    stop_price?: number; // Required for stop_limit
+    take_profit_price?: number; // Optional
+    stop_loss_price?: number; // Optional
+    margin_currency_short_name?: string; // Default: USDT
+    position_margin_type?: 'isolated' | 'cross'; // Default: isolated
+    client_order_id?: string;
+    time_in_force?: 'GTC' | 'IOC' | 'FOK';
+    hidden?: boolean;
+    post_only?: boolean;
+  }
+): Promise<FuturesOrder[]> {
+  const credentials = prepareCredentials(encryptedApiKey, encryptedApiSecret);
+
+  logger.info(
+    `Placing futures ${params.order_type} ${params.side} order: ` +
+    `${params.total_quantity} ${params.pair} @ ${params.leverage}x leverage`
+  );
+
+  const orderPayload: Record<string, any> = {
+    side: params.side,
+    pair: params.pair,
+    order_type: params.order_type,
+    total_quantity: params.total_quantity,
+    leverage: params.leverage,
+    margin_currency_short_name: params.margin_currency_short_name || 'USDT',
+    position_margin_type: params.position_margin_type || 'isolated',
+  };
+
+  // Add optional fields
+  if (params.price) orderPayload.price = params.price;
+  if (params.stop_price) orderPayload.stop_price = params.stop_price;
+  if (params.take_profit_price) orderPayload.take_profit_price = params.take_profit_price;
+  if (params.stop_loss_price) orderPayload.stop_loss_price = params.stop_loss_price;
+  if (params.client_order_id) orderPayload.client_order_id = params.client_order_id;
+  if (params.time_in_force) orderPayload.time_in_force = params.time_in_force;
+  if (params.hidden !== undefined) orderPayload.hidden = params.hidden;
+  if (params.post_only !== undefined) orderPayload.post_only = params.post_only;
+
+  const orders = await makeAuthenticatedRequest<FuturesOrder[]>(
+    '/exchange/v1/derivatives/futures/orders/create',
+    credentials,
+    { order: orderPayload }
+  );
+
+  logger.info(`Futures order(s) created: ${orders.map(o => o.id).join(', ')}`);
+  return orders;
+}
+
+/**
+ * List futures positions
+ */
+export async function listFuturesPositions(
+  encryptedApiKey: string,
+  encryptedApiSecret: string,
+  params?: {
+    page?: number;
+    size?: number;
+    margin_currency_short_name?: string[];
+  }
+): Promise<FuturesPosition[]> {
+  const credentials = prepareCredentials(encryptedApiKey, encryptedApiSecret);
+
+  const payload = {
+    page: params?.page || 1,
+    size: params?.size || 100,
+    margin_currency_short_name: params?.margin_currency_short_name || ['USDT', 'INR'],
+  };
+
+  const positions = await makeAuthenticatedRequest<FuturesPosition[]>(
+    '/exchange/v1/derivatives/futures/positions',
+    credentials,
+    payload
+  );
+
+  logger.info(`Fetched ${positions.length} futures positions`);
+  return positions;
+}
+
+/**
+ * Exit a futures position by position ID
+ */
+export async function exitFuturesPosition(
+  encryptedApiKey: string,
+  encryptedApiSecret: string,
+  positionId: string
+): Promise<{ message: string }> {
+  const credentials = prepareCredentials(encryptedApiKey, encryptedApiSecret);
+
+  logger.info(`Exiting futures position: ${positionId}`);
+
+  const result = await makeAuthenticatedRequest<{ message: string }>(
+    '/exchange/v1/derivatives/futures/positions/exit',
+    credentials,
+    { id: positionId }
+  );
+
+  logger.info(`Position exited: ${positionId}`);
+  return result;
+}
+
+/**
+ * Get futures candlestick data
+ */
+export async function getFuturesCandles(
+  pair: string,
+  fromTimestamp: number,
+  toTimestamp: number,
+  resolution: '1' | '5' | '15' | '30' | '60' | '1D' | '1W' | '1M'
+): Promise<OHLCVCandle[]> {
+  const response = await makePublicRequest<{ data: any[][] }>(
+    `/market_data/candlesticks?pair=${pair}&from=${fromTimestamp}&to=${toTimestamp}&resolution=${resolution}&pcode=f`
+  );
+
+  const candles: OHLCVCandle[] = response.data.map(candle => ({
+    time: candle[0],
+    open: parseFloat(candle[1]),
+    high: parseFloat(candle[2]),
+    low: parseFloat(candle[3]),
+    close: parseFloat(candle[4]),
+    volume: parseFloat(candle[5]),
+  }));
+
+  logger.info(`Fetched ${candles.length} futures candles for ${pair} (${resolution})`);
+  return candles;
+}
+
+// =============================================================================
 // UTILITY FUNCTIONS
 // =============================================================================
 
@@ -522,6 +752,14 @@ export default {
   getOrderBook,
   getHistoricalCandles,
   getMarkets,
+
+  // Futures Trading
+  getFuturesInstrumentDetails,
+  getFuturesWallets,
+  createFuturesOrder,
+  listFuturesPositions,
+  exitFuturesPosition,
+  getFuturesCandles,
 
   // Utilities
   normalizeMarket,

@@ -8,8 +8,11 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/lib/auth';
 import { StrategyExecutionAPI, type SubscriptionConfig } from '@/lib/api/strategy-execution-api';
-import { Loader2, DollarSign, Percent, TrendingUp, Shield, AlertCircle } from 'lucide-react';
+import { Loader2, DollarSign, Percent, TrendingUp, Shield, AlertCircle, CheckCircle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { showSuccessToast, showErrorToast, showWarningToast } from '@/lib/toast-utils';
+import { getUserFriendlyError } from '@/lib/error-messages';
+import { validateSubscriptionConfig, validateSufficientBalance } from '@/lib/validation/subscription-schema';
 
 interface SubscribeModalProps {
   open: boolean;
@@ -36,7 +39,10 @@ export function SubscribeModal({
   const [loading, setLoading] = useState(false);
   const [brokerCredentials, setBrokerCredentials] = useState<BrokerCredential[]>([]);
   const [loadingCredentials, setLoadingCredentials] = useState(true);
+  const [loadingBalance, setLoadingBalance] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+  const [availableBalance, setAvailableBalance] = useState<number | null>(null);
 
   // Form state
   const [capital, setCapital] = useState('10000');
@@ -48,10 +54,11 @@ export function SubscribeModal({
   const [tpAtrMultiplier, setTpAtrMultiplier] = useState('2.5');
   const [selectedCredentialId, setSelectedCredentialId] = useState<string>('');
 
-  // Fetch broker credentials
+  // Fetch broker credentials and balance
   useEffect(() => {
     if (open && token) {
       fetchBrokerCredentials();
+      fetchUserBalance();
     }
   }, [open, token]);
 
@@ -78,27 +85,48 @@ export function SubscribeModal({
       }
     } catch (err) {
       console.error('Failed to fetch broker credentials:', err);
+      const friendlyError = getUserFriendlyError(err as Error);
+      showErrorToast(friendlyError.title, friendlyError.message);
     } finally {
       setLoadingCredentials(false);
     }
   };
 
+  const fetchUserBalance = async () => {
+    if (!token) return;
+
+    try {
+      setLoadingBalance(true);
+      const balanceData = await StrategyExecutionAPI.getUserBalance(token);
+      setAvailableBalance(balanceData.totalAvailable);
+    } catch (err) {
+      console.error('Failed to fetch balance:', err);
+      // Don't show error toast for balance fetch failure, just log it
+      setAvailableBalance(null);
+    } finally {
+      setLoadingBalance(false);
+    }
+  };
+
   const handleSubscribe = async () => {
     if (!token) {
-      setError('Please login to subscribe');
+      showErrorToast('Authentication Required', 'Please login to subscribe to strategies');
       return;
     }
 
     if (!selectedCredentialId) {
       setError('Please select a broker credential');
+      showErrorToast('Broker Required', 'Please select a broker credential to continue');
       return;
     }
 
     try {
       setLoading(true);
       setError(null);
+      setValidationErrors({});
 
-      const config: SubscriptionConfig = {
+      // Prepare config for validation
+      const configData = {
         capital: parseFloat(capital),
         riskPerTrade: parseFloat(riskPerTrade),
         leverage: parseInt(leverage),
@@ -109,13 +137,42 @@ export function SubscribeModal({
         brokerCredentialId: selectedCredentialId,
       };
 
-      await StrategyExecutionAPI.subscribeToStrategy(strategyId, config, token);
+      // Validate configuration
+      const validation = validateSubscriptionConfig(configData);
+      if (!validation.success) {
+        setValidationErrors(validation.errors || {});
+        showErrorToast('Validation Failed', 'Please check your input and fix the errors highlighted below');
+        return;
+      }
+
+      // Check balance if available
+      if (availableBalance !== null) {
+        const balanceCheck = validateSufficientBalance(configData.capital, availableBalance);
+        if (!balanceCheck.isValid) {
+          showErrorToast('Insufficient Balance', balanceCheck.error || 'You don\'t have enough balance');
+          return;
+        }
+        if (balanceCheck.error) {
+          // Show warning but allow to proceed
+          showWarningToast('High Capital Allocation', balanceCheck.error);
+        }
+      }
+
+      // Subscribe to strategy
+      await StrategyExecutionAPI.subscribeToStrategy(strategyId, validation.data!, token);
 
       // Success
+      showSuccessToast(
+        'Successfully Subscribed!',
+        `You are now subscribed to ${strategyName}. Your strategy will start executing automatically.`
+      );
       onOpenChange(false);
       onSuccess?.();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to subscribe');
+      console.error('Subscription failed:', err);
+      const friendlyError = getUserFriendlyError(err as Error);
+      showErrorToast(friendlyError.title, friendlyError.message);
+      setError(friendlyError.message);
     } finally {
       setLoading(false);
     }
@@ -163,6 +220,23 @@ export function SubscribeModal({
           </Alert>
         ) : (
           <div className="space-y-6 py-4">
+            {/* Available Balance Display */}
+            {loadingBalance ? (
+              <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-lg">
+                <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                <span className="text-sm text-blue-700">Fetching your available balance...</span>
+              </div>
+            ) : availableBalance !== null ? (
+              <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4 text-green-600" />
+                  <span className="text-sm font-medium text-green-700">Available Balance:</span>
+                </div>
+                <span className="text-lg font-bold text-green-700">
+                  ${availableBalance.toFixed(2)}
+                </span>
+              </div>
+            ) : null}
             {/* Broker Credential Selection */}
             <div className="space-y-2">
               <Label htmlFor="broker">Broker Credential</Label>
@@ -194,10 +268,18 @@ export function SubscribeModal({
                 value={capital}
                 onChange={(e) => setCapital(e.target.value)}
                 placeholder="10000"
+                className={validationErrors.capital ? 'border-red-500' : ''}
               />
-              <p className="text-sm text-muted-foreground">
-                Amount of capital to allocate to this strategy
-              </p>
+              {validationErrors.capital ? (
+                <p className="text-sm text-red-500 flex items-center gap-1">
+                  <AlertCircle className="h-3 w-3" />
+                  {validationErrors.capital}
+                </p>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Amount of capital to allocate to this strategy (Min: $100)
+                </p>
+              )}
             </div>
 
             {/* Risk Per Trade */}

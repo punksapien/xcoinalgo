@@ -4,6 +4,7 @@ import { authenticate } from '../middleware/auth';
 import { encrypt, decrypt } from '../utils/simple-crypto';
 import prisma from '../utils/database';
 import { AuthenticatedRequest } from '../types';
+import * as CoinDCXClient from '../services/coindcx-client';
 
 const router = Router();
 
@@ -64,6 +65,80 @@ router.post('/keys', authenticate, async (req: AuthenticatedRequest, res, next) 
       }
     });
   } catch (error) {
+    next(error);
+  }
+});
+
+// Get broker credentials list
+router.get('/credentials', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = req.userId!;
+
+    const credentials = await prisma.brokerCredential.findMany({
+      where: {
+        userId,
+      },
+      select: {
+        id: true,
+        brokerName: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    res.json({
+      credentials,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get account balance
+router.get('/balance', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = req.userId!;
+
+    // Get user's broker credentials
+    const brokerCredential = await prisma.brokerCredential.findUnique({
+      where: {
+        userId_brokerName: {
+          userId,
+          brokerName: 'coindcx'
+        }
+      }
+    });
+
+    if (!brokerCredential || !brokerCredential.isActive) {
+      return res.status(404).json({
+        error: 'No active broker credentials found. Please connect your broker first.'
+      });
+    }
+
+    // Decrypt credentials
+    const apiKey = decrypt(brokerCredential.apiKey);
+    const apiSecret = decrypt(brokerCredential.apiSecret);
+
+    // Fetch balances from CoinDCX
+    const balances = await CoinDCXClient.getBalances(apiKey, apiSecret);
+
+    // Calculate total balance in INR
+    // For simplicity, we're summing up INR balance and treating other currencies as-is
+    // In production, you'd want to convert all to INR using current rates
+    const inrBalance = balances.find(b => b.currency.toLowerCase() === 'inr');
+    const totalAvailable = inrBalance ? inrBalance.balance : 0;
+
+    res.json({
+      totalAvailable,
+      balances: balances.filter(b => b.balance > 0).slice(0, 10), // Top 10 non-zero balances
+      currency: 'INR',
+    });
+  } catch (error) {
+    console.error('Failed to fetch balance:', error);
     next(error);
   }
 });
