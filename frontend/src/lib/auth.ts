@@ -30,7 +30,8 @@ export const useAuth = create<AuthState>()(
       }),
       logout: async () => {
         try {
-          await axios.post(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/auth/logout`, {}, {
+          // Use relative path - Next.js rewrites will proxy to backend
+          await axios.post('/api/auth/logout', {}, {
             withCredentials: true
           });
         } catch (error) {
@@ -54,7 +55,8 @@ export const useAuth = create<AuthState>()(
             return;
           }
 
-          const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/auth/me`, {
+          // Use relative path - Next.js rewrites will proxy to backend
+          const response = await axios.get('/api/auth/me', {
             headers: {
               'Authorization': `Bearer ${token}`
             },
