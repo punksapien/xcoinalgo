@@ -183,7 +183,64 @@ router.post('/logout', (req, res) => {
   }
 });
 
-// Google OAuth routes
+// Google OAuth - NextAuth Integration (POST endpoint for frontend)
+router.post('/google', async (req, res, next) => {
+  try {
+    const { email, name, googleId, image } = req.body;
+
+    if (!email || !googleId) {
+      return res.status(400).json({
+        error: 'Email and Google ID are required'
+      });
+    }
+
+    // Check if user exists
+    let user = await prisma.user.findUnique({
+      where: { email },
+      select: {
+        id: true,
+        email: true,
+        createdAt: true
+      }
+    });
+
+    if (!user) {
+      // Create new user from Google data
+      user = await prisma.user.create({
+        data: {
+          email,
+          // For OAuth users, set a random password they can't use
+          password: await bcrypt.hash(Math.random().toString(36), 12),
+        },
+        select: {
+          id: true,
+          email: true,
+          createdAt: true
+        }
+      });
+    }
+
+    // Generate JWT token
+    const token = generateToken({
+      userId: user.id,
+      email: user.email
+    });
+
+    res.json({
+      message: 'Google authentication successful',
+      user: {
+        id: user.id,
+        email: user.email,
+        createdAt: user.createdAt
+      },
+      token
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Google OAuth routes (Passport.js - legacy, keeping for backward compatibility)
 router.get('/google',
   passport.authenticate('google', { scope: ['profile', 'email'] })
 );
