@@ -249,7 +249,7 @@ export default function StrategyDetailPage() {
 
       if (response.ok) {
         const data = await response.json()
-        const subscription = data.subscriptions?.find((sub: any) => sub.strategyId === strategyId)
+        const subscription = data.subscriptions?.find((sub: { strategyId: string; isActive: boolean; isPaused: boolean }) => sub.strategyId === strategyId)
 
         if (subscription) {
           setUserSubscription({

@@ -46,7 +46,7 @@ export interface Subscription {
   strategy?: {
     id: string;
     name: string;
-    executionConfig: any;
+    executionConfig: Record<string, unknown>;
   };
   brokerCredential?: {
     id: string;
@@ -87,7 +87,7 @@ export interface Strategy {
     symbol: string;
     resolution: string;
     lookbackPeriod?: number;
-    [key: string]: any;
+    [key: string]: unknown;
   };
   createdAt: string;
   updatedAt: string;
@@ -116,7 +116,7 @@ async function handleResponse<T>(response: Response): Promise<T> {
     }
 
     // Throw error with status code for better error handling
-    const error: any = new Error(errorMessage);
+    const error = new Error(errorMessage) as Error & { status: number; statusText: string };
     error.status = response.status;
     error.statusText = response.statusText;
     throw error;
@@ -135,7 +135,7 @@ export class StrategyExecutionAPI {
   static async deployStrategy(
     strategyId: string,
     token: string
-  ): Promise<{ message: string; strategy: any }> {
+  ): Promise<{ message: string; strategy: Strategy }> {
     const response = await fetch(`${API_BASE_URL}/api/strategies/deploy`, {
       method: 'POST',
       headers: getAuthHeaders(token),
@@ -152,7 +152,7 @@ export class StrategyExecutionAPI {
     strategyId: string,
     config: SubscriptionConfig,
     token: string
-  ): Promise<{ message: string; subscription: any }> {
+  ): Promise<{ message: string; subscription: Subscription }> {
     const response = await fetch(`${API_BASE_URL}/api/strategies/${strategyId}/subscribe`, {
       method: 'POST',
       headers: getAuthHeaders(token),
@@ -167,9 +167,9 @@ export class StrategyExecutionAPI {
    */
   static async updateStrategySettings(
     strategyId: string,
-    updates: Record<string, any>,
+    updates: Record<string, unknown>,
     token: string
-  ): Promise<{ message: string; settings: any }> {
+  ): Promise<{ message: string; settings: Record<string, unknown> }> {
     const response = await fetch(`${API_BASE_URL}/api/strategies/${strategyId}/settings`, {
       method: 'PUT',
       headers: getAuthHeaders(token),
@@ -247,7 +247,7 @@ export class StrategyExecutionAPI {
   static async getSubscriptionStats(
     subscriptionId: string,
     token: string
-  ): Promise<{ subscription: any; stats: SubscriptionStats }> {
+  ): Promise<{ subscription: Subscription; stats: SubscriptionStats }> {
     const response = await fetch(`${API_BASE_URL}/api/strategies/subscriptions/${subscriptionId}/stats`, {
       method: 'GET',
       headers: getAuthHeaders(token),
@@ -290,7 +290,7 @@ export class StrategyExecutionAPI {
    */
   static async getUserBalance(
     token: string
-  ): Promise<{ totalAvailable: number; balances: any[]; currency: string }> {
+  ): Promise<{ totalAvailable: number; balances: Record<string, unknown>[]; currency: string }> {
     const response = await fetch(`${API_BASE_URL}/api/broker/balance`, {
       method: 'GET',
       headers: getAuthHeaders(token),

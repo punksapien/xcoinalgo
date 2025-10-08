@@ -1,14 +1,14 @@
 'use client';
 
 import { Toaster as Sonner } from 'sonner';
-import { useTheme } from 'next-themes';
+import { useTheme } from '@/lib/theme';
 
 export function Toaster() {
-  const { theme } = useTheme();
+  const { isDark } = useTheme();
 
   return (
     <Sonner
-      theme={theme as 'light' | 'dark' | 'system'}
+      theme={isDark ? 'dark' : 'light'}
       className="toaster group"
       position="top-right"
       richColors

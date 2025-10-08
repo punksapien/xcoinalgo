@@ -5,27 +5,19 @@ import { z } from 'zod';
  */
 export const subscriptionConfigSchema = z.object({
   capital: z
-    .number({
-      required_error: 'Capital is required',
-      invalid_type_error: 'Capital must be a number',
-    })
+    .number({ message: 'Capital must be a number' })
     .min(100, 'Minimum capital requirement is $100')
     .max(1000000, 'Maximum capital allowed is $1,000,000')
     .positive('Capital must be positive'),
 
   riskPerTrade: z
-    .number({
-      required_error: 'Risk per trade is required',
-      invalid_type_error: 'Risk per trade must be a number',
-    })
+    .number({ message: 'Risk per trade must be a number' })
     .min(0.001, 'Minimum risk per trade is 0.1%')
     .max(0.1, 'Maximum risk per trade is 10%')
     .positive('Risk per trade must be positive'),
 
   leverage: z
-    .number({
-      invalid_type_error: 'Leverage must be a number',
-    })
+    .number({ message: 'Leverage must be a number' })
     .int('Leverage must be a whole number')
     .min(1, 'Minimum leverage is 1x')
     .max(100, 'Maximum leverage is 100x')
@@ -33,9 +25,7 @@ export const subscriptionConfigSchema = z.object({
     .default(1),
 
   maxPositions: z
-    .number({
-      invalid_type_error: 'Max positions must be a number',
-    })
+    .number({ message: 'Max positions must be a number' })
     .int('Max positions must be a whole number')
     .min(1, 'At least 1 position is required')
     .max(10, 'Maximum 10 concurrent positions allowed')
@@ -43,34 +33,26 @@ export const subscriptionConfigSchema = z.object({
     .default(1),
 
   maxDailyLoss: z
-    .number({
-      invalid_type_error: 'Max daily loss must be a number',
-    })
+    .number({ message: 'Max daily loss must be a number' })
     .min(0.01, 'Minimum max daily loss is 1%')
     .max(0.2, 'Maximum max daily loss is 20%')
     .optional()
     .default(0.05),
 
   slAtrMultiplier: z
-    .number({
-      invalid_type_error: 'Stop loss ATR multiplier must be a number',
-    })
+    .number({ message: 'Stop loss ATR multiplier must be a number' })
     .min(0.5, 'Minimum stop loss ATR multiplier is 0.5')
     .max(10, 'Maximum stop loss ATR multiplier is 10')
     .optional(),
 
   tpAtrMultiplier: z
-    .number({
-      invalid_type_error: 'Take profit ATR multiplier must be a number',
-    })
+    .number({ message: 'Take profit ATR multiplier must be a number' })
     .min(0.5, 'Minimum take profit ATR multiplier is 0.5')
     .max(10, 'Maximum take profit ATR multiplier is 10')
     .optional(),
 
   brokerCredentialId: z
-    .string({
-      required_error: 'Broker credential is required',
-    })
+    .string({ message: 'Broker credential is required' })
     .min(1, 'Please select a broker credential'),
 });
 
@@ -95,7 +77,7 @@ export function validateSubscriptionConfig(data: unknown): {
 
   // Transform Zod errors into user-friendly format
   const errors: Record<string, string> = {};
-  result.error.errors.forEach((err) => {
+  result.error.issues.forEach((err) => {
     const path = err.path.join('.');
     errors[path] = err.message;
   });

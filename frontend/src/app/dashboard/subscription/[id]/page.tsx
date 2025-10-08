@@ -395,11 +395,11 @@ export default function SubscriptionDetailPage() {
                     <Separator />
                     <div>
                       <p className="text-muted-foreground">Trading Pair</p>
-                      <p className="font-semibold">{subscription.strategy.executionConfig.symbol}</p>
+                      <p className="font-semibold">{String(subscription.strategy.executionConfig.symbol)}</p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Resolution</p>
-                      <p className="font-semibold">{subscription.strategy.executionConfig.resolution} minutes</p>
+                      <p className="font-semibold">{String(subscription.strategy.executionConfig.resolution)} minutes</p>
                     </div>
                   </>
                 )}

@@ -377,7 +377,7 @@ export default function StrategiesPage() {
                 <Play className="h-5 w-5 text-green-500" />
                 <div>
                   <div className="text-2xl font-bold">
-                    {strategies.filter(s => s.latestDeployment?.status === 'ACTIVE').length}
+                    {Array.from(userSubscriptions.values()).filter(sub => sub.isActive && !sub.isPaused).length}
                   </div>
                   <div className="text-sm text-gray-600">Active Deployments</div>
                 </div>
