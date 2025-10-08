@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { signIn } from 'next-auth/react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Chrome, TrendingUp } from 'lucide-react';
@@ -30,8 +31,11 @@ export default function RegisterPage() {
   const handleGoogleSignup = async () => {
     try {
       setIsLoading(true);
-      // Redirect to Google OAuth - Next.js rewrites will proxy to backend
-      window.location.href = '/api/auth/google';
+      // Use NextAuth signIn - handles OAuth flow from frontend domain
+      await signIn('google', {
+        callbackUrl: '/dashboard',
+        redirect: true
+      });
     } catch (error) {
       console.error('Google signup error:', error);
       setIsLoading(false);
