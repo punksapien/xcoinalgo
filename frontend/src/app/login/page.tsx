@@ -30,8 +30,8 @@ export default function LoginPage() {
   const handleGoogleLogin = async () => {
     try {
       setIsLoading(true);
-      // Redirect to Google OAuth
-      window.location.href = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/auth/google`;
+      // Redirect to Google OAuth - Next.js rewrites will proxy to backend
+      window.location.href = '/api/auth/google';
     } catch (error) {
       console.error('Google login error:', error);
       setIsLoading(false);
