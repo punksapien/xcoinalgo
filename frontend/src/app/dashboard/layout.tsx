@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import { Sidebar } from '@/components/layout/sidebar';
 import { useAuth } from '@/lib/auth';
 import { Menu, X } from 'lucide-react';
@@ -13,23 +14,28 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const { user, isAuthenticated } = useAuth();
+  const { data: session, status: sessionStatus } = useSession();
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
 
   useEffect(() => {
-    // Check auth status on mount
+    // Check auth status on mount - allow time for AuthSyncManager to sync
     const timer = setTimeout(() => {
-      if (!isAuthenticated && !user) {
+      // Check both NextAuth session and Zustand store
+      const hasNextAuthSession = sessionStatus === 'authenticated' && session?.user;
+      const hasZustandAuth = isAuthenticated && user;
+
+      if (!hasNextAuthSession && !hasZustandAuth) {
         router.replace('/login');
       }
       setIsChecking(false);
-    }, 100);
+    }, 500); // Increased timeout to allow auth sync to complete
 
     return () => clearTimeout(timer);
-  }, [user, isAuthenticated, router]);
+  }, [user, isAuthenticated, session, sessionStatus, router]);
 
-  if (isChecking) {
+  if (isChecking || sessionStatus === 'loading') {
     return (
       <div className="flex items-center justify-center h-screen bg-background">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
@@ -37,7 +43,11 @@ export default function DashboardLayout({
     );
   }
 
-  if (!user && !isAuthenticated) {
+  // Allow access if either auth system confirms authentication
+  const hasNextAuthSession = sessionStatus === 'authenticated' && session?.user;
+  const hasZustandAuth = isAuthenticated && user;
+
+  if (!hasNextAuthSession && !hasZustandAuth) {
     return null;
   }
 
