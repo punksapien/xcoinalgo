@@ -13,6 +13,7 @@ import { webhookRoutes } from './routes/webhooks';
 import { positionsRoutes } from './routes/positions';
 import { strategyExecutionRoutes } from './routes/strategy-execution';
 import { backtestRoutes } from './routes/backtest';
+import { settingsRoutes } from './routes/settings';
 import { errorHandler } from './middleware/errorHandler';
 import { startHealthCheckMonitoring } from './services/strategyExecutor';
 import { startOrderMonitoring } from './workers/order-monitor';
@@ -89,7 +90,7 @@ app.get('/health', (req, res) => {
 });
 
 // API routes
-app.use('/api/user', authRoutes);
+app.use('/api/auth', authRoutes);
 app.use('/api/broker', brokerRoutes);
 app.use('/api/strategy-upload', strategyUploadRoutes);
 app.use('/api/bot', botRoutes);
@@ -97,6 +98,7 @@ app.use('/api/webhooks', webhookRoutes);
 app.use('/api/positions', positionsRoutes);
 app.use('/api/strategies', strategyExecutionRoutes);
 app.use('/api/backtest', backtestRoutes);
+app.use('/api/settings', settingsRoutes);
 
 // Error handling middleware
 app.use(errorHandler);

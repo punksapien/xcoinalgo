@@ -29,7 +29,7 @@ def login(api_key, api_url):
 
     \b
     Get your API key from:
-        https://xcoinalgo.com/settings/api-keys
+        http://localhost:3000/dashboard/settings/api-keys
     """
     console.print()
     console.print(Panel.fit(
@@ -41,7 +41,7 @@ def login(api_key, api_url):
 
     # Prompt for API key if not provided
     if not api_key:
-        console.print("[dim]Get your API key from: https://xcoinalgo.com/settings/api-keys[/]")
+        console.print("[dim]Get your API key from: http://localhost:3000/dashboard/settings/api-keys[/]")
         console.print()
         api_key = Prompt.ask(
             "[cyan]Enter your API key[/]",
