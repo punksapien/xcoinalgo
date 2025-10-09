@@ -411,7 +411,7 @@ def load_historical_data(csv_path: Path) -> pd.DataFrame:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
 
-    # Fill any NaN values
-    df.fillna(method='ffill', inplace=True)
+    # Fill any NaN values (forward fill)
+    df.ffill(inplace=True)
 
     return df
