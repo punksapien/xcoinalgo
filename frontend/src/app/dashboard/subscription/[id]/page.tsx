@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { useAuth } from '@/lib/auth';
 import { StrategyExecutionAPI, type Subscription, type SubscriptionStats } from '@/lib/api/strategy-execution-api';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -116,27 +115,27 @@ export default function SubscriptionDetailPage() {
 
   if (!isAuthenticated || !token) {
     return (
-      <DashboardLayout>
+      <div className="container mx-auto p-6">
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
         </div>
-      </DashboardLayout>
+      </div>
     );
   }
 
   if (loading) {
     return (
-      <DashboardLayout>
+      <div className="container mx-auto p-6">
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
         </div>
-      </DashboardLayout>
+      </div>
     );
   }
 
   if (!subscription) {
     return (
-      <DashboardLayout>
+      <div className="container mx-auto p-6">
         <div className="flex flex-col items-center justify-center h-64 space-y-4">
           <h2 className="text-xl font-semibold">Subscription Not Found</h2>
           <p className="text-muted-foreground">The requested subscription could not be found.</p>
@@ -145,7 +144,7 @@ export default function SubscriptionDetailPage() {
             Back to Subscriptions
           </Button>
         </div>
-      </DashboardLayout>
+      </div>
     );
   }
 
@@ -160,7 +159,7 @@ export default function SubscriptionDetailPage() {
   };
 
   return (
-    <DashboardLayout>
+    <div className="container mx-auto p-6">
       <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -435,6 +434,6 @@ export default function SubscriptionDetailPage() {
           </CardHeader>
         </Card>
       </div>
-    </DashboardLayout>
+    </div>
   );
 }

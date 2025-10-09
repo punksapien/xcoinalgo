@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { useAuth } from '@/lib/auth'
 import { SubscribeModal } from '@/components/strategy/subscribe-modal'
 
@@ -280,17 +279,17 @@ export default function StrategyDetailPage() {
 
   if (loading) {
     return (
-      <DashboardLayout>
+      <div className="container mx-auto p-6">
         <div className="flex items-center justify-center min-h-[400px]">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
         </div>
-      </DashboardLayout>
+      </div>
     )
   }
 
   if (!strategy) {
     return (
-      <DashboardLayout>
+      <div className="container mx-auto p-6">
         <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
           <h2 className="text-xl font-semibold">Strategy Not Found</h2>
           <p className="text-muted-foreground">The requested strategy could not be found.</p>
@@ -299,12 +298,12 @@ export default function StrategyDetailPage() {
             Back to Strategies
           </Button>
         </div>
-      </DashboardLayout>
+      </div>
     )
   }
 
   return (
-    <DashboardLayout>
+    <div className="container mx-auto p-6">
       <div className="space-y-8">
         <StrategyHeader
           strategy={strategy}
@@ -403,6 +402,6 @@ export default function StrategyDetailPage() {
           onSuccess={handleSubscribeSuccess}
         />
       )}
-    </DashboardLayout>
+    </div>
   )
 }

@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { useAuth } from '@/lib/auth';
 import {
   TrendingUp,
@@ -218,16 +217,16 @@ export default function PositionsPage() {
 
   if (!isAuthenticated || !token) {
     return (
-      <DashboardLayout>
+      <div className="container mx-auto p-6">
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
         </div>
-      </DashboardLayout>
+      </div>
     );
   }
 
   return (
-    <DashboardLayout>
+    <div className="container mx-auto p-6">
       <div className="space-y-6">
         {/* Header */}
         <div className="flex justify-between items-center">
@@ -651,6 +650,6 @@ export default function PositionsPage() {
           </div>
         )}
       </div>
-    </DashboardLayout>
+    </div>
   );
 }

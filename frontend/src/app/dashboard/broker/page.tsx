@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { useAuth } from '@/lib/auth';
 import {
   Card,
@@ -240,16 +239,16 @@ export default function BrokerSetupPage() {
 
   if (!isAuthenticated || !token) {
     return (
-      <DashboardLayout>
+      <div className="container mx-auto p-6">
         <div className="flex items-center justify-center h-64">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
         </div>
-      </DashboardLayout>
+      </div>
     );
   }
 
   return (
-    <DashboardLayout>
+    <div className="container mx-auto p-6">
       <div className="space-y-8">
         {/* Header Section */}
         <div className="text-center space-y-4 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950/20 dark:to-purple-950/20 p-8 rounded-lg">
@@ -687,6 +686,6 @@ export default function BrokerSetupPage() {
         </div>
 
       </div>
-    </DashboardLayout>
+    </div>
   );
 }
