@@ -44,10 +44,10 @@ api.interceptors.response.use(
 // Auth API
 export const authAPI = {
   register: (email: string, password: string) =>
-    api.post('/auth/register', { email, password }),
+    api.post('/user/register', { email, password }),
 
   login: (email: string, password: string) =>
-    api.post('/auth/login', { email, password }),
+    api.post('/user/login', { email, password }),
 };
 
 // Broker API

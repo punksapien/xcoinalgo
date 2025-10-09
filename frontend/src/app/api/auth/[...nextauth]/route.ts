@@ -45,7 +45,7 @@ const authOptions: AuthOptions = {
         try {
           // Send Google user data to our backend for verification/creation
           // Using relative path - Next.js rewrites will proxy to backend
-          const response = await fetch('/api/auth/google', {
+          const response = await fetch('/api/user/google-auth', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

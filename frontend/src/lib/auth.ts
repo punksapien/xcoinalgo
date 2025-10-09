@@ -31,7 +31,7 @@ export const useAuth = create<AuthState>()(
       logout: async () => {
         try {
           // Use relative path - Next.js rewrites will proxy to backend
-          await axios.post('/api/auth/logout', {}, {
+          await axios.post('/api/user/logout', {}, {
             withCredentials: true
           });
         } catch (error) {
@@ -56,7 +56,7 @@ export const useAuth = create<AuthState>()(
           }
 
           // Use relative path - Next.js rewrites will proxy to backend
-          const response = await axios.get('/api/auth/me', {
+          const response = await axios.get('/api/user/me', {
             headers: {
               'Authorization': `Bearer ${token}`
             },

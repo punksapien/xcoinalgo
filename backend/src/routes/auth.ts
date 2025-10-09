@@ -184,7 +184,7 @@ router.post('/logout', (req, res) => {
 });
 
 // Google OAuth - NextAuth Integration (POST endpoint for frontend)
-router.post('/google', async (req, res, next) => {
+router.post('/google-auth', async (req, res, next) => {
   try {
     const { email, name, googleId, image } = req.body;
 

@@ -89,7 +89,7 @@ app.get('/health', (req, res) => {
 });
 
 // API routes
-app.use('/api/auth', authRoutes);
+app.use('/api/user', authRoutes);
 app.use('/api/broker', brokerRoutes);
 app.use('/api/strategy-upload', strategyUploadRoutes);
 app.use('/api/bot', botRoutes);
