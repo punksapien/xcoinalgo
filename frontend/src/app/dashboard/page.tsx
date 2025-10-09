@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -135,17 +134,14 @@ function DashboardContent() {
 
   if (loading && strategies.length === 0) {
     return (
-      <DashboardLayout>
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-        </div>
-      </DashboardLayout>
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
     );
   }
 
   return (
-    <DashboardLayout>
-      <div className="space-y-6">
+    <div className="container mx-auto p-6 space-y-6">
         {/* Header */}
         <div>
           <h1 className="text-3xl font-bold text-foreground">Ready Bots</h1>
@@ -384,19 +380,16 @@ function DashboardContent() {
             </Button>
           </div>
         )}
-      </div>
-    </DashboardLayout>
+    </div>
   );
 }
 
 export default function DashboardPage() {
   return (
     <Suspense fallback={
-      <DashboardLayout>
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-        </div>
-      </DashboardLayout>
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
     }>
       <DashboardContent />
     </Suspense>
