@@ -78,7 +78,7 @@ const StrategyHeader = ({
                 </div>
                 <div className="flex gap-2 flex-shrink-0">
                   {strategy.isActive ? (
-                    <Badge className="bg-green-100 text-green-800">Active</Badge>
+                    <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">Active</Badge>
                   ) : (
                     <Badge variant="secondary">Inactive</Badge>
                   )}
@@ -86,7 +86,7 @@ const StrategyHeader = ({
                     <Badge variant="outline">Public</Badge>
                   )}
                   {strategy.isMarketplace && (
-                    <Badge variant="outline" className="bg-blue-100 text-blue-800">
+                    <Badge variant="outline" className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
                       Marketplace
                     </Badge>
                   )}
@@ -151,11 +151,11 @@ const StrategyHeader = ({
 
               {/* Subscription Status */}
               {userSubscription && (
-                <div className="p-3 bg-blue-50 rounded-lg">
+                <div className="p-3 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-medium text-blue-700">Your Subscription</span>
+                    <span className="text-xs font-medium text-blue-700 dark:text-blue-300">Your Subscription</span>
                     <Badge
-                      className={userSubscription.isPaused ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}
+                      className={userSubscription.isPaused ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300' : 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'}
                       variant="secondary"
                     >
                       {userSubscription.isPaused ? 'Paused' : 'Active'}
@@ -346,7 +346,7 @@ export default function StrategyDetailPage() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="bg-secondary/20 rounded-lg p-4">
                         <p className="text-sm font-medium text-muted-foreground mb-1">Status</p>
-                        <Badge className={strategy.isActive ? "bg-green-100 text-green-800" : ""}>
+                        <Badge className={strategy.isActive ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300" : ""}>
                           {strategy.isActive ? 'Active' : 'Inactive'}
                         </Badge>
                       </div>

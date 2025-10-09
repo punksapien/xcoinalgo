@@ -173,8 +173,8 @@ export default function StrategiesPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-3xl font-bold mb-2">My Strategies</h1>
-          <p className="text-gray-600">
+          <h1 className="text-3xl font-bold mb-2 dark:text-white">My Strategies</h1>
+          <p className="text-gray-600 dark:text-gray-400">
             Manage and deploy your trading strategies
           </p>
         </div>
@@ -189,12 +189,12 @@ export default function StrategiesPage() {
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-4 mb-6">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 h-4 w-4" />
           <Input
             placeholder="Search strategies..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10"
+            className="pl-10 dark:bg-gray-800 dark:border-gray-700 dark:text-white dark:placeholder-gray-500"
           />
         </div>
         <div className="flex gap-2">
@@ -213,11 +213,11 @@ export default function StrategiesPage() {
 
       {/* Strategy Grid */}
       {filteredStrategies.length === 0 ? (
-        <Card className="text-center py-12">
+        <Card className="text-center py-12 dark:bg-gray-800 dark:border-gray-700">
           <CardContent>
-            <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium mb-2">No strategies found</h3>
-            <p className="text-gray-600 mb-4">
+            <FileText className="h-12 w-12 text-gray-400 dark:text-gray-500 mx-auto mb-4" />
+            <h3 className="text-lg font-medium mb-2 dark:text-white">No strategies found</h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-4">
               {strategies.length === 0
                 ? "Upload your first trading strategy to get started"
                 : "No strategies match your current filters"
@@ -236,12 +236,12 @@ export default function StrategiesPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredStrategies.map((strategy) => (
-            <Card key={strategy.id} className="hover:shadow-lg transition-shadow">
+            <Card key={strategy.id} className="hover:shadow-lg transition-shadow dark:bg-gray-800 dark:border-gray-700">
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <CardTitle className="text-lg mb-1">{strategy.name}</CardTitle>
-                    <CardDescription className="line-clamp-2">
+                    <CardTitle className="text-lg mb-1 dark:text-white">{strategy.name}</CardTitle>
+                    <CardDescription className="line-clamp-2 dark:text-gray-400">
                       {strategy.description || 'No description provided'}
                     </CardDescription>
                   </div>
@@ -255,26 +255,26 @@ export default function StrategiesPage() {
 
               <CardContent className="space-y-4">
                 {/* Strategy Info */}
-                <div className="space-y-2 text-sm">
+                <div className="space-y-2 text-sm dark:text-gray-300">
                   <div className="flex items-center gap-2">
-                    <Code className="h-4 w-4 text-gray-500" />
+                    <Code className="h-4 w-4 text-gray-500 dark:text-gray-400" />
                     <span className="font-mono">{strategy.code}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <User className="h-4 w-4 text-gray-500" />
+                    <User className="h-4 w-4 text-gray-500 dark:text-gray-400" />
                     <span>{strategy.author}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-gray-500" />
+                    <Clock className="h-4 w-4 text-gray-500 dark:text-gray-400" />
                     <span>v{strategy.version}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Users className="h-4 w-4 text-gray-500" />
+                    <Users className="h-4 w-4 text-gray-500 dark:text-gray-400" />
                     <span>{strategy.subscriberCount || 0} subscriber{strategy.subscriberCount !== 1 ? 's' : ''}</span>
                   </div>
                   {strategy.executionConfig && (
                     <div className="flex items-center gap-2">
-                      <TrendingUp className="h-4 w-4 text-gray-500" />
+                      <TrendingUp className="h-4 w-4 text-gray-500 dark:text-gray-400" />
                       <span>{strategy.executionConfig.symbol} • {strategy.executionConfig.resolution}m</span>
                     </div>
                   )}
@@ -282,9 +282,9 @@ export default function StrategiesPage() {
 
                 {/* Subscription Status */}
                 {getUserSubscriptionStatus(strategy.id) && (
-                  <div className="p-3 bg-blue-50 rounded-lg">
+                  <div className="p-3 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-medium text-blue-700">Your Subscription</span>
+                      <span className="text-xs font-medium text-blue-700 dark:text-blue-300">Your Subscription</span>
                       <Badge
                         className={getUserSubscriptionStatus(strategy.id)?.isPaused ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}
                         variant="secondary"
@@ -359,55 +359,55 @@ export default function StrategiesPage() {
       {/* Quick Stats */}
       {strategies.length > 0 && (
         <div className="mt-8 grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card>
+          <Card className="dark:bg-gray-800 dark:border-gray-700">
             <CardContent className="p-4">
               <div className="flex items-center gap-2">
                 <FileText className="h-5 w-5 text-blue-500" />
                 <div>
-                  <div className="text-2xl font-bold">{strategies.length}</div>
-                  <div className="text-sm text-gray-600">Total Strategies</div>
+                  <div className="text-2xl font-bold dark:text-white">{strategies.length}</div>
+                  <div className="text-sm text-gray-600 dark:text-gray-400">Total Strategies</div>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="dark:bg-gray-800 dark:border-gray-700">
             <CardContent className="p-4">
               <div className="flex items-center gap-2">
                 <Play className="h-5 w-5 text-green-500" />
                 <div>
-                  <div className="text-2xl font-bold">
+                  <div className="text-2xl font-bold dark:text-white">
                     {Array.from(userSubscriptions.values()).filter(sub => sub.isActive && !sub.isPaused).length}
                   </div>
-                  <div className="text-sm text-gray-600">Active Deployments</div>
+                  <div className="text-sm text-gray-600 dark:text-gray-400">Active Deployments</div>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="dark:bg-gray-800 dark:border-gray-700">
             <CardContent className="p-4">
               <div className="flex items-center gap-2">
                 <Code className="h-5 w-5 text-purple-500" />
                 <div>
-                  <div className="text-2xl font-bold">
+                  <div className="text-2xl font-bold dark:text-white">
                     {strategies.filter(s => s.isActive).length}
                   </div>
-                  <div className="text-sm text-gray-600">Active Strategies</div>
+                  <div className="text-sm text-gray-600 dark:text-gray-400">Active Strategies</div>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="dark:bg-gray-800 dark:border-gray-700">
             <CardContent className="p-4">
               <div className="flex items-center gap-2">
                 <TrendingUp className="h-5 w-5 text-orange-500" />
                 <div>
-                  <div className="text-2xl font-bold">
+                  <div className="text-2xl font-bold dark:text-white">
                     {new Set(strategies.map(s => s.author)).size}
                   </div>
-                  <div className="text-sm text-gray-600">Authors</div>
+                  <div className="text-sm text-gray-600 dark:text-gray-400">Authors</div>
                 </div>
               </div>
             </CardContent>
