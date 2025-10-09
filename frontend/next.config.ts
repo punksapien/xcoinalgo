@@ -1,15 +1,19 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Proxy all /api/* requests to backend server
-  // This allows Google OAuth to work without needing separate DNS for api.xcoinalgo.com
+  // Proxy backend API requests, but let NextAuth handle /api/auth/* routes
   async rewrites() {
-    return [
-      {
-        source: '/api/:path*',
-        destination: 'http://184.72.102.221/api/:path*',
-      },
-    ];
+    return {
+      // afterFiles runs AFTER checking API routes
+      // This ensures NextAuth routes (/api/auth/*) are handled by Next.js first
+      // Only non-existent routes get proxied to backend
+      afterFiles: [
+        {
+          source: '/api/:path*',
+          destination: 'http://184.72.102.221/api/:path*',
+        },
+      ],
+    };
   },
 };
 
