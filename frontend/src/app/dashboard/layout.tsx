@@ -12,25 +12,32 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, loading } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isChecking, setIsChecking] = useState(true);
 
   useEffect(() => {
-    if (!loading && !user) {
-      router.replace('/login');
-    }
-  }, [user, loading, router]);
+    // Check auth status on mount
+    const timer = setTimeout(() => {
+      if (!isAuthenticated && !user) {
+        router.replace('/login');
+      }
+      setIsChecking(false);
+    }, 100);
 
-  if (loading) {
+    return () => clearTimeout(timer);
+  }, [user, isAuthenticated, router]);
+
+  if (isChecking) {
     return (
-      <div className="flex items-center justify-center h-screen">
+      <div className="flex items-center justify-center h-screen bg-background">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
       </div>
     );
   }
 
-  if (!user) {
+  if (!user && !isAuthenticated) {
     return null;
   }
 
