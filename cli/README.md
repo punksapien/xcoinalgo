@@ -26,7 +26,8 @@ Build, test, and deploy algorithmic trading strategies with the xcoinalgo platfo
 
 ```bash
 # 1. Install
-cd xcoin-cli
+git clone https://github.com/punksapien/xcoinalgo.git
+cd xcoinalgo/cli
 pip install -e .
 
 # 2. Authenticate
@@ -58,8 +59,11 @@ xcoin deploy
 ### From Source
 
 ```bash
-git clone https://github.com/xcoinalgo/xcoin-cli.git
-cd xcoin-cli
+# Clone the main xcoinalgo repository
+git clone https://github.com/punksapien/xcoinalgo.git
+cd xcoinalgo/cli
+
+# Install in development mode
 pip install -e .
 ```
 
@@ -126,7 +130,6 @@ xcoin logs
 
 ```python
 import pandas as pd
-import pandas_ta as ta
 from typing import Dict, Any, List
 
 class MomentumStrategy(BaseStrategy):
@@ -134,9 +137,12 @@ class MomentumStrategy(BaseStrategy):
         # Convert to DataFrame
         df = pd.DataFrame(candles)
 
-        # Calculate indicators
-        df['rsi'] = ta.rsi(df['close'], length=14)
-        df['sma'] = ta.sma(df['close'], length=20)
+        # Initialize indicator helper (works with or without pandas_ta)
+        indicators = IndicatorHelper()
+
+        # Calculate indicators (works out-of-the-box)
+        df['rsi'] = indicators.rsi(df['close'], length=14)
+        df['sma'] = indicators.sma(df['close'], length=20)
 
         # Generate signal
         latest = df.iloc[-1]
@@ -158,6 +164,8 @@ strategy = MomentumStrategy()
 def generate_signal(candles: List[Dict], settings: Dict[str, Any]) -> Dict[str, Any]:
     return strategy.generate_signal(candles, settings)
 ```
+
+**Note:** The template includes a self-contained `IndicatorHelper` class that provides common indicators (SMA, EMA, RSI, MACD, ATR, Bollinger Bands) using only pandas built-in functions. No pandas_ta required!
 
 ---
 
@@ -284,8 +292,8 @@ GitLab: Settings → Webhooks (URL and secret provided by CLI)
 
 ```bash
 # Clone repository
-git clone https://github.com/xcoinalgo/xcoin-cli.git
-cd xcoin-cli
+git clone https://github.com/punksapien/xcoinalgo.git
+cd xcoinalgo/cli
 
 # Install in development mode
 pip install -e ".[dev]"
