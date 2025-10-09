@@ -1,0 +1,65 @@
+{
+  "name": "{{strategy_name}}",
+  "code": "{{strategy_code}}",
+  "author": {
+    "name": "{{author_name}}",
+    "email": "{{author_email}}"
+  },
+  "description": "{{description}}",
+  "detailedDescription": "{{detailed_description}}",
+  "tags": ["{{strategy_type}}"],
+  "strategyType": "{{strategy_type}}",
+  "complexity": "MEDIUM",
+  "pairs": ["{{default_pair}}", "B-BTC_USDT", "B-ETH_USDT"],
+  "timeframes": ["{{default_timeframe}}"],
+  "supportsFutures": true,
+  "supportsSpot": true,
+  "parameters": [
+    {
+      "name": "lookback_period",
+      "type": "integer",
+      "default": 100,
+      "min": 10,
+      "max": 500,
+      "description": "Number of historical candles to analyze"
+    },
+    {
+      "name": "sma_fast_period",
+      "type": "integer",
+      "default": 10,
+      "min": 5,
+      "max": 50,
+      "description": "Fast SMA period"
+    },
+    {
+      "name": "sma_slow_period",
+      "type": "integer",
+      "default": 30,
+      "min": 10,
+      "max": 200,
+      "description": "Slow SMA period"
+    }
+  ],
+  "executionConfig": {
+    "symbol": "{{default_pair}}",
+    "resolution": "{{default_resolution}}",
+    "lookbackPeriod": 100,
+    "executionMode": "live"
+  },
+  "riskProfile": {
+    "maxDrawdown": 0.15,
+    "volatility": "medium",
+    "leverage": 5,
+    "recommendedCapital": 100,
+    "recommendedRiskPerTrade": 0.02,
+    "maxDailyLoss": 0.05,
+    "maxPositions": 3
+  },
+  "dependencies": [
+    "pandas>=2.0.0",
+    "pandas_ta>=0.3.14b",
+    "numpy>=1.24.0"
+  ],
+  "version": "1.0.0",
+  "lastUpdated": "{{creation_date}}"
+}
