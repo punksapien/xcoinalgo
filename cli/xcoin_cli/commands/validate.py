@@ -16,18 +16,23 @@ console = Console()
 
 
 @click.command()
-@click.option('--path', type=click.Path(exists=True), default='.',
-              help='Path to strategy project (default: current directory)')
+@click.argument('strategy_name', required=False)
+@click.option('--path', type=click.Path(exists=True),
+              help='Path to strategy project (deprecated, use positional argument)')
 @click.option('--strict', is_flag=True, help='Treat warnings as errors')
-def validate(path, strict):
+def validate(strategy_name, path, strict):
     """
     Validate strategy code and configuration locally
 
     \b
-    Usage:
+    Usage (context-aware - in strategy directory):
         xcoin validate              # Validate current directory
-        xcoin validate --path ./my-strategy
         xcoin validate --strict     # Warnings become errors
+
+    \b
+    Usage (explicit naming - from anywhere):
+        xcoin validate my-strategy
+        xcoin validate my-strategy --strict
 
     \b
     Checks:
@@ -44,7 +49,23 @@ def validate(path, strict):
     ))
     console.print()
 
-    project_path = Path(path).resolve()
+    # Determine strategy directory
+    if strategy_name:
+        # Explicit naming mode
+        strategy_dir = Path.cwd() / strategy_name
+        if not strategy_dir.exists() or not strategy_dir.is_dir():
+            console.print(f"[red]✗ Strategy directory not found: {strategy_name}[/]")
+            console.print("[dim]Make sure the directory exists in the current path[/]")
+            exit(1)
+        project_path = strategy_dir
+        console.print(f"[dim]Validating strategy from: {strategy_dir}[/]")
+        console.print()
+    elif path:
+        # Backward compatibility: --path option
+        project_path = Path(path).resolve()
+    else:
+        # Context-aware mode: current directory
+        project_path = Path.cwd().resolve()
 
     # Run validation with progress indicator
     with Progress(

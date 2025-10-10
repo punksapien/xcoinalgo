@@ -18,18 +18,24 @@ console = Console()
 
 
 @click.command()
+@click.argument('strategy_name', required=False)
 @click.option('--tail', is_flag=True, help='Stream logs in real-time (not yet implemented)')
 @click.option('--lines', default=50, help='Number of lines to show')
-@click.option('--strategy-id', help='Strategy ID (auto-detected if not provided)')
-def logs(tail, lines, strategy_id):
+@click.option('--strategy-id', help='Strategy ID (deprecated, use positional argument or auto-detect)')
+def logs(strategy_name, tail, lines, strategy_id):
     """
     View strategy execution logs
 
     \b
-    Usage:
+    Usage (context-aware - in strategy directory):
         xcoin logs              # Show recent logs
         xcoin logs --lines 100  # Show last 100 lines
         xcoin logs --tail       # Stream real-time logs (coming soon)
+
+    \b
+    Usage (explicit naming - from anywhere):
+        xcoin logs my-strategy
+        xcoin logs my-strategy --lines 100
     """
     console.print()
     console.print(Panel.fit(
@@ -45,18 +51,41 @@ def logs(tail, lines, strategy_id):
         console.print("[red]✗ Not authenticated. Please run 'xcoin login' first[/]")
         exit(1)
 
-    # Get strategy ID from local config if not provided
-    if not strategy_id:
+    # Determine strategy directory
+    if strategy_name:
+        # Explicit naming mode
+        strategy_dir = Path.cwd() / strategy_name
+        if not strategy_dir.exists() or not strategy_dir.is_dir():
+            console.print(f"[red]✗ Strategy directory not found: {strategy_name}[/]")
+            console.print("[dim]Make sure the directory exists in the current path[/]")
+            exit(1)
+        current_dir = strategy_dir
+        console.print(f"[dim]Fetching logs for: {strategy_dir}[/]")
+        console.print()
+    else:
+        # Context-aware mode
         current_dir = Path.cwd()
-        local_config_file = current_dir / '.xcoin' / 'config.yml'
 
-        if local_config_file.exists():
-            local_config = ConfigManager(local_config_file)
-            strategy_id = local_config.get('strategy_id')
+    # Get strategy ID from local config if not provided via option
+    if not strategy_id:
+        # Try .xcoin/strategy.json first (created by deploy command)
+        local_strategy_file = current_dir / '.xcoin' / 'strategy.json'
+        if local_strategy_file.exists():
+            import json
+            with open(local_strategy_file, 'r') as f:
+                local_data = json.load(f)
+                strategy_id = local_data.get('strategyId')
+
+        # Fallback to old config.yml format
+        if not strategy_id:
+            local_config_file = current_dir / '.xcoin' / 'config.yml'
+            if local_config_file.exists():
+                local_config = ConfigManager(local_config_file)
+                strategy_id = local_config.get('strategy_id')
 
         if not strategy_id:
             console.print("[red]✗ Strategy ID not found[/]")
-            console.print("[dim]Run 'xcoin link-git' first or provide --strategy-id[/]")
+            console.print("[dim]Deploy your strategy first with 'xcoin deploy' or provide --strategy-id[/]")
             exit(1)
 
     # Fetch logs
