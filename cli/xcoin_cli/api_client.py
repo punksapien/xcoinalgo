@@ -101,6 +101,7 @@ class APIClient:
 
             # Check for HTTP errors
             if response.status_code >= 400:
+                error_data = None
                 try:
                     error_data = response.json()
                     error_message = error_data.get('error') or error_data.get('message') or 'Unknown error'
@@ -110,7 +111,7 @@ class APIClient:
                 raise APIError(
                     message=error_message,
                     status_code=response.status_code,
-                    response=error_data if 'error_data' in locals() else None
+                    response=error_data
                 )
 
             # Return JSON response
@@ -153,15 +154,12 @@ class APIClient:
         # Save to config
         self.config.set('api_key', api_key)
         self.config.set('user', user_info.get('user', {}))
-        self.config.save()
 
         return user_info
 
     def logout(self):
         """Logout and clear stored credentials"""
-        self.config.delete('api_key')
-        self.config.delete('user')
-        self.config.save()
+        self.config.clear()
 
         self.api_key = None
         if 'Authorization' in self.session.headers:

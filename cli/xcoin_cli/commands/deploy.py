@@ -125,8 +125,24 @@ def deploy(force, marketplace):
             )
         except APIError as e:
             console.print()
+            error_msg = f"[red]✗ Upload failed[/]\n\n{e}"
+
+            # Show detailed error if available
+            if e.response and isinstance(e.response, dict):
+                # Debug: show entire response
+                error_msg += f"\n\n[dim]Debug Response: {json.dumps(e.response, indent=2)}[/dim]"
+
+                if 'details' in e.response:
+                    error_msg += "\n\n[yellow]Details:[/]"
+                    details = e.response['details']
+                    if isinstance(details, list):
+                        for detail in details:
+                            error_msg += f"\n  • {detail}"
+                    else:
+                        error_msg += f"\n  {details}"
+
             console.print(Panel(
-                f"[red]✗ Upload failed[/]\n\n{e}",
+                error_msg,
                 style="red",
                 border_style="red",
                 title="Error"
@@ -142,6 +158,9 @@ def deploy(force, marketplace):
     version = strategy_data.get('version', 'N/A')
     validation = result.get('validation', {})
 
+    # Debug: print full response to understand validation result
+    # console.print(f"[dim]Debug - Full response: {json.dumps(result, indent=2)}[/dim]")
+
     # Create result table
     table = Table(
         show_header=False,
@@ -155,14 +174,17 @@ def deploy(force, marketplace):
     table.add_row("Strategy ID", strategy_id or "N/A")
     table.add_row("Version", version)
 
-    # Validation status
-    validation_status = validation.get('status', 'unknown')
-    if validation_status == 'passed':
+    # Validation status (backend returns 'isValid' not 'status')
+    is_valid = validation.get('isValid', validation.get('status') == 'passed')
+    if is_valid:
         table.add_row("Validation", "[green]✓ Passed[/]")
-    elif validation_status == 'failed':
+        validation_status = 'passed'
+    elif validation.get('errors'):
         table.add_row("Validation", "[red]✗ Failed[/]")
+        validation_status = 'failed'
     else:
         table.add_row("Validation", "[yellow]⚠ Unknown[/]")
+        validation_status = 'unknown'
 
     console.print(Panel(
         table,

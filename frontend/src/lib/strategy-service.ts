@@ -1,5 +1,3 @@
-import strategiesData from '@/data/strategies.json';
-
 export interface Strategy {
   id: string;
   name: string;
@@ -14,6 +12,7 @@ export interface Strategy {
   roi?: number;
   marginRequired?: number;
   deploymentCount: number;
+  subscriberCount?: number;
   createdAt: string;
   features?: {
     indicators: string[];
@@ -22,6 +21,8 @@ export interface Strategy {
     leverage: number;
     riskPerTrade: number;
   };
+  timeframes?: string[];
+  supportedPairs?: string[];
 }
 
 interface CachedData {
@@ -44,15 +45,60 @@ class StrategyService {
   private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
   private searchIndex: Map<string, Set<number>> = new Map();
   private strategies: Strategy[] = [];
+  private fetchPromise: Promise<void> | null = null;
 
   constructor() {
-    this.initializeData();
+    // Don't initialize synchronously - fetch on demand
   }
 
-  private initializeData() {
-    this.strategies = strategiesData as Strategy[];
-    this.buildSearchIndex();
-    this.updateCache();
+  private async initializeData() {
+    // Prevent multiple simultaneous fetches
+    if (this.fetchPromise) {
+      return this.fetchPromise;
+    }
+
+    this.fetchPromise = this.fetchStrategiesFromAPI();
+    await this.fetchPromise;
+    this.fetchPromise = null;
+  }
+
+  private async fetchStrategiesFromAPI() {
+    try {
+      const response = await fetch('/api/marketplace');
+      if (!response.ok) {
+        console.error('Failed to fetch strategies from API');
+        this.strategies = [];
+        return;
+      }
+
+      const data = await response.json();
+      // Map marketplace API response to Strategy interface
+      this.strategies = (data.strategies || []).map((s: Record<string, unknown>) => ({
+        id: s.id as string,
+        name: s.name as string,
+        code: s.code as string,
+        description: (s.description as string) || (s.detailedDescription as string) || '',
+        author: s.author as string,
+        instrument: (s.instrument as string) || 'Unknown',
+        tags: Array.isArray(s.tags) ? s.tags.join(',') : ((s.tags as string) || ''),
+        winRate: s.winRate as number | undefined,
+        riskReward: s.riskReward as number | undefined,
+        maxDrawdown: s.maxDrawdown as number | undefined,
+        roi: s.roi as number | undefined,
+        marginRequired: s.marginRequired as number | undefined,
+        deploymentCount: (s.subscriberCount as number) || 0,
+        subscriberCount: (s.subscriberCount as number) || 0,
+        createdAt: s.createdAt as string,
+        timeframes: (s.timeframes as string[]) || [],
+        supportedPairs: (s.supportedPairs as string[]) || [],
+      }));
+
+      this.buildSearchIndex();
+      this.updateCache();
+    } catch (error) {
+      console.error('Error fetching strategies:', error);
+      this.strategies = [];
+    }
   }
 
   private buildSearchIndex() {
@@ -235,8 +281,9 @@ class StrategyService {
     strategies: Strategy[];
     total: number;
   }> {
-    if (!this.isCacheValid()) {
-      this.updateCache();
+    // Ensure data is loaded
+    if (this.strategies.length === 0 || !this.isCacheValid()) {
+      await this.initializeData();
     }
 
     let matchingIndices = this.fastSearch(options.search || '');
@@ -263,22 +310,29 @@ class StrategyService {
   }
 
   async getTags(): Promise<{ tags: { tag: string; count: number }[] }> {
-    if (!this.isCacheValid()) {
-      this.updateCache();
+    // Ensure data is loaded
+    if (this.strategies.length === 0 || !this.isCacheValid()) {
+      await this.initializeData();
     }
 
     return { tags: this.cache!.tags };
   }
 
   async getAuthors(): Promise<{ authors: string[] }> {
-    if (!this.isCacheValid()) {
-      this.updateCache();
+    // Ensure data is loaded
+    if (this.strategies.length === 0 || !this.isCacheValid()) {
+      await this.initializeData();
     }
 
     return { authors: this.cache!.authors };
   }
 
   async getStrategy(id: string): Promise<Strategy | null> {
+    // Ensure data is loaded
+    if (this.strategies.length === 0) {
+      await this.initializeData();
+    }
+
     const strategy = this.strategies.find(s => s.id === id);
     return strategy || null;
   }

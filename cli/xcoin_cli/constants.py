@@ -4,7 +4,7 @@ Production and development URLs
 """
 
 # Production URLs
-PRODUCTION_API_URL = "https://xcoinalgo.com"
+PRODUCTION_API_URL = "http://184.72.102.221"
 PRODUCTION_FRONTEND_URL = "https://xcoinalgo.com"
 
 # Local development URLs (fallback)
