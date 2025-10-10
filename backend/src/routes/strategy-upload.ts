@@ -431,6 +431,158 @@ router.delete('/:id', authenticate, async (req: AuthenticatedRequest, res, next)
   }
 });
 
+// CLI-friendly upload: accepts JSON payload with file contents (no multipart)
+router.post('/cli-upload', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = req.userId!;
+    const { strategyCode, config, requirements, name, description } = req.body;
+
+    if (!strategyCode || !config) {
+      return res.status(400).json({
+        error: 'Strategy code and config are required'
+      });
+    }
+
+    // Parse configuration
+    let parsedConfig;
+    try {
+      parsedConfig = typeof config === 'string' ? JSON.parse(config) : config;
+    } catch (error) {
+      return res.status(400).json({
+        error: 'Invalid configuration JSON'
+      });
+    }
+
+    // Use name from payload or config
+    const strategyName = name || parsedConfig.name || 'Unnamed Strategy';
+
+    // Validate strategy code
+    const validationResult = await validateStrategyCode(strategyCode, parsedConfig);
+    if (!validationResult.isValid) {
+      return res.status(400).json({
+        error: 'Strategy validation failed',
+        details: validationResult.errors
+      });
+    }
+
+    // Check if strategy with same code already exists (for updates)
+    const existingStrategy = await prisma.strategy.findFirst({
+      where: {
+        code: parsedConfig.code || generateStrategyCode(strategyName)
+      }
+    });
+
+    let strategy;
+
+    if (existingStrategy) {
+      // Update existing strategy with new version
+      const newVersion = incrementVersion(existingStrategy.version);
+
+      strategy = await prisma.strategy.update({
+        where: { id: existingStrategy.id },
+        data: {
+          version: newVersion,
+          description: description || parsedConfig.description || existingStrategy.description,
+          validationStatus: validationResult.isValid ? 'VALID' : 'INVALID',
+          validationErrors: validationResult.errors?.join(', '),
+          lastValidatedAt: new Date(),
+          versions: {
+            create: {
+              version: newVersion,
+              strategyCode,
+              configData: parsedConfig,
+              requirements: requirements || null,
+              isValidated: validationResult.isValid,
+              validationErrors: validationResult.errors?.join(', ')
+            }
+          }
+        },
+        include: {
+          versions: {
+            orderBy: { createdAt: 'desc' },
+            take: 1
+          }
+        }
+      });
+
+      logger.info(`Strategy updated via CLI: ${strategy.id} (v${newVersion}) by user ${userId}`);
+    } else {
+      // Create new strategy
+      strategy = await prisma.strategy.create({
+        data: {
+          name: strategyName,
+          code: parsedConfig.code || generateStrategyCode(strategyName),
+          description: description || parsedConfig.description || '',
+          detailedDescription: parsedConfig.detailedDescription || '',
+          author: parsedConfig.author || 'Unknown',
+          version: '1.0.0',
+          instrument: parsedConfig.pair || 'B-BTC_USDT',
+          tags: Array.isArray(parsedConfig.tags) ? parsedConfig.tags.join(',') : (parsedConfig.tags || ''),
+          validationStatus: validationResult.isValid ? 'VALID' : 'INVALID',
+          validationErrors: validationResult.errors?.join(', '),
+          lastValidatedAt: new Date(),
+          isActive: false,
+          isApproved: true, // Auto-approve for CLI uploads
+          winRate: parsedConfig.winRate,
+          riskReward: parsedConfig.riskReward,
+          maxDrawdown: parsedConfig.maxDrawdown,
+          roi: parsedConfig.roi,
+          marginRequired: parsedConfig.marginRequired,
+          supportedPairs: parsedConfig.supportedPairs ? JSON.stringify(parsedConfig.supportedPairs) : null,
+          timeframes: parsedConfig.timeframes ? JSON.stringify(parsedConfig.timeframes) : null,
+          strategyType: parsedConfig.strategyType,
+          versions: {
+            create: {
+              version: '1.0.0',
+              strategyCode,
+              configData: parsedConfig,
+              requirements: requirements || null,
+              isValidated: validationResult.isValid,
+              validationErrors: validationResult.errors?.join(', ')
+            }
+          }
+        },
+        include: {
+          versions: {
+            orderBy: { createdAt: 'desc' },
+            take: 1
+          }
+        }
+      });
+
+      logger.info(`New strategy created via CLI: ${strategy.id} by user ${userId}`);
+    }
+
+    res.json({
+      success: true,
+      strategy: {
+        id: strategy.id,
+        name: strategy.name,
+        code: strategy.code,
+        description: strategy.description,
+        author: strategy.author,
+        version: strategy.version,
+        createdAt: strategy.createdAt,
+        updatedAt: strategy.updatedAt,
+        isNew: !existingStrategy,
+      },
+      validation: validationResult
+    });
+
+  } catch (error) {
+    logger.error('CLI strategy upload failed:', error);
+
+    if (error instanceof Error) {
+      return res.status(500).json({
+        error: 'Strategy upload failed',
+        message: error.message
+      });
+    }
+
+    next(error);
+  }
+});
+
 // Deploy strategy
 router.post('/:id/deploy', authenticate, async (req: AuthenticatedRequest, res, next) => {
   try {

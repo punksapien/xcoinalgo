@@ -32,7 +32,7 @@ class APIClient:
         self.config = ConfigManager()
 
         # Use provided values or fallback to config
-        self.api_url = api_url or self.config.get('api_url', 'http://localhost:3000')
+        self.api_url = api_url or self.config.get('api_url', 'http://localhost:3001')
         self.api_key = api_key or self.config.get('api_key')
 
         # Ensure API URL doesn't end with /
@@ -268,6 +268,65 @@ class APIClient:
             for file_tuple in files.values():
                 file_tuple[1].close()
 
+    def upload_strategy_cli(
+        self,
+        strategy_file: Path,
+        config_file: Path,
+        requirements_file: Optional[Path] = None,
+        name: Optional[str] = None,
+        description: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Upload strategy via CLI (seamless deployment)
+
+        This method uploads strategy code directly without requiring Git setup.
+        It handles both creating new strategies and updating existing ones.
+
+        Args:
+            strategy_file: Path to strategy.py
+            config_file: Path to config.json
+            requirements_file: Path to requirements.txt (optional)
+            name: Strategy name (optional, will use config if not provided)
+            description: Strategy description (optional)
+
+        Returns:
+            Upload response including:
+                - strategyId: Strategy ID
+                - version: Version number
+                - isNew: Whether this is a new strategy
+                - validation: Validation results
+
+        Raises:
+            APIError: If upload fails
+        """
+        # Read file contents
+        with open(strategy_file, 'r') as f:
+            strategy_code = f.read()
+
+        with open(config_file, 'r') as f:
+            config_data = json.load(f)
+
+        requirements = None
+        if requirements_file and requirements_file.exists():
+            with open(requirements_file, 'r') as f:
+                requirements = f.read()
+
+        # Prepare payload
+        payload = {
+            'strategyCode': strategy_code,
+            'config': json.dumps(config_data),
+            'requirements': requirements
+        }
+
+        if name:
+            payload['name'] = name
+
+        if description:
+            payload['description'] = description
+
+        # Upload to CLI endpoint
+        return self._request('POST', '/api/strategy-upload/cli-upload', data=payload)
+
     # Git Integration
 
     def link_git_repository(
@@ -331,6 +390,21 @@ class APIClient:
             APIError: If unlinking fails
         """
         return self._request('DELETE', f'/api/strategies/{strategy_id}/git')
+
+    def publish_to_marketplace(self, strategy_id: str) -> Dict[str, Any]:
+        """
+        Publish strategy to marketplace
+
+        Args:
+            strategy_id: Strategy ID
+
+        Returns:
+            Publication information including marketplace URL
+
+        Raises:
+            APIError: If publication fails
+        """
+        return self._request('POST', f'/api/marketplace/{strategy_id}/publish')
 
     # Deployment
 

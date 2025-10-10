@@ -16,7 +16,7 @@ console = Console()
 
 @click.command()
 @click.option('--api-key', help='API key (or will prompt)')
-@click.option('--api-url', default='http://localhost:3000', help='API URL')
+@click.option('--api-url', default='http://localhost:3001', help='API URL')
 def login(api_key, api_url):
     """
     Authenticate with the xcoinalgo platform

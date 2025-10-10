@@ -13,11 +13,12 @@ Build, test, and deploy algorithmic trading strategies with the xcoinalgo platfo
 ## Features
 
 - 📦 **Strategy Scaffolding** - Generate SDK-compliant strategy templates
-- ✅ **Local Validation** - Validate strategies before pushing (security, SDK compliance, config)
+- ✅ **Local Validation** - Validate strategies before deploying (security, SDK compliance, config)
 - 🧪 **Backtesting Engine** - Test strategies with historical data (P&L, win rate, Sharpe ratio)
-- 🔗 **Git Integration** - Auto-sync strategies via GitHub/GitLab webhooks
+- 🚀 **Seamless Deployment** - Deploy instantly without Git setup (direct upload to platform)
+- 🔗 **Git Integration (Optional)** - Auto-sync strategies via GitHub/GitLab webhooks for advanced workflows
 - 📊 **Real-time Monitoring** - Stream execution logs and performance metrics
-- 🚀 **One-Click Deployment** - Deploy to marketplace
+- 🏪 **Marketplace Publishing** - Deploy strategies to the public marketplace
 - 🎨 **Beautiful CLI** - Rich terminal UI with colors, panels, and tables
 
 ---
@@ -31,6 +32,7 @@ cd xcoinalgo/cli
 pip install -e .
 
 # 2. Authenticate
+# Get your API key from: http://localhost:3000/dashboard/settings/api-keys
 xcoin login
 
 # 3. Create strategy
@@ -40,16 +42,24 @@ cd my-strategy
 # 4. Develop
 vim strategy.py
 
-# 5. Validate & Test
+# 5. Validate & Test (Optional)
 xcoin validate
 xcoin test --backtest data/sample.csv
 
-# 6. Link to Git
-xcoin link-git --auto-deploy
-
-# 7. Deploy
-git push origin main
+# 6. Deploy (Seamless - No Git Required!)
 xcoin deploy
+
+# That's it! Your strategy is live on the platform 🚀
+# View your strategies: xcoin status
+# Optionally publish to marketplace: xcoin deploy --marketplace
+```
+
+### Alternative: Git Integration (Advanced)
+
+```bash
+# For teams that want Git integration
+xcoin link-git --auto-deploy
+git push origin main  # Auto-deploys on push
 ```
 
 ---
@@ -88,11 +98,12 @@ xcoin --version
 | `xcoin init` | Initialize new strategy project |
 | `xcoin validate` | Validate strategy code locally |
 | `xcoin test` | Run backtest with historical data |
-| `xcoin login` | Authenticate with platform |
-| `xcoin link-git` | Link Git repository for auto-sync |
+| `xcoin login` | Authenticate with platform (API key) |
+| `xcoin deploy` | Deploy strategy to platform (seamless, no Git required) |
+| `xcoin deploy --marketplace` | Deploy and publish to marketplace |
 | `xcoin status` | Check strategy status on platform |
-| `xcoin deploy` | Deploy strategy to marketplace |
 | `xcoin logs` | View execution logs |
+| `xcoin link-git` | (Advanced) Link Git repository for auto-sync |
 
 Run `xcoin COMMAND --help` for detailed usage.
 
@@ -100,24 +111,54 @@ Run `xcoin COMMAND --help` for detailed usage.
 
 ## Complete Workflow
 
+### Seamless Deployment (Recommended)
+
 ```bash
-# Create and develop
+# 1. Authenticate with platform
+xcoin login  # Get API key from dashboard
+
+# 2. Create and develop
 xcoin init momentum-strategy
 cd momentum-strategy
 vim strategy.py
 
-# Test locally
+# 3. Test locally (optional but recommended)
 xcoin validate
 xcoin test --backtest data/btc_2024.csv
 
-# Link to platform
+# 4. Deploy instantly
+xcoin deploy  # Uploads, validates, and deploys in one command!
+
+# 5. Monitor
+xcoin status
+xcoin logs
+
+# 6. Update your strategy anytime
+vim strategy.py  # Make changes
+xcoin deploy     # Version auto-increments (1.0.0 → 1.0.1)
+
+# 7. Publish to marketplace (optional)
+xcoin deploy --marketplace
+```
+
+### Advanced: Git Integration Workflow
+
+```bash
+# For teams that want Git-based workflows
+xcoin init momentum-strategy
+cd momentum-strategy
+
+# Set up Git repository
+git init
 git remote add origin https://github.com/yourteam/momentum-strategy
+
+# Link to platform
 xcoin link-git --auto-deploy
 
-# Push and deploy
+# Push and auto-deploy
 git add .
 git commit -m "Implement momentum strategy"
-git push origin main
+git push origin main  # Automatically deploys via webhook!
 
 # Monitor
 xcoin status
@@ -227,9 +268,33 @@ xcoin test --backtest data/btc_2024.csv --capital 50000
 
 ---
 
-## Git Integration
+## Authentication
 
-Link your strategy to Git for automatic syncing:
+The CLI uses API keys for secure authentication:
+
+```bash
+xcoin login
+```
+
+**Getting Your API Key:**
+
+1. Open the dashboard: http://localhost:3000/dashboard/settings/api-keys
+2. Click "Generate New API Key"
+3. Give it a name (e.g., "Development")
+4. Copy the key (shown only once!)
+5. Paste it when running `xcoin login`
+
+**Security Features:**
+- API keys are bcrypt-hashed and never stored in plaintext
+- Keys are encrypted locally in `~/.xcoin/config.yml`
+- Each key tracks last usage for security auditing
+- Keys can be revoked instantly from the dashboard
+
+---
+
+## Git Integration (Advanced)
+
+For teams that want Git-based workflows, you can optionally link your strategy to Git for automatic syncing:
 
 ```bash
 xcoin link-git --auto-deploy
@@ -246,6 +311,8 @@ xcoin link-git --auto-deploy
 GitHub: Settings → Webhooks → Add webhook (URL and secret provided by CLI)
 
 GitLab: Settings → Webhooks (URL and secret provided by CLI)
+
+**Note:** Git integration is entirely optional. The seamless deployment via `xcoin deploy` is the recommended workflow for most teams.
 
 ---
 
@@ -270,7 +337,7 @@ GitLab: Settings → Webhooks (URL and secret provided by CLI)
 ## Requirements
 
 - **Python:** >= 3.8
-- **Git:** For repository operations
+- **Git:** Optional (only needed for Git integration workflow)
 - **Dependencies:** Installed automatically
   - click, rich, requests
   - pandas, numpy
@@ -332,11 +399,21 @@ MIT License - See [LICENSE](LICENSE) file for details.
 - ✅ Strategy scaffolding with `xcoin init`
 - ✅ Local validation with security scanner
 - ✅ Backtesting engine with comprehensive metrics
-- ✅ Git integration with webhooks
+- ✅ **Seamless deployment** - Deploy instantly without Git setup
+- ✅ **API key authentication** - Secure, revocable API keys
+- ✅ **Auto-versioning** - Automatic version management on updates
+- ✅ Git integration with webhooks (optional)
 - ✅ Platform authentication
-- ✅ Strategy deployment
+- ✅ Strategy deployment to marketplace
 - ✅ Execution log viewing
 - ✅ Beautiful Rich terminal UI
+
+**Recent Updates:**
+- 🚀 Added seamless deployment via direct upload (`xcoin deploy`)
+- 🔑 Implemented API key management in dashboard
+- ⚡ Auto-increments versions on strategy updates
+- 🎯 Auto-validates and approves CLI-uploaded strategies
+- 🔗 Made Git integration optional (no longer required)
 
 **Coming Soon:**
 - Real-time log streaming (`--tail`)
