@@ -65,7 +65,7 @@ export default function MarketplacePage() {
       if (searchTerm) params.append('search', searchTerm);
       params.append('sortBy', sortBy);
 
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/marketplace?${params}`);
+      const response = await fetch(`/api/marketplace?${params}`);
 
       if (!response.ok) {
         throw new Error('Failed to fetch marketplace strategies');

@@ -74,7 +74,7 @@ export default function StrategiesPage() {
       if (searchTerm) params.append('search', searchTerm);
       if (statusFilter !== 'all') params.append('status', statusFilter);
 
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/strategy-upload/my-strategies?${params}`, {
+      const response = await fetch(`/api/strategy-upload/my-strategies?${params}`, {
         headers: token ? {
           'Authorization': `Bearer ${token}`,
         } : {},

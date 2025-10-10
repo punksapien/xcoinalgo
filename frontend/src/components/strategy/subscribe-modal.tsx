@@ -67,7 +67,7 @@ export function SubscribeModal({
 
     try {
       setLoadingCredentials(true);
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/broker/credentials`, {
+      const response = await fetch(`/api/broker/credentials`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },

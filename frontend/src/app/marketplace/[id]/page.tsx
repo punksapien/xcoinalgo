@@ -76,7 +76,7 @@ export default function StrategyDetailsPage({ params }: { params: Promise<{ id: 
   const fetchStrategyDetails = async () => {
     try {
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/marketplace/${resolvedParams.id}`
+        `/api/marketplace/${resolvedParams.id}`
       );
 
       if (!response.ok) {

@@ -209,7 +209,7 @@ export default function StrategyDetailPage() {
 
       // Fetch strategy details
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/strategy-upload/strategies/${strategyId}`,
+        `/api/strategy-upload/strategies/${strategyId}`,
         {
           headers: token ? {
             'Authorization': `Bearer ${token}`,
@@ -238,7 +238,7 @@ export default function StrategyDetailPage() {
 
     try {
       const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/strategies/subscriptions`,
+        `/api/strategies/subscriptions`,
         {
           headers: {
             'Authorization': `Bearer ${token}`,

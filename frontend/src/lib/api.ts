@@ -2,8 +2,9 @@ import axios from 'axios';
 import { useAuth } from './auth';
 
 // Use relative paths - Next.js rewrites will proxy /api/* to backend
-// In development, falls back to localhost:3001
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || (typeof window === 'undefined' ? 'http://localhost:3001' : '');
+// Client-side: empty string (relative URLs) - triggers Next.js rewrites
+// Server-side (SSR): localhost for local dev
+const API_BASE_URL = typeof window === 'undefined' ? 'http://localhost:3001' : '';
 
 // Create axios instance
 const api = axios.create({
