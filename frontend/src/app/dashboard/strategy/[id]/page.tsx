@@ -24,8 +24,8 @@ interface BacktestResult {
   profitFactor: number
   totalTrades: number
   avgTrade: number
-  equityCurve: any
-  tradeHistory: any[]
+  equityCurve: Record<string, unknown>
+  tradeHistory: Record<string, unknown>[]
   createdAt: string
 }
 
