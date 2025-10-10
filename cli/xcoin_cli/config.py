@@ -10,6 +10,8 @@ from typing import Optional, Dict, Any
 from cryptography.fernet import Fernet
 from rich.console import Console
 
+from xcoin_cli.constants import PRODUCTION_API_URL
+
 console = Console()
 
 CONFIG_DIR = Path.home() / ".xcoin"
@@ -104,7 +106,7 @@ class ConfigManager:
 
     def get_api_url(self) -> str:
         """Get API URL"""
-        return self.get("api_url", "https://xcoinalgo.com")
+        return self.get("api_url", PRODUCTION_API_URL)
 
     def set_api_url(self, api_url: str):
         """Set API URL"""

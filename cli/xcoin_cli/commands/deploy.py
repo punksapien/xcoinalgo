@@ -12,6 +12,7 @@ from rich.table import Table
 from rich import box
 
 from xcoin_cli.api_client import APIClient, APIError
+from xcoin_cli.constants import PRODUCTION_FRONTEND_URL
 
 console = Console()
 
@@ -54,7 +55,7 @@ def deploy(force, marketplace):
     client = APIClient()
     if not client.is_authenticated():
         console.print("[red]✗ Not authenticated. Please run 'xcoin login' first[/]")
-        console.print("[dim]Get your API key from: http://localhost:3000/dashboard/settings/api-keys[/]")
+        console.print(f"[dim]Get your API key from: {PRODUCTION_FRONTEND_URL}/dashboard/settings/api-keys[/]")
         exit(1)
 
     # Get user info

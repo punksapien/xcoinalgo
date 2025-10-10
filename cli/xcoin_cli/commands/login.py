@@ -10,13 +10,14 @@ from rich.table import Table
 from rich import box
 
 from xcoin_cli.api_client import APIClient, APIError
+from xcoin_cli.constants import PRODUCTION_API_URL, PRODUCTION_FRONTEND_URL
 
 console = Console()
 
 
 @click.command()
 @click.option('--api-key', help='API key (or will prompt)')
-@click.option('--api-url', default='http://localhost:3001', help='API URL')
+@click.option('--api-url', default=PRODUCTION_API_URL, help='API URL')
 def login(api_key, api_url):
     """
     Authenticate with the xcoinalgo platform
@@ -29,7 +30,7 @@ def login(api_key, api_url):
 
     \b
     Get your API key from:
-        http://localhost:3000/dashboard/settings/api-keys
+        https://xcoinalgo.com/dashboard/settings/api-keys
     """
     console.print()
     console.print(Panel.fit(
@@ -41,7 +42,7 @@ def login(api_key, api_url):
 
     # Prompt for API key if not provided
     if not api_key:
-        console.print("[dim]Get your API key from: http://localhost:3000/dashboard/settings/api-keys[/]")
+        console.print(f"[dim]Get your API key from: {PRODUCTION_FRONTEND_URL}/dashboard/settings/api-keys[/]")
         console.print()
         api_key = Prompt.ask(
             "[cyan]Enter your API key[/]",

@@ -8,6 +8,7 @@ from pathlib import Path
 import json
 
 from xcoin_cli.config import ConfigManager
+from xcoin_cli.constants import PRODUCTION_API_URL
 
 
 class APIError(Exception):
@@ -32,7 +33,7 @@ class APIClient:
         self.config = ConfigManager()
 
         # Use provided values or fallback to config
-        self.api_url = api_url or self.config.get('api_url', 'http://localhost:3001')
+        self.api_url = api_url or self.config.get('api_url', PRODUCTION_API_URL)
         self.api_key = api_key or self.config.get('api_key')
 
         # Ensure API URL doesn't end with /
