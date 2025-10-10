@@ -339,4 +339,121 @@ router.post('/:id/unpublish', authenticate, async (req: AuthenticatedRequest, re
   }
 });
 
+/**
+ * POST /api/marketplace/:id/run-backtest
+ * Run backtest for a strategy and update its metrics
+ * This populates the dashboard with performance data
+ */
+router.post('/:id/run-backtest', async (req, res, next) => {
+  try {
+    const { id: strategyId } = req.params;
+
+    logger.info(`Starting backtest for strategy: ${strategyId}`);
+
+    // Fetch strategy from database
+    const strategy = await prisma.strategy.findUnique({
+      where: { id: strategyId },
+      include: {
+        versions: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+      },
+    });
+
+    if (!strategy) {
+      return res.status(404).json({
+        error: 'Strategy not found'
+      });
+    }
+
+    // Get execution config
+    const executionConfig = strategy.executionConfig as any;
+
+    if (!executionConfig || !executionConfig.symbol || !executionConfig.resolution) {
+      return res.status(400).json({
+        error: 'Strategy execution config is missing required fields (symbol, resolution)'
+      });
+    }
+
+    // Determine backtest parameters
+    const symbol = executionConfig.symbol;
+    const resolution = executionConfig.resolution;
+
+    // Use last 30 days for backtest
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - 30);
+
+    // Default backtest config
+    const initialCapital = 10000;
+    const riskPerTrade = 0.02;
+    const leverage = 10;
+    const commission = 0.0004;
+
+    logger.info(`Running backtest for ${strategy.name} (${symbol} @ ${resolution}m)`);
+
+    // Import backtest engine dynamically
+    const { backtestEngine } = await import('../services/backtest-engine');
+
+    // Run backtest
+    const backtestResult = await backtestEngine.runBacktest({
+      strategyId,
+      symbol,
+      resolution: `${resolution}m` as any,
+      startDate,
+      endDate,
+      initialCapital,
+      riskPerTrade,
+      leverage,
+      commission,
+    });
+
+    logger.info('Backtest completed successfully');
+
+    // Calculate risk/reward ratio
+    const riskReward = backtestResult.metrics.avgLoss > 0
+      ? backtestResult.metrics.avgWin / backtestResult.metrics.avgLoss
+      : 0;
+
+    // Update strategy metrics
+    await prisma.strategy.update({
+      where: { id: strategyId },
+      data: {
+        winRate: backtestResult.metrics.winRate,
+        roi: backtestResult.metrics.totalPnlPct,
+        maxDrawdown: backtestResult.metrics.maxDrawdownPct,
+        sharpeRatio: backtestResult.metrics.sharpeRatio,
+        profitFactor: backtestResult.metrics.profitFactor,
+        totalTrades: backtestResult.metrics.totalTrades,
+        riskReward: riskReward,
+        avgTradeReturn: backtestResult.metrics.totalTrades > 0
+          ? backtestResult.metrics.totalPnl / backtestResult.metrics.totalTrades
+          : 0,
+        updatedAt: new Date(),
+      },
+    });
+
+    logger.info(`Strategy metrics updated for ${strategyId}`);
+
+    res.json({
+      success: true,
+      message: 'Backtest completed and metrics updated',
+      metrics: {
+        winRate: backtestResult.metrics.winRate,
+        roi: backtestResult.metrics.totalPnlPct,
+        maxDrawdown: backtestResult.metrics.maxDrawdownPct,
+        sharpeRatio: backtestResult.metrics.sharpeRatio,
+        profitFactor: backtestResult.metrics.profitFactor,
+        totalTrades: backtestResult.metrics.totalTrades,
+        riskReward: riskReward,
+      },
+    });
+
+  } catch (error) {
+    logger.error('Failed to run backtest:', error);
+    next(error);
+  }
+});
+
 export { router as marketplaceRoutes };
