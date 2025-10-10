@@ -57,7 +57,7 @@ interface Strategy {
   latestVersion?: {
     version: string;
     createdAt: string;
-    configData: any;
+    configData: Record<string, unknown>;
   };
 }
 
@@ -130,7 +130,7 @@ export default function StrategyDetailsPage({ params }: { params: Promise<{ id: 
             <AlertTriangle className="h-16 w-16 text-red-500 mx-auto mb-4" />
             <h3 className="text-lg font-medium mb-2">Strategy Not Found</h3>
             <p className="text-gray-600 mb-4">
-              The strategy you're looking for doesn't exist or has been removed
+              The strategy you&apos;re looking for doesn&apos;t exist or has been removed
             </p>
             <Button onClick={() => router.push('/marketplace')}>
               Back to Marketplace

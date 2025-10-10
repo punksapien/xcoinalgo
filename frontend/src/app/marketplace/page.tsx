@@ -133,7 +133,7 @@ export default function MarketplacePage() {
               <Button
                 key={option.value}
                 variant={sortBy === option.value ? 'default' : 'outline'}
-                onClick={() => setSortBy(option.value as any)}
+                onClick={() => setSortBy(option.value as 'popularity' | 'performance' | 'newest')}
                 className="flex items-center gap-2"
               >
                 <Icon className="h-4 w-4" />

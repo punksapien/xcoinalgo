@@ -295,7 +295,7 @@ export default function ApiKeysPage() {
                           <span>API Key Created</span>
                         </DialogTitle>
                         <DialogDescription>
-                          Copy your API key now. For security reasons, you won't be able to see it again.
+                          Copy your API key now. For security reasons, you won&apos;t be able to see it again.
                         </DialogDescription>
                       </DialogHeader>
                       <div className="py-4 space-y-4">
@@ -305,7 +305,7 @@ export default function ApiKeysPage() {
                             <div className="text-sm text-foreground">
                               <p className="font-medium">Save this key immediately</p>
                               <p className="text-muted-foreground mt-1">
-                                You won't be able to view this key again. Store it in a secure location.
+                                You won&apos;t be able to view this key again. Store it in a secure location.
                               </p>
                             </div>
                           </div>
@@ -348,7 +348,7 @@ export default function ApiKeysPage() {
                       </div>
                       <DialogFooter>
                         <Button onClick={handleModalClose} className="w-full">
-                          Done - I've Saved My Key
+                          Done - I&apos;ve Saved My Key
                         </Button>
                       </DialogFooter>
                     </>
