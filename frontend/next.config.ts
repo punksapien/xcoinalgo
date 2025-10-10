@@ -10,6 +10,10 @@ const nextConfig: NextConfig = {
         destination: 'http://184.72.102.221/api/user/:path*',
       },
       {
+        source: '/api/auth/:path*',
+        destination: 'http://184.72.102.221/api/auth/:path*',
+      },
+      {
         source: '/api/bot/:path*',
         destination: 'http://184.72.102.221/api/bot/:path*',
       },
