@@ -37,6 +37,18 @@ const nextConfig: NextConfig = {
         source: '/api/webhooks/:path*',
         destination: 'http://184.72.102.221/api/webhooks/:path*',
       },
+      {
+        source: '/api/marketplace/:path*',
+        destination: 'http://184.72.102.221/api/marketplace/:path*',
+      },
+      {
+        source: '/api/strategy-upload/:path*',
+        destination: 'http://184.72.102.221/api/strategy-upload/:path*',
+      },
+      {
+        source: '/api/settings/:path*',
+        destination: 'http://184.72.102.221/api/settings/:path*',
+      },
     ];
   },
 };
