@@ -13,22 +13,31 @@ from rich import box
 
 from xcoin_cli.api_client import APIClient, APIError
 from xcoin_cli.constants import PRODUCTION_FRONTEND_URL
+from xcoin_cli.backtest import BacktestEngine
+from datetime import datetime, timedelta
+import requests
 
 console = Console()
 
 
 @click.command()
+@click.argument('strategy_name', required=False)
 @click.option('--force', is_flag=True, help='Skip confirmation')
 @click.option('--marketplace', is_flag=True, help='Also deploy to marketplace')
-def deploy(force, marketplace):
+def deploy(strategy_name, force, marketplace):
     """
     Deploy strategy to xcoinalgo platform
 
     \b
-    Usage:
+    Usage (context-aware - in strategy directory):
         xcoin deploy                  # Deploy to platform
         xcoin deploy --marketplace    # Deploy and publish to marketplace
-        xcoin deploy --force          # Skip all confirmations
+
+    \b
+    Usage (explicit naming - from anywhere):
+        xcoin deploy my-strategy                  # Deploy specific strategy
+        xcoin deploy my-strategy --marketplace    # Deploy and publish
+        xcoin deploy my-strategy --force          # Skip all confirmations
 
     \b
     This command will:
@@ -63,8 +72,21 @@ def deploy(force, marketplace):
     console.print(f"[dim]Logged in as:[/] {user_info.get('email', 'Unknown')}")
     console.print()
 
-    # Check for required files
-    current_dir = Path.cwd()
+    # Determine strategy directory
+    if strategy_name:
+        # Explicit naming mode
+        strategy_dir = Path.cwd() / strategy_name
+        if not strategy_dir.exists() or not strategy_dir.is_dir():
+            console.print(f"[red]✗ Strategy directory not found: {strategy_name}[/]")
+            console.print("[dim]Make sure the directory exists in the current path[/]")
+            exit(1)
+        current_dir = strategy_dir
+        console.print(f"[dim]Using strategy from: {strategy_dir}[/]")
+        console.print()
+    else:
+        # Context-aware mode
+        current_dir = Path.cwd()
+
     strategy_file = current_dir / 'strategy.py'
     config_file = current_dir / 'config.json'
     requirements_file = current_dir / 'requirements.txt'
@@ -224,6 +246,34 @@ def deploy(force, marketplace):
                 'code': strategy_code
             }, f, indent=2)
 
+    # Auto-backtest if validation passed
+    if validation_status == 'passed' and strategy_id:
+        console.print()
+        console.print("[cyan]Running automatic backtest...[/]")
+        console.print()
+
+        try:
+            # Run backtest and upload results
+            backtest_metrics = _run_and_upload_backtest(
+                client,
+                strategy_id,
+                strategy_file,
+                config_data
+            )
+
+            if backtest_metrics:
+                console.print("[green]✓ Backtest completed and uploaded[/]")
+                console.print()
+                console.print(f"  Win Rate: [bold]{backtest_metrics['winRate']:.1f}%[/]")
+                console.print(f"  ROI: [bold]{backtest_metrics['roi']:+.2f}%[/]")
+                console.print(f"  Max Drawdown: [bold]{backtest_metrics['maxDrawdown']:.2f}%[/]")
+                console.print(f"  Total Trades: [bold]{backtest_metrics['totalTrades']}[/]")
+                console.print()
+        except Exception as e:
+            console.print(f"[yellow]⚠ Backtest failed: {e}[/]")
+            console.print("[dim]You can run backtest manually with 'xcoin test --fetch'[/]")
+            console.print()
+
     # Marketplace deployment
     if marketplace and validation_status == 'passed':
         console.print()
@@ -267,3 +317,119 @@ def deploy(force, marketplace):
     console.print()
     console.print("[dim]Your strategy is now live on the xcoinalgo platform![/]")
     console.print()
+
+
+def _run_and_upload_backtest(client: APIClient, strategy_id: str, strategy_file: Path, config_data: dict):
+    """
+    Run backtest and upload results to backend
+
+    Returns backtest metrics or None if failed
+    """
+    import pandas as pd
+
+    try:
+        # Get symbol from config
+        symbol = config_data.get('pair') or config_data.get('pairs', [None])[0]
+        if not symbol:
+            console.print("[yellow]⚠ No symbol found in config, skipping backtest[/]")
+            return None
+
+        # Fetch last 30 days of data from CoinDCX
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=30)
+
+        console.print(f"[dim]Fetching historical data for {symbol}...[/]")
+
+        # Fetch data from CoinDCX
+        end_ts = int(end_date.timestamp() * 1000)
+        start_ts = int(start_date.timestamp() * 1000)
+
+        url = f"https://public.coindcx.com/market_data/candlesticks"
+        params = {
+            'pair': symbol,
+            'from': start_ts,
+            'to': end_ts,
+            'resolution': '15',  # 15 minute candles
+            'pcode': 'f'
+        }
+
+        response = requests.get(url, params=params)
+        response.raise_for_status()
+        data_json = response.json()
+
+        if 'data' not in data_json or not data_json['data']:
+            console.print(f"[yellow]⚠ No historical data available for {symbol}[/]")
+            return None
+
+        # Parse candles
+        candles_data = data_json['data']
+        df = pd.DataFrame(candles_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+        df.set_index('timestamp', inplace=True)
+
+        for col in ['open', 'high', 'low', 'close', 'volume']:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+
+        df.sort_index(inplace=True)
+
+        console.print(f"[dim]Running backtest on {len(df)} candles...[/]")
+
+        # Run backtest
+        engine = BacktestEngine(
+            strategy_file=strategy_file,
+            initial_capital=10000.0,
+            commission=0.001
+        )
+
+        # Extract settings from config
+        settings = {}
+        if 'parameters' in config_data:
+            for param in config_data['parameters']:
+                name = param.get('name')
+                default = param.get('default')
+                if name and default is not None:
+                    settings[name] = default
+        settings['symbol'] = symbol
+
+        result = engine.run(df, settings)
+
+        # Prepare backtest result payload
+        backtest_payload = {
+            'startDate': start_date.isoformat(),
+            'endDate': end_date.isoformat(),
+            'initialBalance': 10000.0,
+            'finalBalance': 10000.0 + result.total_pnl,
+            'totalReturn': result.total_pnl,
+            'totalReturnPct': result.total_pnl_percentage,
+            'maxDrawdown': result.max_drawdown_percentage,
+            'sharpeRatio': result.sharpe_ratio,
+            'winRate': result.win_rate,
+            'profitFactor': result.profit_factor,
+            'totalTrades': result.total_trades,
+            'avgTrade': result.total_pnl / result.total_trades if result.total_trades > 0 else 0,
+            'timeframe': '15m',
+            'equityCurve': {'data': result.equity_curve[:100]},  # Limit size
+            'tradeHistory': [
+                {
+                    'entryTime': str(t.entry_time),
+                    'exitTime': str(t.exit_time) if t.exit_time else None,
+                    'side': t.side,
+                    'pnl': t.pnl,
+                    'pnlPercentage': t.pnl_percentage
+                }
+                for t in result.trades[:50]  # Limit to last 50 trades
+            ]
+        }
+
+        # Upload to backend
+        console.print("[dim]Uploading backtest results...[/]")
+        upload_result = client.upload_backtest_results(strategy_id, backtest_payload)
+
+        if upload_result and upload_result.get('success'):
+            return upload_result.get('backtestResult', {})
+        else:
+            return None
+
+    except Exception as e:
+        console.print(f"[dim]Backtest error: {str(e)}[/]")
+        return None

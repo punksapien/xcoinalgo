@@ -583,6 +583,114 @@ router.post('/cli-upload', authenticate, async (req: AuthenticatedRequest, res, 
   }
 });
 
+// Upload backtest results from CLI
+router.post('/:id/backtest-results', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = req.userId!;
+    const strategyId = req.params.id;
+    const {
+      startDate,
+      endDate,
+      initialBalance,
+      finalBalance,
+      totalReturn,
+      totalReturnPct,
+      maxDrawdown,
+      sharpeRatio,
+      winRate,
+      profitFactor,
+      totalTrades,
+      avgTrade,
+      equityCurve,
+      tradeHistory,
+      timeframe,
+    } = req.body;
+
+    // Validate required fields
+    if (!startDate || !endDate || !initialBalance || !finalBalance) {
+      return res.status(400).json({
+        error: 'Missing required backtest parameters',
+        required: ['startDate', 'endDate', 'initialBalance', 'finalBalance']
+      });
+    }
+
+    // Check if strategy exists
+    const strategy = await prisma.strategy.findUnique({
+      where: { id: strategyId }
+    });
+
+    if (!strategy) {
+      return res.status(404).json({
+        error: 'Strategy not found'
+      });
+    }
+
+    // Create backtest result
+    const backtestResult = await prisma.backtestResult.create({
+      data: {
+        strategyId,
+        version: strategy.version,
+        startDate: new Date(startDate),
+        endDate: new Date(endDate),
+        initialBalance,
+        finalBalance,
+        totalReturn: totalReturn || (finalBalance - initialBalance),
+        totalReturnPct: totalReturnPct || ((finalBalance - initialBalance) / initialBalance * 100),
+        maxDrawdown: maxDrawdown || 0,
+        sharpeRatio: sharpeRatio || 0,
+        winRate: winRate || 0,
+        profitFactor: profitFactor || 0,
+        totalTrades: totalTrades || 0,
+        avgTrade: avgTrade || 0,
+        timeframe: timeframe || '1d',
+        equityCurve: equityCurve || {},
+        tradeHistory: tradeHistory || [],
+        monthlyReturns: {},
+        backtestDuration: 0,
+      }
+    });
+
+    // Calculate risk/reward ratio
+    const riskReward = avgTrade && maxDrawdown ? Math.abs(avgTrade / maxDrawdown) : 0;
+
+    // Update strategy with latest metrics
+    await prisma.strategy.update({
+      where: { id: strategyId },
+      data: {
+        winRate,
+        roi: totalReturnPct,
+        maxDrawdown,
+        sharpeRatio,
+        profitFactor,
+        totalTrades,
+        riskReward,
+        avgTradeReturn: avgTrade,
+        updatedAt: new Date(),
+      }
+    });
+
+    logger.info(`Backtest results uploaded for strategy ${strategyId} by user ${userId}`);
+
+    res.json({
+      success: true,
+      message: 'Backtest results uploaded successfully',
+      backtestResult: {
+        id: backtestResult.id,
+        winRate,
+        roi: totalReturnPct,
+        maxDrawdown,
+        sharpeRatio,
+        profitFactor,
+        totalTrades,
+      }
+    });
+
+  } catch (error) {
+    logger.error('Backtest results upload failed:', error);
+    next(error);
+  }
+});
+
 // Deploy strategy
 router.post('/:id/deploy', authenticate, async (req: AuthenticatedRequest, res, next) => {
   try {

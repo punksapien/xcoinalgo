@@ -168,6 +168,10 @@ router.get('/:id', async (req, res, next) => {
         tags: true,
         createdAt: true,
         updatedAt: true,
+        isActive: true,
+        isPublic: true,
+        isMarketplace: true,
+        executionConfig: true,
 
         // Performance metrics
         winRate: true,
@@ -175,6 +179,10 @@ router.get('/:id', async (req, res, next) => {
         riskReward: true,
         maxDrawdown: true,
         marginRequired: true,
+        sharpeRatio: true,
+        totalTrades: true,
+        profitFactor: true,
+        avgTradeReturn: true,
 
         // Trading config
         instrument: true,
@@ -195,6 +203,30 @@ router.get('/:id', async (req, res, next) => {
           },
           orderBy: { createdAt: 'desc' },
           take: 1,
+        },
+
+        // Get latest backtest results
+        backtestResults: {
+          select: {
+            id: true,
+            startDate: true,
+            endDate: true,
+            initialBalance: true,
+            finalBalance: true,
+            totalReturn: true,
+            totalReturnPct: true,
+            maxDrawdown: true,
+            sharpeRatio: true,
+            winRate: true,
+            profitFactor: true,
+            totalTrades: true,
+            avgTrade: true,
+            equityCurve: true,
+            tradeHistory: true,
+            createdAt: true,
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
         }
       }
     });
@@ -211,7 +243,9 @@ router.get('/:id', async (req, res, next) => {
         supportedPairs: strategy.supportedPairs ? JSON.parse(strategy.supportedPairs as string) : null,
         timeframes: strategy.timeframes ? JSON.parse(strategy.timeframes as string) : null,
         latestVersion: strategy.versions[0] || null,
+        latestBacktest: strategy.backtestResults[0] || null,
         versions: undefined, // Remove from response
+        backtestResults: undefined, // Remove from response
       }
     });
 

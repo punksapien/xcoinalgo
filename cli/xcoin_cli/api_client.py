@@ -405,6 +405,22 @@ class APIClient:
         """
         return self._request('POST', f'/api/marketplace/{strategy_id}/publish')
 
+    def upload_backtest_results(self, strategy_id: str, backtest_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Upload backtest results for a strategy
+
+        Args:
+            strategy_id: Strategy ID
+            backtest_data: Backtest results including metrics, equity curve, trades
+
+        Returns:
+            Upload response with confirmed metrics
+
+        Raises:
+            APIError: If upload fails
+        """
+        return self._request('POST', f'/api/strategy-upload/{strategy_id}/backtest-results', data=backtest_data)
+
     # Deployment
 
     def deploy_strategy(self, strategy_id: str) -> Dict[str, Any]:

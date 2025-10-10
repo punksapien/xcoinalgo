@@ -10,6 +10,25 @@ import { Separator } from '@/components/ui/separator'
 import { useAuth } from '@/lib/auth'
 import { SubscribeModal } from '@/components/strategy/subscribe-modal'
 
+interface BacktestResult {
+  id: string
+  startDate: string
+  endDate: string
+  initialBalance: number
+  finalBalance: number
+  totalReturn: number
+  totalReturnPct: number
+  maxDrawdown: number
+  sharpeRatio: number
+  winRate: number
+  profitFactor: number
+  totalTrades: number
+  avgTrade: number
+  equityCurve: any
+  tradeHistory: any[]
+  createdAt: string
+}
+
 interface StrategyData {
   id: string
   name: string
@@ -22,11 +41,19 @@ interface StrategyData {
   isMarketplace: boolean
   subscriberCount: number
   tags: string
+  winRate?: number
+  roi?: number
+  riskReward?: number
+  maxDrawdown?: number
+  sharpeRatio?: number
+  totalTrades?: number
+  profitFactor?: number
   executionConfig?: {
     symbol: string
     resolution: string
     lookbackPeriod?: number
   }
+  latestBacktest?: BacktestResult
   createdAt: string
   updatedAt: string
 }
@@ -381,15 +408,95 @@ export default function StrategyDetailPage() {
           </Card>
         </section>
 
-        {/* Coming Soon Sections */}
-        <Card className="border-dashed">
-          <CardHeader>
-            <CardTitle className="text-lg text-muted-foreground">Performance Analytics Coming Soon</CardTitle>
-            <CardDescription>
-              Backtest results, performance charts, and trade analysis will be available in a future update.
-            </CardDescription>
-          </CardHeader>
-        </Card>
+        {/* Performance Analytics */}
+        {strategy.winRate !== null && strategy.winRate !== undefined ? (
+          <Card className="border-border/50 shadow-md hover:shadow-lg transition-all duration-300">
+            <CardHeader className="pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-primary/10 rounded-lg">
+                  <Activity className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <CardTitle className="text-xl">Performance Analytics</CardTitle>
+                  <CardDescription>Backtest results and performance metrics</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {/* Key Metrics Grid */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div className="bg-secondary/20 rounded-lg p-4">
+                  <p className="text-sm text-muted-foreground mb-1">Win Rate</p>
+                  <p className="text-2xl font-bold text-primary">
+                    {strategy.winRate?.toFixed(1) || 'N/A'}%
+                  </p>
+                </div>
+                <div className="bg-secondary/20 rounded-lg p-4">
+                  <p className="text-sm text-muted-foreground mb-1">ROI</p>
+                  <p className={`text-2xl font-bold ${(strategy.roi || 0) > 0 ? 'text-green-500' : 'text-red-500'}`}>
+                    {strategy.roi ? `${strategy.roi > 0 ? '+' : ''}${strategy.roi.toFixed(2)}%` : 'N/A'}
+                  </p>
+                </div>
+                <div className="bg-secondary/20 rounded-lg p-4">
+                  <p className="text-sm text-muted-foreground mb-1">Risk/Reward</p>
+                  <p className="text-2xl font-bold text-foreground">
+                    {strategy.riskReward?.toFixed(2) || 'N/A'}
+                  </p>
+                </div>
+                <div className="bg-secondary/20 rounded-lg p-4">
+                  <p className="text-sm text-muted-foreground mb-1">Max Drawdown</p>
+                  <p className="text-2xl font-bold text-destructive">
+                    {strategy.maxDrawdown?.toFixed(2) || 'N/A'}%
+                  </p>
+                </div>
+              </div>
+
+              <Separator className="my-4" />
+
+              {/* Additional Metrics */}
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                <div className="bg-secondary/20 rounded-lg p-4">
+                  <p className="text-sm text-muted-foreground mb-1">Total Trades</p>
+                  <p className="text-xl font-semibold text-foreground">
+                    {strategy.totalTrades || 'N/A'}
+                  </p>
+                </div>
+                <div className="bg-secondary/20 rounded-lg p-4">
+                  <p className="text-sm text-muted-foreground mb-1">Sharpe Ratio</p>
+                  <p className="text-xl font-semibold text-foreground">
+                    {strategy.sharpeRatio?.toFixed(2) || 'N/A'}
+                  </p>
+                </div>
+                <div className="bg-secondary/20 rounded-lg p-4">
+                  <p className="text-sm text-muted-foreground mb-1">Profit Factor</p>
+                  <p className="text-xl font-semibold text-foreground">
+                    {strategy.profitFactor?.toFixed(2) || 'N/A'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Backtest Info */}
+              {strategy.latestBacktest && (
+                <>
+                  <Separator className="my-4" />
+                  <div className="text-xs text-muted-foreground">
+                    <p>Backtest Period: {new Date(strategy.latestBacktest.startDate).toLocaleDateString()} - {new Date(strategy.latestBacktest.endDate).toLocaleDateString()}</p>
+                    <p className="mt-1">Initial Capital: ${strategy.latestBacktest.initialBalance.toLocaleString()} | Final: ${strategy.latestBacktest.finalBalance.toLocaleString()}</p>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="border-dashed">
+            <CardHeader>
+              <CardTitle className="text-lg text-muted-foreground">Performance Analytics Coming Soon</CardTitle>
+              <CardDescription>
+                Backtest results will be available once the strategy has been backtested. Run backtest to populate metrics.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        )}
       </div>
 
       {/* Subscribe Modal */}

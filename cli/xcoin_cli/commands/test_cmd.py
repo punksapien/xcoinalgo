@@ -12,28 +12,45 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskPr
 from rich import box
 
 from xcoin_cli.backtest import BacktestEngine, load_historical_data
+import requests
+from datetime import datetime, timedelta
 
 console = Console()
 
 
 @click.command()
+@click.argument('strategy_name', required=False)
 @click.option('--backtest', type=click.Path(exists=True), help='CSV file with historical data')
+@click.option('--fetch', is_flag=True, help='Fetch historical data from CoinDCX API')
+@click.option('--symbol', help='Trading symbol (e.g., B-BTC_USDT) for auto-fetch')
+@click.option('--days', default=30, type=int, help='Number of days of historical data (default: 30)')
+@click.option('--interval', default='15m', help='Candle interval (1m, 5m, 15m, 30m, 1h, 4h, 1d)')
 @click.option('--capital', default=10000.0, help='Initial capital in USDT (default: 10000)')
 @click.option('--commission', default=0.001, help='Commission rate (default: 0.001 = 0.1%)')
 @click.option('--start-date', help='Start date (YYYY-MM-DD)')
 @click.option('--end-date', help='End date (YYYY-MM-DD)')
-def test(backtest, capital, commission, start_date, end_date):
+def test(strategy_name, backtest, fetch, symbol, days, interval, capital, commission, start_date, end_date):
     """
     Test strategy with historical data
 
     \b
-    Usage:
+    Usage (context-aware - with CSV):
         xcoin test --backtest data/btc_2024.csv
         xcoin test --backtest data.csv --capital 50000
-        xcoin test --backtest data.csv --start-date 2024-01-01 --end-date 2024-06-01
 
     \b
-    CSV Format:
+    Usage (auto-fetch from CoinDCX):
+        xcoin test --fetch --symbol B-BTC_USDT --days 30
+        xcoin test my-strategy --fetch --symbol B-SOL_USDT --interval 1h
+        xcoin test --fetch --start-date 2024-01-01 --end-date 2024-06-01
+
+    \b
+    Usage (explicit naming):
+        xcoin test my-strategy --backtest data/btc_2024.csv
+        xcoin test my-strategy --fetch --symbol B-BTC_USDT
+
+    \b
+    CSV Format (for --backtest):
         timestamp,open,high,low,close,volume
         2024-01-01 00:00:00,45000,45500,44800,45200,1000
         ...
@@ -46,8 +63,21 @@ def test(backtest, capital, commission, start_date, end_date):
     ))
     console.print()
 
-    # Check if we're in a strategy project
-    current_dir = Path.cwd()
+    # Determine strategy directory
+    if strategy_name:
+        # Explicit naming mode - look for strategy directory
+        strategy_dir = Path.cwd() / strategy_name
+        if not strategy_dir.exists() or not strategy_dir.is_dir():
+            console.print(f"[red]✗ Strategy directory not found: {strategy_name}[/]")
+            console.print(f"[dim]Make sure the directory exists in the current path[/]")
+            exit(1)
+        current_dir = strategy_dir
+        console.print(f"[dim]Using strategy from: {strategy_dir}[/]")
+        console.print()
+    else:
+        # Context-aware mode - use current directory
+        current_dir = Path.cwd()
+
     strategy_file = current_dir / 'strategy.py'
     config_file = current_dir / 'config.json'
 
@@ -68,51 +98,77 @@ def test(backtest, capital, commission, start_date, end_date):
         console.print(f"[red]✗ Failed to read config.json: {e}[/]")
         exit(1)
 
-    # Determine data file
-    if not backtest:
-        # Try default locations
-        default_files = [
-            current_dir / 'data' / 'sample.csv',
-            current_dir / 'data' / 'historical.csv',
-            current_dir / 'backtest.csv'
-        ]
-        for file_path in default_files:
-            if file_path.exists():
-                backtest = str(file_path)
-                break
+    # Determine data source
+    data = None
 
-        if not backtest:
-            console.print("[red]✗ No backtest data file specified[/]")
-            console.print("[dim]Use --backtest option or place data in data/sample.csv[/]")
+    if fetch:
+        # Auto-fetch mode - get data from CoinDCX API
+        trading_symbol = symbol or config.get('pairs', [None])[0]
+        if not trading_symbol:
+            console.print("[red]✗ No trading symbol specified[/]")
+            console.print("[dim]Use --symbol option or configure in config.json[/]")
             exit(1)
 
-    console.print(f"[dim]Loading data from: {backtest}[/]")
-    console.print(f"[dim]Initial capital: ${capital:,.2f}[/]")
-    console.print(f"[dim]Commission: {commission * 100:.2f}%[/]")
-    console.print()
-
-    # Load historical data
-    try:
-        with console.status("[cyan]Loading historical data...[/]"):
-            data = load_historical_data(Path(backtest))
-
-            # Filter by date range if specified
-            if start_date:
-                data = data[data.index >= start_date]
-            if end_date:
-                data = data[data.index <= end_date]
-
-            if len(data) == 0:
-                console.print("[red]✗ No data found in specified date range[/]")
-                exit(1)
-
-        console.print(f"[green]✓ Loaded {len(data)} candles[/]")
-        console.print(f"[dim]Date range: {data.index[0]} to {data.index[-1]}[/]")
+        console.print(f"[cyan]Fetching historical data from CoinDCX...[/]")
+        console.print(f"[dim]Symbol: {trading_symbol}, Interval: {interval}, Days: {days}[/]")
         console.print()
 
-    except Exception as e:
-        console.print(f"[red]✗ Failed to load data: {e}[/]")
-        exit(1)
+        try:
+            data = _fetch_historical_data_from_coindcx(trading_symbol, interval, days, start_date, end_date)
+            console.print(f"[green]✓ Fetched {len(data)} candles from CoinDCX[/]")
+            console.print(f"[dim]Date range: {data.index[0]} to {data.index[-1]}[/]")
+            console.print()
+        except Exception as e:
+            console.print(f"[red]✗ Failed to fetch data from CoinDCX: {e}[/]")
+            console.print(f"[dim]Tip: Check if the symbol is correct (e.g., B-BTC_USDT)[/]")
+            exit(1)
+
+    else:
+        # CSV file mode
+        if not backtest:
+            # Try default locations
+            default_files = [
+                current_dir / 'data' / 'sample.csv',
+                current_dir / 'data' / 'historical.csv',
+                current_dir / 'backtest.csv'
+            ]
+            for file_path in default_files:
+                if file_path.exists():
+                    backtest = str(file_path)
+                    break
+
+            if not backtest:
+                console.print("[red]✗ No backtest data file specified[/]")
+                console.print("[dim]Use --backtest option, --fetch flag, or place data in data/sample.csv[/]")
+                exit(1)
+
+        console.print(f"[dim]Loading data from: {backtest}[/]")
+        console.print(f"[dim]Initial capital: ${capital:,.2f}[/]")
+        console.print(f"[dim]Commission: {commission * 100:.2f}%[/]")
+        console.print()
+
+        # Load historical data from CSV
+        try:
+            with console.status("[cyan]Loading historical data...[/]"):
+                data = load_historical_data(Path(backtest))
+
+                # Filter by date range if specified
+                if start_date:
+                    data = data[data.index >= start_date]
+                if end_date:
+                    data = data[data.index <= end_date]
+
+                if len(data) == 0:
+                    console.print("[red]✗ No data found in specified date range[/]")
+                    exit(1)
+
+            console.print(f"[green]✓ Loaded {len(data)} candles[/]")
+            console.print(f"[dim]Date range: {data.index[0]} to {data.index[-1]}[/]")
+            console.print()
+
+        except Exception as e:
+            console.print(f"[red]✗ Failed to load data: {e}[/]")
+            exit(1)
 
     # Extract strategy settings from config
     settings = {}
@@ -337,3 +393,70 @@ def _display_results(result, initial_capital: float):
         border_style="cyan",
         padding=(1, 2)
     ))
+
+
+def _fetch_historical_data_from_coindcx(symbol: str, interval: str, days: int, start_date: str = None, end_date: str = None):
+    """
+    Fetch historical OHLCV data from CoinDCX public API
+
+    Args:
+        symbol: Trading pair (e.g., "B-BTC_USDT")
+        interval: Candle interval (e.g., "1m", "5m", "15m", "1h", "1d")
+        days: Number of days to fetch (if start_date/end_date not provided)
+        start_date: Start date (YYYY-MM-DD)
+        end_date: End date (YYYY-MM-DD)
+
+    Returns:
+        pandas DataFrame with OHLCV data
+    """
+    import pandas as pd
+
+    # Calculate timestamps
+    if start_date and end_date:
+        start_ts = int(datetime.strptime(start_date, '%Y-%m-%d').timestamp() * 1000)
+        end_ts = int(datetime.strptime(end_date, '%Y-%m-%d').timestamp() * 1000)
+    else:
+        end_ts = int(datetime.now().timestamp() * 1000)
+        start_ts = int((datetime.now() - timedelta(days=days)).timestamp() * 1000)
+
+    # Convert interval to CoinDCX format
+    interval_map = {
+        '1m': '1', '5m': '5', '15m': '15', '30m': '30',
+        '1h': '60', '2h': '120', '4h': '240', '1d': '1D'
+    }
+    resolution = interval_map.get(interval, '15')
+
+    # CoinDCX public API endpoint
+    url = f"https://public.coindcx.com/market_data/candlesticks"
+    params = {
+        'pair': symbol,
+        'from': start_ts,
+        'to': end_ts,
+        'resolution': resolution,
+        'pcode': 'f'  # Futures market
+    }
+
+    response = requests.get(url, params=params)
+    response.raise_for_status()
+
+    data_json = response.json()
+
+    if 'data' not in data_json or not data_json['data']:
+        raise Exception(f"No data returned from CoinDCX for {symbol}")
+
+    # Parse candles
+    candles_data = data_json['data']
+    df = pd.DataFrame(candles_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+
+    # Convert timestamp to datetime
+    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+    df.set_index('timestamp', inplace=True)
+
+    # Convert to numeric
+    for col in ['open', 'high', 'low', 'close', 'volume']:
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+
+    # Sort by timestamp
+    df.sort_index(inplace=True)
+
+    return df
