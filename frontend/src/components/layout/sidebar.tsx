@@ -24,7 +24,7 @@ const navigation = [
   },
   {
     name: 'Deployed & Live',
-    href: '/dashboard/deployed',
+    href: '/dashboard/subscriptions',
     icon: Activity,
   },
   {

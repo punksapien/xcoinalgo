@@ -207,9 +207,9 @@ export default function StrategyDetailPage() {
       setLoading(true)
       const strategyId = params.id as string
 
-      // Fetch strategy details
+      // Fetch strategy details from marketplace API
       const response = await fetch(
-        `/api/strategy-upload/strategies/${strategyId}`,
+        `/api/marketplace/${strategyId}`,
         {
           headers: token ? {
             'Authorization': `Bearer ${token}`,

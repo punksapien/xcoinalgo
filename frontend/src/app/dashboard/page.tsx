@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/lib/auth';
 import { strategyService, Strategy } from '@/lib/strategy-service';
+import { SubscribeModal } from '@/components/strategy/subscribe-modal';
 import { Search, Filter, TrendingUp, Users, Bot, Clock, Target, TrendingDown, Zap } from 'lucide-react';
 
 function DashboardContent() {
@@ -19,6 +20,8 @@ function DashboardContent() {
   const [availableTags, setAvailableTags] = useState<{tag: string, count: number}[]>([]);
   const [sortBy, setSortBy] = useState('deploymentCount');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [subscribeModalOpen, setSubscribeModalOpen] = useState(false);
+  const [selectedStrategy, setSelectedStrategy] = useState<Strategy | null>(null);
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -130,6 +133,17 @@ function DashboardContent() {
   const handleViewDetails = useCallback((strategyId: string, e: React.MouseEvent) => {
     e.stopPropagation(); // Prevent card click when clicking the button
     router.push(`/dashboard/strategy/${strategyId}`);
+  }, [router]);
+
+  const handleDeployBot = useCallback((strategy: Strategy, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent card click when clicking the button
+    setSelectedStrategy(strategy);
+    setSubscribeModalOpen(true);
+  }, []);
+
+  const handleSubscribeSuccess = useCallback(() => {
+    // Redirect to subscriptions page after successful subscription
+    router.push('/dashboard/subscriptions');
   }, [router]);
 
   if (loading && strategies.length === 0) {
@@ -348,7 +362,11 @@ function DashboardContent() {
                   >
                     View Details
                   </Button>
-                  <Button size="sm" className="flex-1 bg-primary hover:bg-primary/90 transition-all hover:scale-105">
+                  <Button
+                    size="sm"
+                    className="flex-1 bg-primary hover:bg-primary/90 transition-all hover:scale-105"
+                    onClick={(e) => handleDeployBot(strategy, e)}
+                  >
                     Deploy Bot Now
                   </Button>
                 </div>
@@ -379,6 +397,17 @@ function DashboardContent() {
               Clear All Filters
             </Button>
           </div>
+        )}
+
+        {/* Subscribe Modal */}
+        {selectedStrategy && (
+          <SubscribeModal
+            open={subscribeModalOpen}
+            onOpenChange={setSubscribeModalOpen}
+            strategyId={selectedStrategy.id}
+            strategyName={selectedStrategy.name}
+            onSuccess={handleSubscribeSuccess}
+          />
         )}
     </div>
   );
