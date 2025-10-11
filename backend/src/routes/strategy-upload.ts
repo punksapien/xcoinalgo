@@ -317,6 +317,29 @@ router.get('/:id', authenticate, async (req: AuthenticatedRequest, res, next) =>
         versions: {
           orderBy: { createdAt: 'desc' },
           take: 1,
+        },
+        backtestResults: {
+          select: {
+            id: true,
+            startDate: true,
+            endDate: true,
+            initialBalance: true,
+            finalBalance: true,
+            totalReturn: true,
+            totalReturnPct: true,
+            maxDrawdown: true,
+            sharpeRatio: true,
+            winRate: true,
+            profitFactor: true,
+            totalTrades: true,
+            avgTrade: true,
+            equityCurve: true,
+            tradeHistory: true,
+            monthlyReturns: true,
+            createdAt: true,
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
         }
       }
     });
@@ -327,7 +350,14 @@ router.get('/:id', authenticate, async (req: AuthenticatedRequest, res, next) =>
       });
     }
 
-    res.json({ strategy });
+    // Format response with latestBacktest
+    const formattedStrategy = {
+      ...strategy,
+      latestBacktest: strategy.backtestResults?.[0] || null,
+      backtestResults: undefined, // Remove array from response
+    };
+
+    res.json({ strategy: formattedStrategy });
 
   } catch (error) {
     logger.error('Failed to get strategy details:', error);

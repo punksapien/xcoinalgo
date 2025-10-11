@@ -157,12 +157,12 @@ export default function StrategiesPage() {
   };
 
   const formatPercentage = (value?: number) => {
-    if (!value) return 'N/A';
+    if (value == null) return 'N/A';
     return `${value.toFixed(1)}%`;
   };
 
   const formatCurrency = (value?: number) => {
-    if (!value) return 'N/A';
+    if (value == null) return 'N/A';
     return `₹${value.toLocaleString()}`;
   };
 
