@@ -101,8 +101,11 @@ xcoin --version
 | `xcoin login` | Authenticate with platform (API key) |
 | `xcoin deploy` | Deploy strategy to platform (seamless, no Git required) |
 | `xcoin deploy --marketplace` | Deploy and publish to marketplace |
+| `xcoin list` | List all your strategies |
 | `xcoin status` | Check strategy status on platform |
 | `xcoin logs` | View execution logs |
+| `xcoin delete` | Delete a strategy |
+| `xcoin unpublish` | Remove strategy from marketplace |
 | `xcoin link-git` | (Advanced) Link Git repository for auto-sync |
 
 Run `xcoin COMMAND --help` for detailed usage.

@@ -526,3 +526,33 @@ class APIClient:
     def get_user_info(self) -> Optional[Dict[str, Any]]:
         """Get stored user information"""
         return self.config.get('user')
+
+    def delete_strategy(self, strategy_id: str) -> Dict[str, Any]:
+        """
+        Delete a strategy
+
+        Args:
+            strategy_id: Strategy ID
+
+        Returns:
+            Delete confirmation
+
+        Raises:
+            APIError: If deletion fails
+        """
+        return self._request('DELETE', f'/api/strategy-upload/{strategy_id}')
+
+    def unpublish_from_marketplace(self, strategy_id: str) -> Dict[str, Any]:
+        """
+        Unpublish strategy from marketplace
+
+        Args:
+            strategy_id: Strategy ID
+
+        Returns:
+            Unpublish confirmation
+
+        Raises:
+            APIError: If unpublish fails
+        """
+        return self._request('POST', f'/api/marketplace/{strategy_id}/unpublish')

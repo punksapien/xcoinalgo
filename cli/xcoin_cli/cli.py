@@ -59,6 +59,9 @@ from .commands.link_git import link_git
 from .commands.status import status
 from .commands.deploy import deploy
 from .commands.logs import logs
+from .commands.list import list as list_cmd
+from .commands.delete import delete
+from .commands.unpublish import unpublish
 
 cli.add_command(init)
 cli.add_command(login)
@@ -68,6 +71,9 @@ cli.add_command(link_git)
 cli.add_command(status)
 cli.add_command(deploy)
 cli.add_command(logs)
+cli.add_command(list_cmd, name="list")
+cli.add_command(delete)
+cli.add_command(unpublish)
 
 
 if __name__ == "__main__":

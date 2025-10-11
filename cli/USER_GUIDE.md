@@ -1,7 +1,14 @@
 # xcoin-cli User Guide
 
+> **⚠️ NOTICE: This document is partially outdated.**
+>
+> **Please refer to [README.md](./README.md) as the primary documentation source.**
+>
+> The README reflects the current CLI implementation where **Git integration is OPTIONAL**.
+> This guide incorrectly describes Git as required, which is no longer accurate.
+
 **Version:** 0.1.0
-**Status:** Beta
+**Status:** Beta (Documentation Outdated - See README.md)
 **Platform:** xcoinalgo - Algorithmic Trading Platform
 
 ---
@@ -476,6 +483,145 @@ Each log entry shows:
 - Signal (LONG, SHORT, HOLD, EXIT_LONG, EXIT_SHORT)
 - Price
 - Additional details
+
+---
+
+### `xcoin list`
+
+List all your strategies.
+
+**Usage:**
+```bash
+xcoin list                          # List all strategies
+xcoin list --marketplace            # Show only marketplace-published strategies
+xcoin list --active                 # Show only active strategies
+xcoin list --limit 50               # Show up to 50 strategies
+```
+
+**Options:**
+- `--marketplace` - Show only strategies published to marketplace
+- `--active` - Show only active strategies
+- `--limit` - Maximum number of strategies to display (default: 20)
+
+**Output:**
+
+Displays a table with:
+- Strategy name and code
+- Version
+- Status (Active/Inactive)
+- Marketplace status
+- Creation date
+- Last updated date
+
+**Example:**
+```
+┌──────────────────┬─────────┬────────┬──────────────┬─────────────┐
+│ Name             │ Version │ Status │ Marketplace  │ Updated     │
+├──────────────────┼─────────┼────────┼──────────────┼─────────────┤
+│ Momentum Strategy│ 1.2.0   │ Active │ Published    │ 2024-10-10  │
+│ Mean Reversion   │ 1.0.1   │ Active │ Not Published│ 2024-10-08  │
+└──────────────────┴─────────┴────────┴──────────────┴─────────────┘
+```
+
+---
+
+### `xcoin delete`
+
+Delete a strategy from the platform.
+
+**Usage:**
+```bash
+xcoin delete                        # Delete current strategy (context-aware)
+xcoin delete my-strategy            # Delete by name
+xcoin delete --strategy-id xyz      # Delete by ID
+xcoin delete --yes                  # Skip confirmation prompt
+```
+
+**Options:**
+- `strategy_name` - Strategy name (optional, auto-detected from current directory)
+- `--strategy-id` - Strategy ID (if not using name)
+- `--yes`, `-y` - Skip confirmation prompt
+
+**Context-Aware Mode:**
+
+When run from a strategy directory, automatically detects the strategy ID from:
+1. `.xcoin/strategy.json` (created by `xcoin deploy`)
+2. `.xcoin/config.yml` (legacy format)
+
+**Requirements:**
+- No active deployments (must be stopped first)
+- Strategy must exist on platform
+
+**What it does:**
+1. Fetches strategy details
+2. Displays strategy information
+3. Prompts for confirmation (unless `--yes` flag)
+4. Deletes strategy from platform
+5. Local files are **not** deleted
+
+**Warning:** This action removes the strategy from the platform permanently. Active deployments must be stopped first.
+
+**Example:**
+```bash
+# From strategy directory
+cd my-momentum-strategy
+xcoin delete
+
+# Or explicit naming
+xcoin delete momentum-strategy --yes
+```
+
+---
+
+### `xcoin unpublish`
+
+Remove strategy from marketplace without deleting it.
+
+**Usage:**
+```bash
+xcoin unpublish                     # Unpublish current strategy (context-aware)
+xcoin unpublish my-strategy         # Unpublish by name
+xcoin unpublish --strategy-id xyz   # Unpublish by ID
+xcoin unpublish --yes               # Skip confirmation prompt
+```
+
+**Options:**
+- `strategy_name` - Strategy name (optional, auto-detected from current directory)
+- `--strategy-id` - Strategy ID (if not using name)
+- `--yes`, `-y` - Skip confirmation prompt
+
+**Context-Aware Mode:**
+
+Similar to `xcoin delete`, automatically detects strategy ID from local config.
+
+**What it does:**
+1. Fetches strategy details
+2. Displays strategy information
+3. Prompts for confirmation (unless `--yes` flag)
+4. Removes strategy from marketplace
+5. Strategy remains in your account
+
+**Difference from Delete:**
+
+- `xcoin unpublish` - Removes from marketplace, keeps in your account, can republish later
+- `xcoin delete` - Permanently removes from platform
+
+**Re-publishing:**
+
+You can republish anytime with:
+```bash
+xcoin deploy --marketplace
+```
+
+**Example:**
+```bash
+# From strategy directory
+cd my-momentum-strategy
+xcoin unpublish
+
+# Or explicit naming
+xcoin unpublish momentum-strategy --yes
+```
 
 ---
 
@@ -1193,11 +1339,20 @@ xcoin link-git
 
 **Problem:** Can't deploy without Git
 
-**Solution:** Link Git first
+**Solution (OUTDATED):** Git is NO LONGER REQUIRED for deployment!
+
+You can deploy directly without Git using:
+```bash
+xcoin deploy
+```
+
+If you still want to use Git integration (optional), you can link it:
 ```bash
 git remote add origin https://github.com/yourteam/strategy.git
-xcoin link-git
+xcoin link-git --auto-deploy
 ```
+
+See [README.md](./README.md) for the current seamless deployment workflow.
 
 ### Getting Help
 

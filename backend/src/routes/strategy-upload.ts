@@ -196,8 +196,25 @@ router.get('/my-strategies', authenticate, async (req: AuthenticatedRequest, res
           version: true,
           isActive: true,
           tags: true,
+          instrument: true,
           createdAt: true,
           updatedAt: true,
+
+          // Performance metrics
+          winRate: true,
+          roi: true,
+          riskReward: true,
+          maxDrawdown: true,
+          sharpeRatio: true,
+          totalTrades: true,
+          profitFactor: true,
+          marginRequired: true,
+
+          // Trading config (JSON fields)
+          supportedPairs: true,
+          timeframes: true,
+
+          // Deployments
           botDeployments: {
             select: {
               id: true,
@@ -205,6 +222,30 @@ router.get('/my-strategies', authenticate, async (req: AuthenticatedRequest, res
               deployedAt: true,
             },
             orderBy: { deployedAt: 'desc' },
+            take: 1,
+          },
+
+          // Latest backtest results
+          backtestResults: {
+            select: {
+              id: true,
+              startDate: true,
+              endDate: true,
+              initialBalance: true,
+              finalBalance: true,
+              totalReturn: true,
+              totalReturnPct: true,
+              maxDrawdown: true,
+              sharpeRatio: true,
+              winRate: true,
+              profitFactor: true,
+              totalTrades: true,
+              avgTrade: true,
+              equityCurve: true,
+              tradeHistory: true,
+              createdAt: true,
+            },
+            orderBy: { createdAt: 'desc' },
             take: 1,
           }
         },
@@ -216,11 +257,36 @@ router.get('/my-strategies', authenticate, async (req: AuthenticatedRequest, res
     ]);
 
     res.json({
-      strategies: strategies.map(strategy => ({
-        ...strategy,
-        latestDeployment: strategy.botDeployments[0] || null,
-        botDeployments: undefined, // Remove from response
-      })),
+      strategies: strategies.map(strategy => {
+        // Parse JSON fields
+        const supportedPairs = strategy.supportedPairs ? JSON.parse(strategy.supportedPairs as string) : null;
+        const timeframes = strategy.timeframes ? JSON.parse(strategy.timeframes as string) : null;
+
+        // Count active deployments
+        const deploymentCount = strategy.botDeployments.filter(d =>
+          ['ACTIVE', 'DEPLOYING', 'STARTING'].includes(d.status)
+        ).length;
+
+        return {
+          ...strategy,
+          // Parse JSON fields
+          supportedPairs,
+          timeframes,
+          // Add computed fields
+          deploymentCount,
+          subscriberCount: 0, // TODO: Implement subscription count
+          latestDeployment: strategy.botDeployments[0] || null,
+          latestBacktest: strategy.backtestResults[0] || null,
+          // Add features object for frontend compatibility
+          features: timeframes ? {
+            timeframes: timeframes,
+            leverage: 10, // Default leverage, should be extracted from config if available
+          } : undefined,
+          // Remove internal arrays from response
+          botDeployments: undefined,
+          backtestResults: undefined,
+        };
+      }),
       pagination: {
         page: Number(page),
         limit: Number(limit),
