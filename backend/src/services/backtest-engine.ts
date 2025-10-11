@@ -281,6 +281,15 @@ class BacktestEngine {
       );
 
       logger.info(`Fetched ${candles.length} futures candles for ${symbol}`);
+
+      if (candles.length === 0) {
+        const errorMsg = `No historical data available for ${symbol}. ` +
+                        `Please verify: (1) Symbol exists on CoinDCX, (2) Has trading history, (3) Date range contains data. ` +
+                        `API params: from=${new Date(fromTimestamp * 1000).toISOString()}, to=${new Date(toTimestamp * 1000).toISOString()}, resolution=${apiResolution}`;
+        logger.error(errorMsg);
+        throw new Error(errorMsg);
+      }
+
       return candles;
 
     } else {
@@ -301,6 +310,15 @@ class BacktestEngine {
       });
 
       logger.info(`Fetched ${filtered.length} spot candles for ${symbol}`);
+
+      if (filtered.length === 0) {
+        const errorMsg = `No historical data available for ${symbol}. ` +
+                        `Please verify: (1) Symbol exists on CoinDCX, (2) Has trading history in date range. ` +
+                        `Date range: ${startDate.toISOString()} to ${endDate.toISOString()}`;
+        logger.error(errorMsg);
+        throw new Error(errorMsg);
+      }
+
       return filtered;
     }
   }

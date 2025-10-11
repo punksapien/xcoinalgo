@@ -250,41 +250,8 @@ def deploy(strategy_name, force, marketplace):
     # Register/update local registry entry
     register_or_update_project(path=current_dir, name=strategy_name, code=strategy_code, remote_id=strategy_id, version=version)
 
-    # Auto-backtest if validation passed
-    if validation_status == 'passed' and strategy_id:
-        console.print()
-        console.print("[cyan]Running automatic backtest...[/]")
-        console.print()
-
-        try:
-            # Run backtest and upload results
-            backtest_metrics = _run_and_upload_backtest(
-                client,
-                strategy_id,
-                strategy_file,
-                config_data
-            )
-
-            if backtest_metrics:
-                console.print("[green]✓ Backtest completed and uploaded[/]")
-                console.print()
-                console.print(f"  Win Rate: [bold]{backtest_metrics['winRate']:.1f}%[/]")
-                console.print(f"  ROI: [bold]{backtest_metrics['roi']:+.2f}%[/]")
-                console.print(f"  Max Drawdown: [bold]{backtest_metrics['maxDrawdown']:.2f}%[/]")
-                console.print(f"  Total Trades: [bold]{backtest_metrics['totalTrades']}[/]")
-                console.print()
-                # Cache summary locally
-                update_cache(strategy_id, backtest_summary={
-                    'winRate': backtest_metrics.get('winRate'),
-                    'roi': backtest_metrics.get('roi'),
-                    'maxDrawdown': backtest_metrics.get('maxDrawdown'),
-                    'profitFactor': backtest_metrics.get('profitFactor'),
-                    'totalTrades': backtest_metrics.get('totalTrades'),
-                })
-        except Exception as e:
-            console.print(f"[yellow]⚠ Backtest failed: {e}[/]")
-            console.print("[dim]You can run backtest manually with 'xcoin test --fetch'[/]")
-            console.print()
+    # Note: Backend automatically runs backtest on upload
+    # No need to run redundant CLI backtest here
 
     # Marketplace deployment
     if marketplace and validation_status == 'passed':
