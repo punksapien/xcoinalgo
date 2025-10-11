@@ -412,8 +412,14 @@ class BatchBacktestRunner:
 def main():
     """Main entry point"""
     try:
-        # Read input from stdin
-        input_data = json.loads(sys.stdin.read())
+        # Read input from file if provided, otherwise from stdin
+        if len(sys.argv) > 1:
+            # File path provided as command line argument
+            with open(sys.argv[1], 'r') as f:
+                input_data = json.load(f)
+        else:
+            # Read from stdin
+            input_data = json.loads(sys.stdin.read())
 
         # Extract parameters
         strategy_code = input_data['strategy_code']

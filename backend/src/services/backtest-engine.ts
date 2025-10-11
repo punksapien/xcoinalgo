@@ -17,6 +17,8 @@ import CoinDCXClient from './coindcx-client';
 import { Logger } from '../utils/logger';
 import { spawn } from 'child_process';
 import path from 'path';
+import fs from 'fs';
+import os from 'os';
 
 const prisma = new PrismaClient();
 const logger = new Logger('BacktestEngine');
@@ -332,7 +334,13 @@ class BacktestEngine {
         commission: config.commission,
       });
 
-      const pythonProcess = spawn('python3', [pythonScriptPath], {
+      // Write input to temporary file to avoid stdin buffer overflow with large datasets
+      const tempFilePath = path.join(os.tmpdir(), `backtest-${Date.now()}-${Math.random().toString(36).substring(7)}.json`);
+      fs.writeFileSync(tempFilePath, input);
+
+      logger.info(`Wrote ${input.length} bytes to temp file: ${tempFilePath}`);
+
+      const pythonProcess = spawn('python3', [pythonScriptPath, tempFilePath], {
         env: { ...process.env },
       });
 
@@ -348,6 +356,13 @@ class BacktestEngine {
       });
 
       pythonProcess.on('close', (code) => {
+        // Clean up temp file
+        try {
+          fs.unlinkSync(tempFilePath);
+        } catch (e) {
+          logger.warn(`Failed to delete temp file ${tempFilePath}: ${e}`);
+        }
+
         if (code !== 0) {
           logger.error(`Batch backtest failed with code ${code}`);
           logger.error(`stderr: ${stderr}`);
@@ -375,12 +390,15 @@ class BacktestEngine {
         }
       });
 
-      pythonProcess.stdin.write(input);
-      pythonProcess.stdin.end();
-
       // Longer timeout for batch processing (10 minutes for 1 year of data)
       setTimeout(() => {
         pythonProcess.kill();
+        // Clean up temp file on timeout
+        try {
+          fs.unlinkSync(tempFilePath);
+        } catch (e) {
+          // Ignore
+        }
         resolve({
           success: false,
           error: 'Batch backtest timed out after 10 minutes',
