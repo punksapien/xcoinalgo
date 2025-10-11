@@ -640,6 +640,26 @@ class BacktestEngine {
   }
 
   /**
+   * Calculate monthly returns from trades
+   */
+  private calculateMonthlyReturns(trades: Trade[]): Record<string, number> {
+    const monthlyReturns: Record<string, number> = {};
+
+    trades.forEach(trade => {
+      const year = trade.exitTime.getFullYear();
+      const month = trade.exitTime.getMonth() + 1; // 1-12
+      const key = `${year}-${month.toString().padStart(2, '0')}`;
+
+      if (!monthlyReturns[key]) {
+        monthlyReturns[key] = 0;
+      }
+      monthlyReturns[key] += trade.pnl;
+    });
+
+    return monthlyReturns;
+  }
+
+  /**
    * Store backtest result in database
    */
   private async storeBacktestResult(
@@ -647,6 +667,8 @@ class BacktestEngine {
     result: BacktestResult
   ): Promise<void> {
     try {
+      const monthlyReturns = this.calculateMonthlyReturns(result.trades);
+
       await prisma.backtestResult.create({
         data: {
           strategy: {
@@ -668,7 +690,7 @@ class BacktestEngine {
           avgTrade: result.metrics.totalTrades > 0 ? result.metrics.totalPnl / result.metrics.totalTrades : 0,
           equityCurve: result.equityCurve as any,
           tradeHistory: result.trades as any,
-          monthlyReturns: {} as any, // TODO: Calculate monthly returns
+          monthlyReturns: monthlyReturns as any,
           backtestDuration: result.executionTime / 1000, // Convert ms to seconds
         },
       });
