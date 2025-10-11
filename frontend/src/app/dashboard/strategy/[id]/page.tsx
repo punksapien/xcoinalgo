@@ -2,13 +2,14 @@
 
 import { useParams, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { ArrowLeft, Calendar, Users, Award, Info, Activity, TrendingUp, Code, Clock } from 'lucide-react'
+import { ArrowLeft, Calendar, Users, Award, Info, Activity, TrendingUp, Code, Clock, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { useAuth } from '@/lib/auth'
 import { SubscribeModal } from '@/components/strategy/subscribe-modal'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
 interface BacktestResult {
   id: string
@@ -19,14 +20,48 @@ interface BacktestResult {
   totalReturn: number
   totalReturnPct: number
   maxDrawdown: number
+  maxDrawdownPct: number
   sharpeRatio: number
   winRate: number
   profitFactor: number
   totalTrades: number
+  winningTrades: number
+  losingTrades: number
   avgTrade: number
+  avgWinningTrade: number
+  avgLosingTrade: number
+  maxProfit: number
+  maxLoss: number
+  totalCharges: number
+  netPnl: number
+  realizedPnl: number
+  rewardToRiskRatio: number
+  expectancyRatio: number
+  maxWinStreak: number
+  maxLossStreak: number
+  maxTradesInDrawdown: number
+  maxDrawdownDuration: string
+  returnMaxDD: number
   equityCurve: Record<string, unknown>
-  tradeHistory: Record<string, unknown>[]
+  tradeHistory: Trade[]
   createdAt: string
+}
+
+interface Trade {
+  index: number
+  entryTime: string
+  exitTime: string
+  entryDate: string
+  exitDate: string
+  orderType: string
+  strike: string
+  action: string
+  quantity: number
+  entryPrice: number
+  exitPrice: number
+  profitLoss: number
+  charges: number
+  remarks: string
 }
 
 interface StrategyData {
@@ -86,7 +121,7 @@ const StrategyHeader = ({
           className="hover:bg-secondary/80 transition-all duration-200 hover:scale-105"
         >
           <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to Strategies
+          Back
         </Button>
       </div>
 
@@ -204,7 +239,7 @@ const StrategyHeader = ({
                     className="w-full bg-primary hover:bg-primary/90 transition-all hover:scale-105"
                     onClick={onSubscribe}
                   >
-                    Subscribe to Strategy
+                    Deploy Bot Now 🚀
                   </Button>
                 )}
               </div>
@@ -224,6 +259,8 @@ export default function StrategyDetailPage() {
   const [userSubscription, setUserSubscription] = useState<UserSubscription | null>(null)
   const [loading, setLoading] = useState(true)
   const [subscribeModalOpen, setSubscribeModalOpen] = useState(false)
+  const [showingUSD, setShowingUSD] = useState(true)
+  const [reportMultiplier, setReportMultiplier] = useState(1)
 
   useEffect(() => {
     fetchStrategy()
@@ -304,6 +341,43 @@ export default function StrategyDetailPage() {
     }
   }
 
+  const formatCurrency = (value: number) => {
+    return showingUSD ? `$${value.toFixed(2)}` : `₹${(value * 83).toFixed(2)}`
+  }
+
+  const formatPercentage = (value: number) => {
+    return `${value > 0 ? '+' : ''}${value.toFixed(2)}%`
+  }
+
+  // Generate monthly trade summary
+  const generateMonthlySummary = (trades: Trade[]) => {
+    const summary: Record<string, Record<string, number>> = {
+      '2024': {},
+      '2025': {}
+    }
+
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Total']
+
+    months.forEach(month => {
+      summary['2024'][month] = 0
+      summary['2025'][month] = 0
+    })
+
+    trades.forEach(trade => {
+      const date = new Date(trade.exitDate)
+      const year = date.getFullYear().toString()
+      const monthIndex = date.getMonth()
+      const monthName = months[monthIndex]
+
+      if (summary[year]) {
+        summary[year][monthName] = (summary[year][monthName] || 0) + trade.profitLoss
+        summary[year]['Total'] = (summary[year]['Total'] || 0) + trade.profitLoss
+      }
+    })
+
+    return summary
+  }
+
   if (loading) {
     return (
       <div className="container mx-auto p-6">
@@ -329,6 +403,9 @@ export default function StrategyDetailPage() {
     )
   }
 
+  const backtest = strategy.latestBacktest
+  const monthlySummary = backtest?.tradeHistory ? generateMonthlySummary(backtest.tradeHistory) : null
+
   return (
     <div className="container mx-auto p-6">
       <div className="space-y-8">
@@ -339,158 +416,320 @@ export default function StrategyDetailPage() {
           userSubscription={userSubscription || undefined}
         />
 
-        {/* Strategy Overview Section */}
-        <section id="overview" className="scroll-mt-6">
-          <Card className="border-border/50 shadow-md hover:shadow-lg transition-all duration-300">
-            <CardHeader className="pb-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-primary/10 rounded-lg">
-                  <Info className="h-5 w-5 text-primary" />
+        {/* Backtest Results Section */}
+        {backtest ? (
+          <section id="backtest-results" className="scroll-mt-6">
+            <Card className="border-border/50 shadow-md">
+              <CardHeader className="pb-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-primary/10 rounded-lg">
+                      <Activity className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-xl">Backtest Results</CardTitle>
+                      <CardDescription>
+                        <span className="text-red-500">
+                          Following results are backtested results on historical data. These historical simulations do not represent actual trading and have not been executed in the live market.
+                        </span>
+                      </CardDescription>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={reportMultiplier}
+                      onChange={(e) => setReportMultiplier(Number(e.target.value))}
+                      className="px-3 py-2 rounded-md border border-input bg-background text-sm"
+                    >
+                      <option value={1}>1x multiply</option>
+                      <option value={2}>2x multiply</option>
+                      <option value={5}>5x multiply</option>
+                      <option value={10}>10x multiply</option>
+                    </select>
+                    <button
+                      onClick={() => setShowingUSD(!showingUSD)}
+                      className="px-4 py-2 rounded-md border border-input bg-background text-sm hover:bg-accent"
+                    >
+                      💲 Showing in {showingUSD ? 'USD' : 'INR'}
+                    </button>
+                  </div>
                 </div>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {/* Curve Fitting Analysis */}
                 <div>
-                  <CardTitle className="text-xl">About This Strategy</CardTitle>
-                  <CardDescription>Detailed information and technical specifications</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 gap-6">
-                <div className="space-y-6">
-                  <div>
-                    <p className="text-muted-foreground leading-relaxed">
-                      {strategy.description || 'No detailed description provided for this strategy.'}
-                    </p>
+                  <h3 className="text-lg font-semibold mb-2">Curve Fitting Analysis</h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    The backtest report uses the <span className="font-semibold">{strategy.executionConfig?.symbol}</span> ({strategy.executionConfig?.symbol}) with holding {backtest.totalTrades} Approx 5 to 8k margin of holdings: .
+                  </p>
+
+                  {/* Net PNL and Realized PNL */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                    <div className="border border-primary/30 rounded-lg p-6 text-center">
+                      <p className="text-sm text-muted-foreground mb-2">Net PNL</p>
+                      <p className="text-3xl font-bold text-green-500">{formatCurrency(backtest.netPnl * reportMultiplier)}</p>
+                    </div>
+                    <div className="border border-primary/30 rounded-lg p-6 text-center">
+                      <p className="text-sm text-muted-foreground mb-2">Realized PNL</p>
+                      <p className="text-3xl font-bold text-green-500">{formatCurrency(backtest.realizedPnl * reportMultiplier)}</p>
+                    </div>
                   </div>
 
-                  <Separator />
+                  {/* Metrics Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-secondary/20 rounded-lg p-4">
+                      <p className="text-sm text-muted-foreground mb-1">Win Percentage</p>
+                      <p className="text-xl font-semibold text-green-500">{backtest.winRate.toFixed(2)}%</p>
+                    </div>
+                    <div className="bg-secondary/20 rounded-lg p-4">
+                      <p className="text-sm text-muted-foreground mb-1">Number of Trades</p>
+                      <p className="text-xl font-semibold">{backtest.totalTrades}</p>
+                    </div>
+                    <div className="bg-secondary/20 rounded-lg p-4">
+                      <p className="text-sm text-muted-foreground mb-1">Average Profit on Winning Trades</p>
+                      <p className="text-xl font-semibold text-green-500">{formatCurrency(backtest.avgWinningTrade * reportMultiplier)}</p>
+                    </div>
 
-                  <div className="space-y-4">
-                    <h4 className="font-semibold flex items-center gap-2">
-                      <Activity className="h-4 w-4" />
-                      Strategy Information
-                    </h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div className="bg-secondary/20 rounded-lg p-4">
-                        <p className="text-sm font-medium text-muted-foreground mb-1">Status</p>
-                        <Badge className={strategy.isActive ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300" : ""}>
-                          {strategy.isActive ? 'Active' : 'Inactive'}
-                        </Badge>
-                      </div>
-                      <div className="bg-secondary/20 rounded-lg p-4">
-                        <p className="text-sm font-medium text-muted-foreground mb-1">Visibility</p>
-                        <Badge variant="outline">
-                          {strategy.isPublic ? 'Public' : 'Private'}
-                        </Badge>
-                      </div>
-                      {strategy.executionConfig && (
-                        <>
-                          <div className="bg-secondary/20 rounded-lg p-4">
-                            <p className="text-sm font-medium text-muted-foreground mb-1">Trading Pair</p>
-                            <p className="font-semibold">{strategy.executionConfig.symbol}</p>
-                          </div>
-                          <div className="bg-secondary/20 rounded-lg p-4">
-                            <p className="text-sm font-medium text-muted-foreground mb-1">Resolution</p>
-                            <p className="font-semibold">{strategy.executionConfig.resolution} minutes</p>
-                          </div>
-                          {strategy.executionConfig.lookbackPeriod && (
-                            <div className="bg-secondary/20 rounded-lg p-4">
-                              <p className="text-sm font-medium text-muted-foreground mb-1">Lookback Period</p>
-                              <p className="font-semibold">{strategy.executionConfig.lookbackPeriod} candles</p>
-                            </div>
-                          )}
-                        </>
-                      )}
+                    <div className="bg-secondary/20 rounded-lg p-4">
+                      <p className="text-sm text-muted-foreground mb-1">Loss Percentage</p>
+                      <p className="text-xl font-semibold text-green-500">{(100 - backtest.winRate).toFixed(2)}%</p>
+                    </div>
+                    <div className="bg-secondary/20 rounded-lg p-4">
+                      <p className="text-sm text-muted-foreground mb-1">Average Profit per Trade</p>
+                      <p className="text-xl font-semibold text-green-500">{formatCurrency(backtest.avgTrade * reportMultiplier)}</p>
+                    </div>
+                    <div className="bg-secondary/20 rounded-lg p-4">
+                      <p className="text-sm text-muted-foreground mb-1">Average Loss on Losing Trades</p>
+                      <p className="text-xl font-semibold text-red-500">{formatCurrency(backtest.avgLosingTrade * reportMultiplier)}</p>
+                    </div>
+
+                    <div className="bg-secondary/20 rounded-lg p-4">
+                      <p className="text-sm text-muted-foreground mb-1">Total charges</p>
+                      <p className="text-xl font-semibold text-red-500">{formatCurrency(backtest.totalCharges * reportMultiplier)}</p>
+                    </div>
+                    <div className="bg-secondary/20 rounded-lg p-4">
+                      <p className="text-sm text-muted-foreground mb-1">Max Profit in Single Trade</p>
+                      <p className="text-xl font-semibold text-green-500">{formatCurrency(backtest.maxProfit * reportMultiplier)}</p>
+                    </div>
+                    <div className="bg-secondary/20 rounded-lg p-4">
+                      <p className="text-sm text-muted-foreground mb-1">Max Loss in Single Trade</p>
+                      <p className="text-xl font-semibold text-red-500">{formatCurrency(backtest.maxLoss * reportMultiplier)}</p>
+                    </div>
+
+                    <div className="bg-secondary/20 rounded-lg p-4">
+                      <p className="text-sm text-muted-foreground mb-1">Max Drawdown</p>
+                      <p className="text-xl font-semibold text-red-500">{formatCurrency(backtest.maxDrawdown * reportMultiplier)}</p>
+                    </div>
+                    <div className="bg-secondary/20 rounded-lg p-4">
+                      <p className="text-sm text-muted-foreground mb-1">Duration of Max Drawdown</p>
+                      <p className="text-xl font-semibold">{backtest.maxDrawdownDuration || 'N/A'}</p>
+                    </div>
+                    <div className="bg-secondary/20 rounded-lg p-4">
+                      <p className="text-sm text-muted-foreground mb-1">Return MaxDD</p>
+                      <p className="text-xl font-semibold text-green-500">{formatCurrency(backtest.returnMaxDD * reportMultiplier)}</p>
+                    </div>
+
+                    <div className="bg-secondary/20 rounded-lg p-4">
+                      <p className="text-sm text-muted-foreground mb-1">Reward to Risk Ratio</p>
+                      <p className="text-xl font-semibold text-green-500">{formatCurrency(backtest.rewardToRiskRatio * reportMultiplier)}</p>
+                    </div>
+                    <div className="bg-secondary/20 rounded-lg p-4">
+                      <p className="text-sm text-muted-foreground mb-1">Expectancy Ratio</p>
+                      <p className="text-xl font-semibold text-green-500">{formatCurrency(backtest.expectancyRatio * reportMultiplier)}</p>
+                    </div>
+                    <div className="bg-secondary/20 rounded-lg p-4">
+                      <p className="text-sm text-muted-foreground mb-1">Max Win Streak</p>
+                      <p className="text-xl font-semibold text-green-500">{formatCurrency(backtest.maxWinStreak * reportMultiplier)}</p>
+                    </div>
+
+                    <div className="bg-secondary/20 rounded-lg p-4">
+                      <p className="text-sm text-muted-foreground mb-1">Max Loss Streak</p>
+                      <p className="text-xl font-semibold text-green-500">{formatCurrency(backtest.maxLossStreak * reportMultiplier)}</p>
+                    </div>
+                    <div className="bg-secondary/20 rounded-lg p-4">
+                      <p className="text-sm text-muted-foreground mb-1">Max Trades in Drawdown</p>
+                      <p className="text-xl font-semibold text-green-500">{formatCurrency(backtest.maxTradesInDrawdown * reportMultiplier)}</p>
                     </div>
                   </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        </section>
 
-        {/* Performance Analytics */}
-        {strategy.winRate !== null && strategy.winRate !== undefined ? (
-          <Card className="border-border/50 shadow-md hover:shadow-lg transition-all duration-300">
-            <CardHeader className="pb-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-primary/10 rounded-lg">
-                  <Activity className="h-5 w-5 text-primary" />
-                </div>
+                <Separator />
+
+                {/* Cumulative P&L Chart */}
                 <div>
-                  <CardTitle className="text-xl">Performance Analytics</CardTitle>
-                  <CardDescription>Backtest results and performance metrics</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {/* Key Metrics Grid */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                <div className="bg-secondary/20 rounded-lg p-4">
-                  <p className="text-sm text-muted-foreground mb-1">Win Rate</p>
-                  <p className="text-2xl font-bold text-primary">
-                    {strategy.winRate?.toFixed(1) || 'N/A'}%
-                  </p>
-                </div>
-                <div className="bg-secondary/20 rounded-lg p-4">
-                  <p className="text-sm text-muted-foreground mb-1">ROI</p>
-                  <p className={`text-2xl font-bold ${(strategy.roi || 0) > 0 ? 'text-green-500' : 'text-red-500'}`}>
-                    {strategy.roi ? `${strategy.roi > 0 ? '+' : ''}${strategy.roi.toFixed(2)}%` : 'N/A'}
-                  </p>
-                </div>
-                <div className="bg-secondary/20 rounded-lg p-4">
-                  <p className="text-sm text-muted-foreground mb-1">Risk/Reward</p>
-                  <p className="text-2xl font-bold text-foreground">
-                    {strategy.riskReward?.toFixed(2) || 'N/A'}
-                  </p>
-                </div>
-                <div className="bg-secondary/20 rounded-lg p-4">
-                  <p className="text-sm text-muted-foreground mb-1">Max Drawdown</p>
-                  <p className="text-2xl font-bold text-destructive">
-                    {strategy.maxDrawdown?.toFixed(2) || 'N/A'}%
-                  </p>
-                </div>
-              </div>
-
-              <Separator className="my-4" />
-
-              {/* Additional Metrics */}
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <div className="bg-secondary/20 rounded-lg p-4">
-                  <p className="text-sm text-muted-foreground mb-1">Total Trades</p>
-                  <p className="text-xl font-semibold text-foreground">
-                    {strategy.totalTrades || 'N/A'}
-                  </p>
-                </div>
-                <div className="bg-secondary/20 rounded-lg p-4">
-                  <p className="text-sm text-muted-foreground mb-1">Sharpe Ratio</p>
-                  <p className="text-xl font-semibold text-foreground">
-                    {strategy.sharpeRatio?.toFixed(2) || 'N/A'}
-                  </p>
-                </div>
-                <div className="bg-secondary/20 rounded-lg p-4">
-                  <p className="text-sm text-muted-foreground mb-1">Profit Factor</p>
-                  <p className="text-xl font-semibold text-foreground">
-                    {strategy.profitFactor?.toFixed(2) || 'N/A'}
-                  </p>
-                </div>
-              </div>
-
-              {/* Backtest Info */}
-              {strategy.latestBacktest && (
-                <>
-                  <Separator className="my-4" />
-                  <div className="text-xs text-muted-foreground">
-                    <p>Backtest Period: {new Date(strategy.latestBacktest.startDate).toLocaleDateString()} - {new Date(strategy.latestBacktest.endDate).toLocaleDateString()}</p>
-                    <p className="mt-1">Initial Capital: ${strategy.latestBacktest.initialBalance.toLocaleString()} | Final: ${strategy.latestBacktest.finalBalance.toLocaleString()}</p>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold">Cumulative P&L</h3>
+                    <button className="px-4 py-2 rounded-md border border-input bg-background text-sm hover:bg-accent">
+                      📸 Take Snapshot
+                    </button>
                   </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
+                  <div className="h-[400px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart
+                        data={backtest.tradeHistory?.map((trade, index) => ({
+                          index,
+                          pnl: backtest.tradeHistory.slice(0, index + 1).reduce((sum, t) => sum + t.profitLoss, 0)
+                        })) || []}
+                        margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                        <XAxis dataKey="index" stroke="#9CA3AF" />
+                        <YAxis stroke="#9CA3AF" />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: '#1F2937',
+                            border: '1px solid #374151',
+                            borderRadius: '8px',
+                            color: '#F9FAFB'
+                          }}
+                        />
+                        <Line type="monotone" dataKey="pnl" stroke="#3B82F6" strokeWidth={2} dot={false} name="Cumulative P&L" />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                <Separator />
+
+                {/* Trade Summary */}
+                {monthlySummary && (
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-semibold">Trade Summary</h3>
+                      <button
+                        onClick={() => setShowingUSD(!showingUSD)}
+                        className="px-4 py-2 rounded-md border border-input bg-background text-sm hover:bg-accent"
+                      >
+                        💲 Showing in {showingUSD ? 'USD' : 'INR'}
+                      </button>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full border-collapse">
+                        <thead>
+                          <tr className="bg-primary/10">
+                            <th className="border border-border/50 px-4 py-2 text-left">Year</th>
+                            {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Total'].map(month => (
+                              <th key={month} className="border border-border/50 px-4 py-2 text-left">{month}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {Object.entries(monthlySummary).map(([year, months]) => (
+                            <tr key={year} className="hover:bg-secondary/20">
+                              <td className="border border-border/50 px-4 py-2 font-semibold">{year}</td>
+                              {Object.entries(months).map(([month, value]) => (
+                                <td
+                                  key={month}
+                                  className={`border border-border/50 px-4 py-2 ${value > 0 ? 'text-green-500' : value < 0 ? 'text-red-500' : ''}`}
+                                >
+                                  {value !== 0 ? formatCurrency(value * reportMultiplier) : '$0.00'}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="mt-4 flex items-center gap-4 text-sm text-muted-foreground">
+                      <label className="flex items-center gap-2">
+                        <input type="checkbox" className="rounded" />
+                        Include Brokerage
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input type="checkbox" className="rounded" />
+                        Taxes & Charges
+                      </label>
+                      <p className="ml-auto text-blue-500">ℹ Returns are annualized for calculation</p>
+                    </div>
+                  </div>
+                )}
+
+                <Separator />
+
+                {/* Full Trade Report */}
+                {backtest.tradeHistory && backtest.tradeHistory.length > 0 && (
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h3 className="text-lg font-semibold">Full Trade Report</h3>
+                        <p className="text-sm text-yellow-500">Note: Trade Report is Based on 1x Multiplier</p>
+                        <p className="text-sm text-muted-foreground">Showing 1 - {Math.min(10, backtest.tradeHistory.length)} of {backtest.tradeHistory.length} trades</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          placeholder="Search trades..."
+                          className="px-3 py-2 rounded-md border border-input bg-background text-sm"
+                        />
+                        <button className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm hover:bg-primary/90 flex items-center gap-2">
+                          <Download className="h-4 w-4" />
+                          Download Report
+                        </button>
+                        <button
+                          onClick={() => setShowingUSD(!showingUSD)}
+                          className="px-4 py-2 rounded-md border border-input bg-background text-sm hover:bg-accent"
+                        >
+                          💲 Showing in {showingUSD ? 'USD' : 'INR'}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full border-collapse text-sm">
+                        <thead>
+                          <tr className="bg-primary/10">
+                            <th className="border border-border/50 px-3 py-2 text-left">Index #</th>
+                            <th className="border border-border/50 px-3 py-2 text-left">Entry Time</th>
+                            <th className="border border-border/50 px-3 py-2 text-left">Exit Time</th>
+                            <th className="border border-border/50 px-3 py-2 text-left">Entry Date</th>
+                            <th className="border border-border/50 px-3 py-2 text-left">Exit Date</th>
+                            <th className="border border-border/50 px-3 py-2 text-left">Order Type</th>
+                            <th className="border border-border/50 px-3 py-2 text-left">Strike</th>
+                            <th className="border border-border/50 px-3 py-2 text-left">Action</th>
+                            <th className="border border-border/50 px-3 py-2 text-left">Quantity</th>
+                            <th className="border border-border/50 px-3 py-2 text-left">Entry Price</th>
+                            <th className="border border-border/50 px-3 py-2 text-left">Exit Price</th>
+                            <th className="border border-border/50 px-3 py-2 text-left">Profit Loss</th>
+                            <th className="border border-border/50 px-3 py-2 text-left">Charges</th>
+                            <th className="border border-border/50 px-3 py-2 text-left">Remarks</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {backtest.tradeHistory.slice(0, 10).map((trade) => (
+                            <tr key={trade.index} className="hover:bg-secondary/20">
+                              <td className="border border-border/50 px-3 py-2">{trade.index}</td>
+                              <td className="border border-border/50 px-3 py-2">{trade.entryTime}</td>
+                              <td className="border border-border/50 px-3 py-2">{trade.exitTime}</td>
+                              <td className="border border-border/50 px-3 py-2">{trade.entryDate}</td>
+                              <td className="border border-border/50 px-3 py-2">{trade.exitDate}</td>
+                              <td className="border border-border/50 px-3 py-2">{trade.orderType}</td>
+                              <td className="border border-border/50 px-3 py-2">{trade.strike}</td>
+                              <td className="border border-border/50 px-3 py-2">
+                                <span className={trade.action === 'buy' ? 'text-green-500' : 'text-red-500'}>
+                                  {trade.action}
+                                </span>
+                              </td>
+                              <td className="border border-border/50 px-3 py-2">{trade.quantity}</td>
+                              <td className="border border-border/50 px-3 py-2 text-green-500">{formatCurrency(trade.entryPrice)}</td>
+                              <td className="border border-border/50 px-3 py-2 text-green-500">{formatCurrency(trade.exitPrice)}</td>
+                              <td className={`border border-border/50 px-3 py-2 ${trade.profitLoss > 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                {formatCurrency(trade.profitLoss)}
+                              </td>
+                              <td className="border border-border/50 px-3 py-2">{formatCurrency(trade.charges)}</td>
+                              <td className="border border-border/50 px-3 py-2">{trade.remarks || '-'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </section>
         ) : (
           <Card className="border-dashed">
             <CardHeader>
-              <CardTitle className="text-lg text-muted-foreground">Performance Analytics Coming Soon</CardTitle>
+              <CardTitle className="text-lg text-muted-foreground">Backtest Results Coming Soon</CardTitle>
               <CardDescription>
                 Backtest results will be available once the strategy has been backtested. Run backtest to populate metrics.
               </CardDescription>
