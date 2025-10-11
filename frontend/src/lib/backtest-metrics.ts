@@ -25,6 +25,9 @@ export interface Trade {
 export interface ComputedMetrics {
   winningTrades: number
   losingTrades: number
+  totalTrades: number
+  winRate: number
+  avgTrade: number
   avgWinningTrade: number
   avgLosingTrade: number
   maxProfit: number
@@ -60,6 +63,9 @@ export function computeMetrics(
     return {
       winningTrades: 0,
       losingTrades: 0,
+      totalTrades: 0,
+      winRate: 0,
+      avgTrade: 0,
       avgWinningTrade: 0,
       avgLosingTrade: 0,
       maxProfit: 0,
@@ -138,9 +144,17 @@ export function computeMetrics(
   // Return / Max Drawdown ratio
   const returnMaxDD = safeDivide(realizedPnl, Math.abs(baseMaxDrawdown), 0)
 
+  // Total trades and win rate
+  const totalTrades = trades.length
+  const winRateCalc = safeDivide(winningTrades.length, totalTrades) * 100
+  const avgTradeCalc = safeDivide(realizedPnl, totalTrades)
+
   return {
     winningTrades: winningTrades.length,
     losingTrades: losingTrades.length,
+    totalTrades,
+    winRate: winRateCalc,
+    avgTrade: avgTradeCalc,
     avgWinningTrade,
     avgLosingTrade,
     maxProfit,

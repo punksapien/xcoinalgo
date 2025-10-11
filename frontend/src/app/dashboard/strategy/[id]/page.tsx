@@ -616,7 +616,7 @@ export default function StrategyDetailPage() {
                 <div>
                   <h3 className="text-lg font-semibold mb-2">Curve Fitting Analysis</h3>
                   <p className="text-sm text-muted-foreground mb-4">
-                    The backtest report uses the <span className="font-semibold">{strategy.executionConfig?.symbol}</span> ({strategy.executionConfig?.symbol}) with holding {backtest.totalTrades} Approx 5 to 8k margin of holdings: .
+                    The backtest report uses the <span className="font-semibold">{strategy.executionConfig?.symbol}</span> ({strategy.executionConfig?.symbol}) with holding {computedMetrics?.totalTrades || 0} Approx 5 to 8k margin of holdings: .
                   </p>
 
                   {/* Net PNL and Realized PNL */}
@@ -639,11 +639,11 @@ export default function StrategyDetailPage() {
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="bg-secondary/20 rounded-lg p-4">
                       <p className="text-sm text-muted-foreground mb-1">Win Percentage</p>
-                      <p className="text-xl font-semibold text-green-500">{formatPercentageUtil(backtest.winRate)}</p>
+                      <p className="text-xl font-semibold text-green-500">{formatPercentageUtil(computedMetrics?.winRate)}</p>
                     </div>
                     <div className="bg-secondary/20 rounded-lg p-4">
                       <p className="text-sm text-muted-foreground mb-1">Number of Trades</p>
-                      <p className="text-xl font-semibold">{backtest.totalTrades}</p>
+                      <p className="text-xl font-semibold">{computedMetrics?.totalTrades || 0}</p>
                     </div>
                     <div className="bg-secondary/20 rounded-lg p-4">
                       <p className="text-sm text-muted-foreground mb-1">Average Profit on Winning Trades</p>
@@ -655,13 +655,13 @@ export default function StrategyDetailPage() {
                     <div className="bg-secondary/20 rounded-lg p-4">
                       <p className="text-sm text-muted-foreground mb-1">Loss Percentage</p>
                       <p className="text-xl font-semibold text-green-500">
-                        {formatPercentageUtil(100 - (backtest.winRate || 0))}
+                        {formatPercentageUtil(100 - (computedMetrics?.winRate || 0))}
                       </p>
                     </div>
                     <div className="bg-secondary/20 rounded-lg p-4">
                       <p className="text-sm text-muted-foreground mb-1">Average Profit per Trade</p>
                       <p className="text-xl font-semibold text-green-500">
-                        {formatCurrencyUtil(backtest.avgTrade, showingUSD, reportMultiplier)}
+                        {formatCurrencyUtil(computedMetrics?.avgTrade, showingUSD, reportMultiplier)}
                       </p>
                     </div>
                     <div className="bg-secondary/20 rounded-lg p-4">
