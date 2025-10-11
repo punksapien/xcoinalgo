@@ -15,15 +15,7 @@ import {
   Upload,
   Search,
   Plus,
-  Code,
-  Play,
-  Pause,
-  Trash2,
-  Edit,
   FileText,
-  Clock,
-  User,
-  TrendingUp,
   Users
 } from "lucide-react";
 
@@ -39,6 +31,11 @@ interface Strategy {
   createdAt: string;
   updatedAt: string;
   subscriberCount: number;
+  winRate?: number;
+  roi?: number;
+  riskReward?: number;
+  maxDrawdown?: number;
+  marginRequired?: number;
   executionConfig?: {
     symbol: string;
     resolution: string;
@@ -254,30 +251,44 @@ export default function StrategiesPage() {
               </CardHeader>
 
               <CardContent className="space-y-4">
-                {/* Strategy Info */}
-                <div className="space-y-2 text-sm dark:text-gray-300">
-                  <div className="flex items-center gap-2">
-                    <Code className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-                    <span className="font-mono">{strategy.code}</span>
+                {/* Author */}
+                <div className="flex items-center space-x-2">
+                  <Users className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm text-foreground">{strategy.author}</span>
+                </div>
+
+                {/* Key Metrics */}
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <p className="text-muted-foreground">Win Rate</p>
+                    <p className="font-semibold text-primary">
+                      {strategy.winRate ? `${strategy.winRate.toFixed(1)}%` : 'N/A'}
+                    </p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <User className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-                    <span>{strategy.author}</span>
+                  <div>
+                    <p className="text-muted-foreground">ROI</p>
+                    <p className="font-semibold text-accent">
+                      {strategy.roi ? `${strategy.roi.toFixed(1)}%` : 'N/A'}
+                    </p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-                    <span>v{strategy.version}</span>
+                  <div>
+                    <p className="text-muted-foreground">Risk/Reward</p>
+                    <p className="font-semibold text-foreground">{strategy.riskReward?.toFixed(1) || 'N/A'}</p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Users className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-                    <span>{strategy.subscriberCount || 0} subscriber{strategy.subscriberCount !== 1 ? 's' : ''}</span>
+                  <div>
+                    <p className="text-muted-foreground">Max Drawdown</p>
+                    <p className="font-semibold text-destructive">
+                      {strategy.maxDrawdown ? `${strategy.maxDrawdown.toFixed(1)}%` : 'N/A'}
+                    </p>
                   </div>
-                  {strategy.executionConfig && (
-                    <div className="flex items-center gap-2">
-                      <TrendingUp className="h-4 w-4 text-gray-500 dark:text-gray-400" />
-                      <span>{strategy.executionConfig.symbol} • {strategy.executionConfig.resolution}m</span>
-                    </div>
-                  )}
+                </div>
+
+                {/* Margin Required */}
+                <div className="border-t border-border/50 pt-3">
+                  <p className="text-xs text-muted-foreground">Margin Required</p>
+                  <p className="font-semibold text-foreground">
+                    {strategy.marginRequired ? `₹${strategy.marginRequired.toLocaleString()}` : 'N/A'}
+                  </p>
                 </div>
 
                 {/* Subscription Status */}
@@ -354,65 +365,6 @@ export default function StrategiesPage() {
           strategyName={selectedStrategy.name}
           onSuccess={handleSubscribeSuccess}
         />
-      )}
-
-      {/* Quick Stats */}
-      {strategies.length > 0 && (
-        <div className="mt-8 grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card className="dark:bg-gray-800 dark:border-gray-700">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-2">
-                <FileText className="h-5 w-5 text-blue-500" />
-                <div>
-                  <div className="text-2xl font-bold dark:text-white">{strategies.length}</div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400">Total Strategies</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="dark:bg-gray-800 dark:border-gray-700">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-2">
-                <Play className="h-5 w-5 text-green-500" />
-                <div>
-                  <div className="text-2xl font-bold dark:text-white">
-                    {Array.from(userSubscriptions.values()).filter(sub => sub.isActive && !sub.isPaused).length}
-                  </div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400">Active Deployments</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="dark:bg-gray-800 dark:border-gray-700">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-2">
-                <Code className="h-5 w-5 text-purple-500" />
-                <div>
-                  <div className="text-2xl font-bold dark:text-white">
-                    {strategies.filter(s => s.isActive).length}
-                  </div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400">Active Strategies</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="dark:bg-gray-800 dark:border-gray-700">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-2">
-                <TrendingUp className="h-5 w-5 text-orange-500" />
-                <div>
-                  <div className="text-2xl font-bold dark:text-white">
-                    {new Set(strategies.map(s => s.author)).size}
-                  </div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400">Authors</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
       )}
     </div>
   );
