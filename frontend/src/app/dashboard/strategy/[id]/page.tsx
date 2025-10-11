@@ -1031,7 +1031,7 @@ export default function StrategyDetailPage() {
             <CardHeader>
               <CardTitle className="text-lg text-muted-foreground">Backtest Results Coming Soon</CardTitle>
               <CardDescription>
-                Backtest results will be available once the strategy has been backtested. Run backtest to populate metrics.
+                Backtest results will be available shortly. Strategies are automatically backtested when uploaded via the CLI.
               </CardDescription>
             </CardHeader>
           </Card>

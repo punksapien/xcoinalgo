@@ -419,7 +419,12 @@ class APIClient:
         Raises:
             APIError: If upload fails
         """
-        return self._request('POST', f'/api/strategy-upload/{strategy_id}/backtest-results', data=backtest_data)
+        # Ensure standardized shape keys exist
+        payload = dict(backtest_data)
+        if isinstance(payload.get('equityCurve'), dict) and 'data' in payload['equityCurve']:
+            # Convert legacy {data: [...]} to list
+            payload['equityCurve'] = payload['equityCurve']['data']
+        return self._request('POST', f'/api/strategy-upload/{strategy_id}/backtest-results', data=payload)
 
     # Deployment
 

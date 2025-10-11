@@ -660,6 +660,44 @@ class BacktestEngine {
   }
 
   /**
+   * Transform backend trade format to frontend expected format
+   * Frontend expects specific field names and formats for the Full Trade Report UI
+   */
+  private transformTradesForFrontend(trades: Trade[]): any[] {
+    return trades.map((trade, index) => {
+      // Format dates
+      const entryDate = trade.entryTime.toISOString().split('T')[0]; // "2024-09-18"
+      const exitDate = trade.exitTime.toISOString().split('T')[0];   // "2024-09-18"
+      const entryTime = trade.entryTime.toISOString().split('T')[1].split('.')[0]; // "09:30:00"
+      const exitTime = trade.exitTime.toISOString().split('T')[1].split('.')[0];   // "10:30:00"
+
+      // Map reason to remarks
+      const remarksMap: Record<string, string> = {
+        'SIGNAL': 'Strategy signal',
+        'STOP_LOSS': 'Stop loss hit',
+        'TAKE_PROFIT': 'Take profit reached',
+      };
+
+      return {
+        index: index + 1, // 1-indexed for display
+        entryTime,
+        exitTime,
+        entryDate,
+        exitDate,
+        orderType: 'Market', // Default to market orders for backtests
+        strike: 'N/A', // Not applicable for futures/spot trading
+        action: trade.side === 'LONG' ? 'buy' : 'sell', // Convert "LONG" -> "buy", "SHORT" -> "sell"
+        quantity: trade.quantity,
+        entryPrice: trade.entryPrice,
+        exitPrice: trade.exitPrice,
+        profitLoss: trade.pnl,
+        charges: trade.commission,
+        remarks: remarksMap[trade.reason] || trade.reason,
+      };
+    });
+  }
+
+  /**
    * Store backtest result in database
    */
   private async storeBacktestResult(
@@ -668,6 +706,9 @@ class BacktestEngine {
   ): Promise<void> {
     try {
       const monthlyReturns = this.calculateMonthlyReturns(result.trades);
+
+      // Transform trades to frontend expected format before saving
+      const transformedTrades = this.transformTradesForFrontend(result.trades);
 
       await prisma.backtestResult.create({
         data: {
@@ -689,13 +730,13 @@ class BacktestEngine {
           totalTrades: result.metrics.totalTrades,
           avgTrade: result.metrics.totalTrades > 0 ? result.metrics.totalPnl / result.metrics.totalTrades : 0,
           equityCurve: result.equityCurve as any,
-          tradeHistory: result.trades as any,
+          tradeHistory: transformedTrades as any, // Use transformed trades
           monthlyReturns: monthlyReturns as any,
           backtestDuration: result.executionTime / 1000, // Convert ms to seconds
         },
       });
 
-      logger.info(`Backtest result stored for strategy ${strategyId}`);
+      logger.info(`Backtest result stored for strategy ${strategyId} with ${transformedTrades.length} trades`);
     } catch (error) {
       logger.error('Failed to store backtest result:', error);
     }

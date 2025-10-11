@@ -10,6 +10,7 @@ from rich.prompt import Confirm
 
 from xcoin_cli.api_client import APIClient, APIError
 from xcoin_cli.config import ConfigManager
+from xcoin_cli.local_registry import remove_project
 
 console = Console()
 
@@ -18,7 +19,9 @@ console = Console()
 @click.argument('strategy_name', required=False)
 @click.option('--strategy-id', help='Strategy ID (if not using name)')
 @click.option('--yes', '-y', is_flag=True, help='Skip confirmation prompt')
-def delete(strategy_name, strategy_id, yes):
+@click.option('--scope', type=click.Choice(['local', 'remote', 'both']), default='remote', help='Where to delete the strategy')
+@click.option('--purge', is_flag=True, help='When --scope local, also delete local folder (rm -rf)')
+def delete(strategy_name, strategy_id, yes, scope, purge):
     """
     Delete a strategy
 
@@ -45,11 +48,12 @@ def delete(strategy_name, strategy_id, yes):
     ))
     console.print()
 
-    # Check authentication
+    # Prepare API client for remote operations if needed
     client = APIClient()
-    if not client.is_authenticated():
-        console.print("[red]✗ Not authenticated. Please run 'xcoin login' first[/]")
-        exit(1)
+    if scope in ('remote', 'both'):
+        if not client.is_authenticated():
+            console.print("[red]✗ Not authenticated. Please run 'xcoin login' first[/]")
+            exit(1)
 
     # Determine strategy directory
     if strategy_name:
@@ -88,19 +92,24 @@ def delete(strategy_name, strategy_id, yes):
             console.print("[dim]Deploy your strategy first with 'xcoin deploy' or provide --strategy-id[/]")
             exit(1)
 
-    # Fetch strategy details
-    try:
-        with console.status("[cyan]Fetching strategy details...[/]"):
-            strategy = client.get_strategy(strategy_id)
-    except APIError as e:
-        console.print()
-        console.print(f"[red]✗ Failed to fetch strategy: {e}[/]")
-        exit(1)
+    # Fetch strategy details (remote scope only)
+    strategy = {}
+    if scope in ('remote', 'both'):
+        try:
+            with console.status("[cyan]Fetching strategy details...[/]"):
+                strategy = client.get_strategy(strategy_id)
+        except APIError as e:
+            console.print()
+            console.print(f"[red]✗ Failed to fetch strategy: {e}[/]")
+            exit(1)
 
     # Display strategy info
-    console.print(f"[bold]Strategy:[/] {strategy.get('name', 'Unknown')}")
-    console.print(f"[bold]ID:[/] {strategy_id}")
-    console.print(f"[bold]Version:[/] {strategy.get('version', 'N/A')}")
+    if scope in ('remote', 'both'):
+        console.print(f"[bold]Strategy:[/] {strategy.get('name', 'Unknown')}")
+        console.print(f"[bold]ID:[/] {strategy_id}")
+        console.print(f"[bold]Version:[/] {strategy.get('version', 'N/A')}")
+    else:
+        console.print(f"[bold]Local Strategy Path:[/] {current_dir}")
     console.print()
 
     # Confirm deletion
@@ -113,22 +122,35 @@ def delete(strategy_name, strategy_id, yes):
             console.print("[yellow]Deletion cancelled[/]")
             return
 
-    # Delete strategy
-    with console.status("[red]Deleting strategy...[/]"):
-        try:
-            result = client.delete_strategy(strategy_id)
-        except APIError as e:
-            console.print()
-            console.print(f"[red]✗ Failed to delete strategy: {e}[/]")
-            if "active deployments" in str(e).lower():
+    # Execute deletions
+    if scope in ('remote', 'both'):
+        with console.status("[red]Deleting remote strategy...[/]"):
+            try:
+                _ = client.delete_strategy(strategy_id)
+            except APIError as e:
                 console.print()
-                console.print("[yellow]💡 Tip: Stop all active deployments first[/]")
-                console.print("[dim]   You can manage deployments from the dashboard[/]")
-            exit(1)
+                console.print(f"[red]✗ Failed to delete strategy remotely: {e}[/]")
+                if "active deployments" in str(e).lower():
+                    console.print()
+                    console.print("[yellow]💡 Tip: Stop all active deployments first[/]")
+                    console.print("[dim]   You can manage deployments from the dashboard[/]")
+                exit(1)
+
+    if scope in ('local', 'both'):
+        removed = remove_project(str(current_dir)) or (strategy_id and remove_project(strategy_id))
+        if purge:
+            import shutil
+            try:
+                shutil.rmtree(current_dir)
+            except Exception:
+                pass
 
     # Success
     console.print()
-    console.print(f"[green]✓ Strategy deleted successfully[/]")
+    console.print(f"[green]✓ Deletion complete[/]")
     console.print()
-    console.print("[dim]Note: Local files are not deleted. Use 'rm -rf .' to clean up.[/]")
+    if scope == 'remote':
+        console.print("[dim]Note: Local files are not deleted. Use --scope local to remove them.[/]")
+    elif scope == 'local' and not purge:
+        console.print("[dim]Note: Project folder preserved. Use --purge to remove files.[/]")
     console.print()

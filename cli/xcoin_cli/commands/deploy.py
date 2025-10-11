@@ -16,6 +16,7 @@ from xcoin_cli.constants import PRODUCTION_FRONTEND_URL
 from xcoin_cli.backtest import BacktestEngine
 from datetime import datetime, timedelta
 import requests
+from xcoin_cli.local_registry import register_or_update_project, update_cache, mark_deployed
 
 console = Console()
 
@@ -246,6 +247,9 @@ def deploy(strategy_name, force, marketplace):
                 'code': strategy_code
             }, f, indent=2)
 
+    # Register/update local registry entry
+    register_or_update_project(path=current_dir, name=strategy_name, code=strategy_code, remote_id=strategy_id, version=version)
+
     # Auto-backtest if validation passed
     if validation_status == 'passed' and strategy_id:
         console.print()
@@ -269,6 +273,14 @@ def deploy(strategy_name, force, marketplace):
                 console.print(f"  Max Drawdown: [bold]{backtest_metrics['maxDrawdown']:.2f}%[/]")
                 console.print(f"  Total Trades: [bold]{backtest_metrics['totalTrades']}[/]")
                 console.print()
+                # Cache summary locally
+                update_cache(strategy_id, backtest_summary={
+                    'winRate': backtest_metrics.get('winRate'),
+                    'roi': backtest_metrics.get('roi'),
+                    'maxDrawdown': backtest_metrics.get('maxDrawdown'),
+                    'profitFactor': backtest_metrics.get('profitFactor'),
+                    'totalTrades': backtest_metrics.get('totalTrades'),
+                })
         except Exception as e:
             console.print(f"[yellow]⚠ Backtest failed: {e}[/]")
             console.print("[dim]You can run backtest manually with 'xcoin test --fetch'[/]")
@@ -393,7 +405,22 @@ def _run_and_upload_backtest(client: APIClient, strategy_id: str, strategy_file:
 
         result = engine.run(df, settings)
 
-        # Prepare backtest result payload
+        # Compute drawdown series from equity curve if not provided
+        eq = result.equity_curve
+        peak = 0.0
+        equity_points = []
+        for point in eq:
+            # point: (timestamp, equity)
+            ts, eqv = point[0], point[1]
+            peak = max(peak, eqv if equity_points else eqv)
+            dd = 0.0 if peak == 0 else (peak - eqv) / peak * 100.0
+            equity_points.append({
+                'time': (ts if isinstance(ts, str) else pd.to_datetime(ts).to_pydatetime().isoformat()),
+                'equity': float(eqv),
+                'drawdown': float(dd)
+            })
+
+        # Prepare backtest result payload (standardized shape)
         backtest_payload = {
             'startDate': start_date.isoformat(),
             'endDate': end_date.isoformat(),
@@ -408,7 +435,8 @@ def _run_and_upload_backtest(client: APIClient, strategy_id: str, strategy_file:
             'totalTrades': result.total_trades,
             'avgTrade': result.total_pnl / result.total_trades if result.total_trades > 0 else 0,
             'timeframe': '15m',
-            'equityCurve': {'data': result.equity_curve[:100]},  # Limit size
+            'equityCurve': equity_points[:250],
+            'monthlyReturns': getattr(result, 'monthly_returns', {}),
             'tradeHistory': [
                 {
                     'entryTime': str(t.entry_time),
@@ -417,7 +445,7 @@ def _run_and_upload_backtest(client: APIClient, strategy_id: str, strategy_file:
                     'pnl': t.pnl,
                     'pnlPercentage': t.pnl_percentage
                 }
-                for t in result.trades[:50]  # Limit to last 50 trades
+                for t in result.trades[:50]
             ]
         }
 
