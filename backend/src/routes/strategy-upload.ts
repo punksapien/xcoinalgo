@@ -508,13 +508,12 @@ router.delete('/:id', authenticate, async (req: AuthenticatedRequest, res, next)
       });
     }
 
-    // Soft delete (mark as inactive)
-    await prisma.strategy.update({
-      where: { id: strategyId },
-      data: { isActive: false }
+    // Hard delete (permanently remove strategy and cascade delete related records)
+    await prisma.strategy.delete({
+      where: { id: strategyId }
     });
 
-    logger.info(`Strategy deleted: ${strategyId} by user ${userId}`);
+    logger.info(`Strategy permanently deleted: ${strategyId} by user ${userId}`);
 
     res.json({
       success: true,
