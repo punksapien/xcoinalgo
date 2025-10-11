@@ -436,11 +436,23 @@ def main():
             input_data = json.loads(sys.stdin.read())
 
         # Extract parameters
+        with open(debug_log_path, 'a') as debug_log:
+            debug_log.write("Extracting parameters...\n")
+            debug_log.flush()
+
         strategy_code = input_data['strategy_code']
         historical_data = input_data['historical_data']
         config = input_data['config']
 
+        with open(debug_log_path, 'a') as debug_log:
+            debug_log.write(f"Data loaded: {len(historical_data)} candles, strategy code: {len(strategy_code)} bytes\n")
+            debug_log.flush()
+
         # Create backtest runner
+        with open(debug_log_path, 'a') as debug_log:
+            debug_log.write("Creating backtest runner...\n")
+            debug_log.flush()
+
         runner = BatchBacktestRunner({
             'initial_capital': input_data.get('initial_capital', 10000),
             'risk_per_trade': input_data.get('risk_per_trade', 0.01),
@@ -448,8 +460,16 @@ def main():
             'commission': input_data.get('commission', 0.001)
         })
 
+        with open(debug_log_path, 'a') as debug_log:
+            debug_log.write("Starting backtest...\n")
+            debug_log.flush()
+
         # Run backtest
         result = runner.run_backtest(strategy_code, historical_data, config)
+
+        with open(debug_log_path, 'a') as debug_log:
+            debug_log.write(f"Backtest complete: {result.get('success')}}\n")
+            debug_log.flush()
 
         # Output result
         print(json.dumps(result))
