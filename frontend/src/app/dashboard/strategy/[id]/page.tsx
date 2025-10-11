@@ -271,6 +271,9 @@ export default function StrategyDetailPage() {
   const [subscribeModalOpen, setSubscribeModalOpen] = useState(false)
   const [showingUSD, setShowingUSD] = useState(true)
   const [reportMultiplier, setReportMultiplier] = useState(1)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [searchQuery, setSearchQuery] = useState('')
+  const itemsPerPage = 10
 
   useEffect(() => {
     fetchStrategy()
@@ -430,6 +433,107 @@ export default function StrategyDetailPage() {
 
     return []
   }, [strategy?.latestBacktest])
+
+  // Filter trades based on search query
+  const filteredTrades = useMemo(() => {
+    const backtest = strategy?.latestBacktest
+    if (!backtest?.tradeHistory || !Array.isArray(backtest.tradeHistory)) return []
+
+    const trades = backtest.tradeHistory as Trade[]
+
+    if (!searchQuery.trim()) return trades
+
+    const query = searchQuery.toLowerCase()
+    return trades.filter(trade =>
+      trade.index.toString().includes(query) ||
+      trade.entryTime.toLowerCase().includes(query) ||
+      trade.exitTime.toLowerCase().includes(query) ||
+      trade.entryDate.toLowerCase().includes(query) ||
+      trade.exitDate.toLowerCase().includes(query) ||
+      trade.orderType.toLowerCase().includes(query) ||
+      trade.strike.toLowerCase().includes(query) ||
+      trade.action.toLowerCase().includes(query) ||
+      trade.quantity.toString().includes(query) ||
+      trade.entryPrice.toString().includes(query) ||
+      trade.exitPrice.toString().includes(query) ||
+      trade.profitLoss.toString().includes(query) ||
+      trade.charges.toString().includes(query) ||
+      (trade.remarks && trade.remarks.toLowerCase().includes(query))
+    )
+  }, [strategy?.latestBacktest, searchQuery])
+
+  // Paginate filtered trades
+  const paginatedTrades = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage
+    const endIndex = startIndex + itemsPerPage
+    return filteredTrades.slice(startIndex, endIndex)
+  }, [filteredTrades, currentPage, itemsPerPage])
+
+  // Calculate total pages
+  const totalPages = Math.ceil(filteredTrades.length / itemsPerPage)
+
+  // Reset to page 1 when search query changes
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchQuery])
+
+  // Download trades as CSV
+  const downloadTradesCSV = () => {
+    if (!filteredTrades.length) return
+
+    // CSV headers
+    const headers = [
+      'Index #',
+      'Entry Time',
+      'Exit Time',
+      'Entry Date',
+      'Exit Date',
+      'Order Type',
+      'Strike',
+      'Action',
+      'Quantity',
+      'Entry Price',
+      'Exit Price',
+      'Profit Loss',
+      'Charges',
+      'Remarks'
+    ]
+
+    // Convert trades to CSV rows
+    const rows = filteredTrades.map(trade => [
+      trade.index,
+      trade.entryTime,
+      trade.exitTime,
+      trade.entryDate,
+      trade.exitDate,
+      trade.orderType,
+      trade.strike,
+      trade.action,
+      trade.quantity,
+      trade.entryPrice,
+      trade.exitPrice,
+      trade.profitLoss,
+      trade.charges,
+      trade.remarks || ''
+    ])
+
+    // Combine headers and rows
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+    ].join('\n')
+
+    // Create blob and download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    const url = URL.createObjectURL(blob)
+    link.setAttribute('href', url)
+    link.setAttribute('download', `${strategy?.name || 'strategy'}_trades_${new Date().toISOString().split('T')[0]}.csv`)
+    link.style.visibility = 'hidden'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
 
   if (loading) {
     return (
@@ -779,15 +883,23 @@ export default function StrategyDetailPage() {
                       <div>
                         <h3 className="text-lg font-semibold">Full Trade Report</h3>
                         <p className="text-sm text-yellow-500">Note: Trade Report is Based on 1x Multiplier</p>
-                        <p className="text-sm text-muted-foreground">Showing 1 - {Math.min(10, backtest.tradeHistory.length)} of {backtest.tradeHistory.length} trades</p>
+                        <p className="text-sm text-muted-foreground">
+                          Showing {filteredTrades.length > 0 ? ((currentPage - 1) * itemsPerPage + 1) : 0} - {Math.min(currentPage * itemsPerPage, filteredTrades.length)} of {filteredTrades.length} trades
+                        </p>
                       </div>
                       <div className="flex items-center gap-2">
                         <input
                           type="text"
                           placeholder="Search trades..."
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
                           className="px-3 py-2 rounded-md border border-input bg-background text-sm"
                         />
-                        <button className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm hover:bg-primary/90 flex items-center gap-2">
+                        <button
+                          onClick={downloadTradesCSV}
+                          disabled={filteredTrades.length === 0}
+                          className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm hover:bg-primary/90 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
                           <Download className="h-4 w-4" />
                           Download Report
                         </button>
@@ -820,7 +932,7 @@ export default function StrategyDetailPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {backtest.tradeHistory.slice(0, 10).map((trade) => (
+                          {paginatedTrades.map((trade) => (
                             <tr key={trade.index} className="hover:bg-secondary/20">
                               <td className="border border-border/50 px-3 py-2">{trade.index}</td>
                               <td className="border border-border/50 px-3 py-2">{trade.entryTime}</td>
@@ -847,6 +959,68 @@ export default function StrategyDetailPage() {
                         </tbody>
                       </table>
                     </div>
+
+                    {/* Pagination Controls */}
+                    {totalPages > 1 && (
+                      <div className="flex items-center justify-center gap-2 mt-4">
+                        <button
+                          onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                          disabled={currentPage === 1}
+                          className="px-3 py-1 rounded-md border border-input bg-background text-sm hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          &lt;
+                        </button>
+
+                        {/* Page numbers */}
+                        {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                          let pageNum
+                          if (totalPages <= 5) {
+                            pageNum = i + 1
+                          } else if (currentPage <= 3) {
+                            pageNum = i + 1
+                          } else if (currentPage >= totalPages - 2) {
+                            pageNum = totalPages - 4 + i
+                          } else {
+                            pageNum = currentPage - 2 + i
+                          }
+
+                          return (
+                            <button
+                              key={pageNum}
+                              onClick={() => setCurrentPage(pageNum)}
+                              className={`px-3 py-1 rounded-md text-sm ${
+                                currentPage === pageNum
+                                  ? 'bg-primary text-primary-foreground'
+                                  : 'border border-input bg-background hover:bg-accent'
+                              }`}
+                            >
+                              {pageNum}
+                            </button>
+                          )
+                        })}
+
+                        {/* Show ellipsis and last page if needed */}
+                        {totalPages > 5 && currentPage < totalPages - 2 && (
+                          <>
+                            <span className="px-2 text-muted-foreground">...</span>
+                            <button
+                              onClick={() => setCurrentPage(totalPages)}
+                              className="px-3 py-1 rounded-md border border-input bg-background text-sm hover:bg-accent"
+                            >
+                              {totalPages}
+                            </button>
+                          </>
+                        )}
+
+                        <button
+                          onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                          disabled={currentPage === totalPages}
+                          className="px-3 py-1 rounded-md border border-input bg-background text-sm hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          &gt;
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </CardContent>
