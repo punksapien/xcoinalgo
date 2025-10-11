@@ -178,39 +178,63 @@ class StrategyRunner:
     def run(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """Main execution pipeline."""
         try:
-            strategy_id = input_data['strategy_id']
-            execution_time = datetime.fromisoformat(
-                input_data['execution_time'].replace('Z', '+00:00')
-            )
-            settings = input_data['settings']
+            # Support two input formats:
+            # 1. Backtesting: {strategy_code, historical_data, config}
+            # 2. Live execution: {strategy_id, execution_time, settings}
 
-            self.log(f"Starting execution for strategy {strategy_id}")
+            if 'strategy_code' in input_data:
+                # Backtesting mode: code and data provided directly
+                strategy_code = input_data['strategy_code']
+                historical_data = input_data.get('historical_data', [])
+                config = input_data.get('config', {})
 
-            # Load strategy code
-            strategy_code = self.load_strategy_code(strategy_id)
-            if not strategy_code:
-                return {
-                    'success': False,
-                    'signal': None,
-                    'error': 'Failed to load strategy code',
-                    'logs': self.logs
+                self.log(f"Backtesting mode: {len(historical_data)} candles, code length: {len(strategy_code)}")
+
+                # Convert historical_data to market_data format
+                market_data = {
+                    'symbol': config.get('symbol', 'UNKNOWN'),
+                    'resolution': config.get('resolution', '5'),
+                    'candles': historical_data
                 }
 
-            # Fetch candle data
-            market_data = self.fetch_candle_data(
-                settings['symbol'],
-                settings['resolution'],
-                settings.get('lookback_period', 200),
-                execution_time
-            )
+                # Use config as settings
+                settings = config
 
-            if not market_data:
-                return {
-                    'success': False,
-                    'signal': None,
-                    'error': 'Failed to fetch candle data',
-                    'logs': self.logs
-                }
+            else:
+                # Live execution mode: load from database
+                strategy_id = input_data['strategy_id']
+                execution_time = datetime.fromisoformat(
+                    input_data['execution_time'].replace('Z', '+00:00')
+                )
+                settings = input_data['settings']
+
+                self.log(f"Starting execution for strategy {strategy_id}")
+
+                # Load strategy code
+                strategy_code = self.load_strategy_code(strategy_id)
+                if not strategy_code:
+                    return {
+                        'success': False,
+                        'signal': None,
+                        'error': 'Failed to load strategy code',
+                        'logs': self.logs
+                    }
+
+                # Fetch candle data
+                market_data = self.fetch_candle_data(
+                    settings['symbol'],
+                    settings['resolution'],
+                    settings.get('lookback_period', 200),
+                    execution_time
+                )
+
+                if not market_data:
+                    return {
+                        'success': False,
+                        'signal': None,
+                        'error': 'Failed to fetch candle data',
+                        'logs': self.logs
+                    }
 
             # Execute strategy
             signal = self.execute_strategy(strategy_code, settings, market_data)

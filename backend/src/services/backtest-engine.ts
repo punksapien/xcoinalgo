@@ -97,14 +97,33 @@ class BacktestEngine {
     logger.info(`Market: ${config.symbol} ${config.resolution}`);
 
     try {
-      // Fetch strategy from database
+      // Fetch strategy with latest version from database
       const strategy = await prisma.strategy.findUnique({
         where: { id: config.strategyId },
+        include: {
+          versions: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+          },
+        },
       });
 
       if (!strategy) {
         throw new Error(`Strategy ${config.strategyId} not found`);
       }
+
+      if (!strategy.versions || strategy.versions.length === 0) {
+        throw new Error(`Strategy ${config.strategyId} has no uploaded code versions`);
+      }
+
+      const latestVersion = strategy.versions[0];
+      const strategyCode = latestVersion.strategyCode;
+
+      if (!strategyCode) {
+        throw new Error(`Strategy ${config.strategyId} version ${latestVersion.version} has no code`);
+      }
+
+      logger.info(`Using strategy version ${latestVersion.version} (${strategyCode.length} bytes)`);
 
       // Fetch historical data
       const historicalData = await this.fetchHistoricalData(
@@ -116,158 +135,66 @@ class BacktestEngine {
 
       logger.info(`Fetched ${historicalData.length} candles for backtesting`);
 
-      // Run simulation
-      const trades: Trade[] = [];
-      const equityCurve: Array<{ time: Date; equity: number; drawdown: number }> = [];
+      // Run batch backtest using optimized Python processor
+      logger.info('Running batch backtest (single-pass processing)...');
 
-      let capital = config.initialCapital;
-      let maxEquity = capital;
-      let currentPosition: {
-        side: 'LONG' | 'SHORT';
-        entryPrice: number;
-        entryTime: Date;
-        quantity: number;
-        stopLoss?: number;
-        takeProfit?: number;
-      } | null = null;
+      const batchResult = await this.executeBatchBacktest(
+        strategyCode,
+        historicalData,
+        config
+      );
 
-      // Process each candle
-      for (let i = 50; i < historicalData.length; i++) {
-        const currentCandle = historicalData[i];
-        const historicalWindow = historicalData.slice(Math.max(0, i - 200), i + 1);
-
-        // Execute strategy on this candle
-        const signal = await this.executeStrategyOnCandle(
-          strategy.code,
-          historicalWindow,
-          config
-        );
-
-        if (!signal) {
-          continue;
-        }
-
-        // Check if we need to close existing position first
-        if (currentPosition) {
-          const shouldExit = this.shouldExitPosition(
-            currentPosition,
-            currentCandle,
-            signal
-          );
-
-          if (shouldExit) {
-            const exitPrice = currentCandle.close;
-            const pnl = this.calculatePnl(
-              currentPosition.side,
-              currentPosition.entryPrice,
-              exitPrice,
-              currentPosition.quantity
-            );
-
-            const commission = (currentPosition.entryPrice * currentPosition.quantity * config.commission) +
-                              (exitPrice * currentPosition.quantity * config.commission);
-
-            const netPnl = pnl - commission;
-            capital += netPnl;
-
-            trades.push({
-              entryTime: currentPosition.entryTime,
-              exitTime: new Date(currentCandle.time),
-              side: currentPosition.side,
-              entryPrice: currentPosition.entryPrice,
-              exitPrice,
-              quantity: currentPosition.quantity,
-              pnl: netPnl,
-              pnlPct: (netPnl / (currentPosition.entryPrice * currentPosition.quantity)) * 100,
-              commission,
-              reason: shouldExit.reason,
-            });
-
-            currentPosition = null;
-
-            logger.debug(`Closed position: ${netPnl.toFixed(2)} (${trades[trades.length - 1].pnlPct.toFixed(2)}%)`);
-          }
-        }
-
-        // Open new position if signal indicates
-        if (!currentPosition && (signal.signal === 'LONG' || signal.signal === 'SHORT')) {
-          const positionSize = this.calculatePositionSize(
-            capital,
-            config.riskPerTrade,
-            currentCandle.close,
-            signal.stopLoss,
-            config.leverage
-          );
-
-          if (positionSize > 0) {
-            currentPosition = {
-              side: signal.signal,
-              entryPrice: currentCandle.close,
-              entryTime: new Date(currentCandle.time),
-              quantity: positionSize,
-              stopLoss: signal.stopLoss,
-              takeProfit: signal.takeProfit,
-            };
-
-            logger.debug(`Opened ${signal.signal} position: ${positionSize.toFixed(4)} @ ${currentCandle.close}`);
-          }
-        }
-
-        // Update equity curve
-        let currentEquity = capital;
-        if (currentPosition) {
-          const unrealizedPnl = this.calculatePnl(
-            currentPosition.side,
-            currentPosition.entryPrice,
-            currentCandle.close,
-            currentPosition.quantity
-          );
-          currentEquity += unrealizedPnl;
-        }
-
-        maxEquity = Math.max(maxEquity, currentEquity);
-        const drawdown = maxEquity - currentEquity;
-
-        equityCurve.push({
-          time: new Date(currentCandle.time),
-          equity: currentEquity,
-          drawdown,
-        });
+      if (!batchResult.success) {
+        throw new Error(`Batch backtest failed: ${batchResult.error}`);
       }
 
-      // Close any remaining open position
-      if (currentPosition) {
-        const lastCandle = historicalData[historicalData.length - 1];
-        const exitPrice = lastCandle.close;
-        const pnl = this.calculatePnl(
-          currentPosition.side,
-          currentPosition.entryPrice,
-          exitPrice,
-          currentPosition.quantity
-        );
+      // Convert Python result to TypeScript format
+      const trades: Trade[] = batchResult.trades.map((trade: any) => ({
+        entryTime: new Date(trade.entry_time),
+        exitTime: new Date(trade.exit_time),
+        side: trade.side as 'LONG' | 'SHORT',
+        entryPrice: trade.entry_price,
+        exitPrice: trade.exit_price,
+        quantity: trade.quantity,
+        pnl: trade.pnl,
+        pnlPct: trade.pnl_pct,
+        commission: trade.commission,
+        reason: trade.reason as 'SIGNAL' | 'STOP_LOSS' | 'TAKE_PROFIT',
+      }));
 
-        const commission = (currentPosition.entryPrice * currentPosition.quantity * config.commission) +
-                          (exitPrice * currentPosition.quantity * config.commission);
+      const equityCurve: Array<{ time: Date; equity: number; drawdown: number }> =
+        batchResult.equity_curve.map((point: any) => ({
+          time: new Date(point.time),
+          equity: point.equity,
+          drawdown: point.drawdown,
+        }));
 
-        const netPnl = pnl - commission;
-        capital += netPnl;
+      // Convert Python metrics to TypeScript format
+      const pythonMetrics = batchResult.metrics;
+      const metrics: BacktestResult['metrics'] = {
+        totalTrades: pythonMetrics.totalTrades,
+        winningTrades: pythonMetrics.winningTrades,
+        losingTrades: pythonMetrics.losingTrades,
+        winRate: pythonMetrics.winRate,
+        totalPnl: pythonMetrics.totalPnl,
+        totalPnlPct: pythonMetrics.totalPnlPct,
+        avgWin: trades.filter(t => t.pnl > 0).reduce((sum, t) => sum + t.pnl, 0) / Math.max(1, pythonMetrics.winningTrades),
+        avgLoss: Math.abs(trades.filter(t => t.pnl < 0).reduce((sum, t) => sum + t.pnl, 0)) / Math.max(1, pythonMetrics.losingTrades),
+        largestWin: trades.length > 0 ? Math.max(...trades.filter(t => t.pnl > 0).map(t => t.pnl), 0) : 0,
+        largestLoss: trades.length > 0 ? Math.min(...trades.filter(t => t.pnl < 0).map(t => t.pnl), 0) : 0,
+        profitFactor: pythonMetrics.profitFactor,
+        sharpeRatio: pythonMetrics.sharpeRatio,
+        maxDrawdown: pythonMetrics.maxDrawdown,
+        maxDrawdownPct: pythonMetrics.maxDrawdownPct,
+        avgTradeDuration: trades.length > 0
+          ? trades.reduce((sum, t) => sum + (t.exitTime.getTime() - t.entryTime.getTime()), 0) / trades.length / 60000
+          : 0,
+        totalCommission: trades.reduce((sum, t) => sum + t.commission, 0),
+        netPnl: pythonMetrics.totalPnl,
+        finalCapital: pythonMetrics.finalCapital,
+      };
 
-        trades.push({
-          entryTime: currentPosition.entryTime,
-          exitTime: new Date(lastCandle.time),
-          side: currentPosition.side,
-          entryPrice: currentPosition.entryPrice,
-          exitPrice,
-          quantity: currentPosition.quantity,
-          pnl: netPnl,
-          pnlPct: (netPnl / (currentPosition.entryPrice * currentPosition.quantity)) * 100,
-          commission,
-          reason: 'SIGNAL',
-        });
-      }
-
-      // Calculate metrics
-      const metrics = this.calculateMetrics(trades, config.initialCapital, capital, equityCurve);
+      logger.info(`Batch backtest completed: ${trades.length} trades, ${pythonMetrics.winRate.toFixed(2)}% win rate`);
 
       const result: BacktestResult = {
         config,
@@ -293,7 +220,32 @@ class BacktestEngine {
   }
 
   /**
+   * Map resolution format to CoinDCX API format
+   * Input: "5m", "1h", "1d"
+   * Output: "5", "60", "1D"
+   */
+  private mapResolution(resolution: string): string {
+    const mapping: Record<string, string> = {
+      '1m': '1',
+      '5m': '5',
+      '15m': '15',
+      '30m': '30',
+      '1h': '60',
+      '2h': '120',
+      '4h': '240',
+      '6h': '360',
+      '8h': '480',
+      '1d': '1D',
+      '1w': '1W',
+      '1M': '1M',
+    };
+
+    return mapping[resolution] || resolution;
+  }
+
+  /**
    * Fetch historical OHLCV data from CoinDCX
+   * Automatically detects futures vs spot and calls appropriate API
    */
   private async fetchHistoricalData(
     symbol: string,
@@ -308,26 +260,139 @@ class BacktestEngine {
     close: number;
     volume: number;
   }>> {
-    const market = CoinDCXClient.normalizeMarket(symbol) + 'INR';
+    // Check if this is a futures symbol (starts with "B-")
+    const isFutures = symbol.startsWith('B-');
 
-    // Calculate how many candles we need
-    const candles = await CoinDCXClient.getHistoricalCandles(
-      market,
-      resolution as any,
-      1000 // Max limit
-    );
+    if (isFutures) {
+      // Futures trading - use getFuturesCandles
+      logger.info(`Fetching futures data for ${symbol} from ${startDate.toISOString()} to ${endDate.toISOString()}`);
 
-    // Filter by date range
-    const filtered = candles.filter(candle => {
-      const candleTime = new Date(candle.time);
-      return candleTime >= startDate && candleTime <= endDate;
-    });
+      const fromTimestamp = Math.floor(startDate.getTime() / 1000);
+      const toTimestamp = Math.floor(endDate.getTime() / 1000);
+      const apiResolution = this.mapResolution(resolution);
 
-    return filtered;
+      const candles = await CoinDCXClient.getFuturesCandles(
+        symbol,
+        fromTimestamp,
+        toTimestamp,
+        apiResolution as any
+      );
+
+      logger.info(`Fetched ${candles.length} futures candles for ${symbol}`);
+      return candles;
+
+    } else {
+      // Spot trading - use getHistoricalCandles
+      logger.info(`Fetching spot data for ${symbol}`);
+
+      const market = CoinDCXClient.normalizeMarket(symbol) + 'INR';
+      const candles = await CoinDCXClient.getHistoricalCandles(
+        market,
+        resolution as any,
+        1000 // Max limit
+      );
+
+      // Filter by date range
+      const filtered = candles.filter(candle => {
+        const candleTime = new Date(candle.time);
+        return candleTime >= startDate && candleTime <= endDate;
+      });
+
+      logger.info(`Fetched ${filtered.length} spot candles for ${symbol}`);
+      return filtered;
+    }
   }
 
   /**
-   * Execute strategy code on a single candle
+   * Execute batch backtest using optimized Python processor
+   * Spawns Python ONCE and processes ALL candles in a single execution
+   */
+  private async executeBatchBacktest(
+    strategyCode: string,
+    historicalData: any[],
+    config: BacktestConfig
+  ): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const pythonScriptPath = path.join(
+        __dirname,
+        '../../python/batch_backtest.py'
+      );
+
+      const input = JSON.stringify({
+        strategy_code: strategyCode,
+        historical_data: historicalData,
+        config: {
+          symbol: config.symbol,
+          resolution: config.resolution,
+          lookback_period: 200,
+        },
+        initial_capital: config.initialCapital,
+        risk_per_trade: config.riskPerTrade,
+        leverage: config.leverage,
+        commission: config.commission,
+      });
+
+      const pythonProcess = spawn('python3', [pythonScriptPath], {
+        env: { ...process.env },
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      pythonProcess.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      pythonProcess.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      pythonProcess.on('close', (code) => {
+        if (code !== 0) {
+          logger.error(`Batch backtest failed with code ${code}`);
+          logger.error(`stderr: ${stderr}`);
+          resolve({
+            success: false,
+            error: `Python process exited with code ${code}`,
+            trades: [],
+            metrics: {},
+          });
+          return;
+        }
+
+        try {
+          const result = JSON.parse(stdout);
+          resolve(result);
+        } catch (error) {
+          logger.error(`Failed to parse batch backtest result: ${error}`);
+          logger.error(`stdout: ${stdout}`);
+          resolve({
+            success: false,
+            error: `Failed to parse Python output: ${error}`,
+            trades: [],
+            metrics: {},
+          });
+        }
+      });
+
+      pythonProcess.stdin.write(input);
+      pythonProcess.stdin.end();
+
+      // Longer timeout for batch processing (10 minutes for 1 year of data)
+      setTimeout(() => {
+        pythonProcess.kill();
+        resolve({
+          success: false,
+          error: 'Batch backtest timed out after 10 minutes',
+          trades: [],
+          metrics: {},
+        });
+      }, 600000); // 10 minutes
+    });
+  }
+
+  /**
+   * Execute strategy code on a single candle (used for live execution, not backtesting)
    */
   private async executeStrategyOnCandle(
     strategyCode: string,
@@ -566,7 +631,9 @@ class BacktestEngine {
     try {
       await prisma.backtestResult.create({
         data: {
-          strategyId,
+          strategy: {
+            connect: { id: strategyId }
+          },
           version: '1.0.0',
           startDate: result.config.startDate,
           endDate: result.config.endDate,
@@ -580,7 +647,7 @@ class BacktestEngine {
           winRate: result.metrics.winRate,
           profitFactor: result.metrics.profitFactor,
           totalTrades: result.metrics.totalTrades,
-          avgTrade: result.metrics.totalPnl / result.metrics.totalTrades,
+          avgTrade: result.metrics.totalTrades > 0 ? result.metrics.totalPnl / result.metrics.totalTrades : 0,
           equityCurve: result.equityCurve as any,
           tradeHistory: result.trades as any,
           monthlyReturns: {} as any, // TODO: Calculate monthly returns

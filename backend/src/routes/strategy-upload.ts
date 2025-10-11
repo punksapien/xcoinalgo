@@ -553,6 +553,80 @@ router.post('/cli-upload', authenticate, async (req: AuthenticatedRequest, res, 
       logger.info(`New strategy created via CLI: ${strategy.id} by user ${userId}`);
     }
 
+    // Auto-trigger backtest after successful upload
+    let backtestMetrics = null;
+    try {
+      logger.info(`Auto-triggering backtest for strategy ${strategy.id}`);
+
+      // Import backtest engine
+      const { backtestEngine } = await import('../services/backtest-engine');
+
+      // Get execution config from parsed config
+      const executionConfig = parsedConfig.executionConfig || {};
+      const symbol = executionConfig.symbol || parsedConfig.pair || parsedConfig.pairs?.[0];
+      const resolution = executionConfig.resolution || parsedConfig.timeframes?.[0] || '5';
+
+      if (!symbol) {
+        logger.warn(`Cannot run auto-backtest: no symbol found in config`);
+      } else {
+        // Calculate backtest period (last 1 year)
+        const endDate = new Date();
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - 365);
+
+        // Map resolution to backtest format
+        const resolutionMap: Record<string, string> = {
+          '1': '1m', '5': '5m', '15': '15m', '30': '30m',
+          '60': '1h', '120': '2h', '240': '4h', '1D': '1d'
+        };
+        const mappedResolution = resolutionMap[resolution] || `${resolution}m`;
+
+        // Run backtest
+        const backtestResult = await backtestEngine.runBacktest({
+          strategyId: strategy.id,
+          symbol,
+          resolution: mappedResolution as any,
+          startDate,
+          endDate,
+          initialCapital: 10000,
+          riskPerTrade: 0.01,
+          leverage: parsedConfig.riskProfile?.leverage || 10,
+          commission: 0.001,
+        });
+
+        // Update strategy metrics
+        await prisma.strategy.update({
+          where: { id: strategy.id },
+          data: {
+            winRate: backtestResult.metrics.winRate,
+            roi: backtestResult.metrics.totalPnlPct,
+            maxDrawdown: backtestResult.metrics.maxDrawdownPct,
+            sharpeRatio: backtestResult.metrics.sharpeRatio,
+            profitFactor: backtestResult.metrics.profitFactor,
+            totalTrades: backtestResult.metrics.totalTrades,
+            avgTradeReturn: backtestResult.metrics.totalTrades > 0
+              ? backtestResult.metrics.totalPnl / backtestResult.metrics.totalTrades
+              : 0,
+            updatedAt: new Date(),
+          },
+        });
+
+        backtestMetrics = {
+          winRate: backtestResult.metrics.winRate,
+          roi: backtestResult.metrics.totalPnlPct,
+          maxDrawdown: backtestResult.metrics.maxDrawdownPct,
+          sharpeRatio: backtestResult.metrics.sharpeRatio,
+          profitFactor: backtestResult.metrics.profitFactor,
+          totalTrades: backtestResult.metrics.totalTrades,
+        };
+
+        logger.info(`Auto-backtest completed for strategy ${strategy.id}: ${backtestResult.metrics.totalTrades} trades, ${backtestResult.metrics.winRate.toFixed(2)}% win rate`);
+      }
+    } catch (backtestError) {
+      logger.error(`Auto-backtest failed for strategy ${strategy.id}:`, backtestError);
+      // Don't fail the entire upload if backtest fails
+    }
+
     res.json({
       success: true,
       strategy: {
@@ -566,7 +640,8 @@ router.post('/cli-upload', authenticate, async (req: AuthenticatedRequest, res, 
         updatedAt: strategy.updatedAt,
         isNew: !existingStrategy,
       },
-      validation: validationResult
+      validation: validationResult,
+      backtest: backtestMetrics
     });
 
   } catch (error) {

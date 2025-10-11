@@ -414,10 +414,10 @@ router.post('/:id/run-backtest', async (req, res, next) => {
     const symbol = executionConfig.symbol;
     const resolution = executionConfig.resolution;
 
-    // Use last 30 days for backtest
+    // Use last 1 year for backtest
     const endDate = new Date();
     const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 30);
+    startDate.setDate(startDate.getDate() - 365);
 
     // Default backtest config
     const initialCapital = 10000;
