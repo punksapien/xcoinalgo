@@ -211,7 +211,8 @@ class APIClient:
         Raises:
             APIError: If fetch fails
         """
-        return self._request('GET', f'/api/strategies/{strategy_id}')
+        response = self._request('GET', f'/api/strategy-upload/{strategy_id}')
+        return response.get('strategy', response)
 
     def list_strategies(self) -> List[Dict[str, Any]]:
         """
@@ -223,7 +224,7 @@ class APIClient:
         Raises:
             APIError: If fetch fails
         """
-        response = self._request('GET', '/api/strategies')
+        response = self._request('GET', '/api/strategy-upload/my-strategies')
         return response.get('strategies', [])
 
     def upload_strategy_code(

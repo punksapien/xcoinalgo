@@ -3,51 +3,52 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // Proxy specific backend API routes, excluding /api/auth/* for NextAuth
   async rewrites() {
+    const backendUrl = process.env.BACKEND_URL || 'http://localhost:3001';
     return [
       // Backend routes - explicitly list to avoid conflicting with NextAuth /api/auth/*
       {
         source: '/api/user/:path*',
-        destination: 'http://184.72.102.221/api/user/:path*',
+        destination: `${backendUrl}/api/user/:path*`,
       },
       {
         source: '/api/bot/:path*',
-        destination: 'http://184.72.102.221/api/bot/:path*',
+        destination: `${backendUrl}/api/bot/:path*`,
       },
       {
         source: '/api/broker/:path*',
-        destination: 'http://184.72.102.221/api/broker/:path*',
+        destination: `${backendUrl}/api/broker/:path*`,
       },
       {
         source: '/api/positions/:path*',
-        destination: 'http://184.72.102.221/api/positions/:path*',
+        destination: `${backendUrl}/api/positions/:path*`,
       },
       {
         source: '/api/strategies/:path*',
-        destination: 'http://184.72.102.221/api/strategies/:path*',
+        destination: `${backendUrl}/api/strategies/:path*`,
       },
       {
         source: '/api/strategy-execution/:path*',
-        destination: 'http://184.72.102.221/api/strategy-execution/:path*',
+        destination: `${backendUrl}/api/strategy-execution/:path*`,
       },
       {
         source: '/api/backtest/:path*',
-        destination: 'http://184.72.102.221/api/backtest/:path*',
+        destination: `${backendUrl}/api/backtest/:path*`,
       },
       {
         source: '/api/webhooks/:path*',
-        destination: 'http://184.72.102.221/api/webhooks/:path*',
+        destination: `${backendUrl}/api/webhooks/:path*`,
       },
       {
         source: '/api/marketplace/:path*',
-        destination: 'http://184.72.102.221/api/marketplace/:path*',
+        destination: `${backendUrl}/api/marketplace/:path*`,
       },
       {
         source: '/api/strategy-upload/:path*',
-        destination: 'http://184.72.102.221/api/strategy-upload/:path*',
+        destination: `${backendUrl}/api/strategy-upload/:path*`,
       },
       {
         source: '/api/settings/:path*',
-        destination: 'http://184.72.102.221/api/settings/:path*',
+        destination: `${backendUrl}/api/settings/:path*`,
       },
     ];
   },
