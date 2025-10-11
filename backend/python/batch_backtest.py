@@ -29,6 +29,8 @@ import json
 import traceback
 from typing import Dict, Any, List, Optional
 from datetime import datetime
+import pandas as pd
+import numpy as np
 
 
 class BatchBacktestRunner:
@@ -126,9 +128,28 @@ class BatchBacktestRunner:
     def _load_strategy(self, strategy_code: str):
         """Execute strategy code and extract generate_signal function"""
         try:
-            # Create execution scope
+            # Create execution scope with common imports
+            import pandas as pd
+            import numpy as np
+
+            # Try to import optional dependencies
+            try:
+                import talib
+            except ImportError:
+                talib = None
+
             exec_scope = {
                 '__builtins__': __builtins__,
+                'pd': pd,
+                'pandas': pd,
+                'np': np,
+                'numpy': np,
+                'talib': talib,
+                'datetime': datetime,
+                'Dict': Dict,
+                'Any': Any,
+                'List': List,
+                'Optional': Optional,
             }
 
             # Execute strategy code
