@@ -449,6 +449,9 @@ def main():
             'metrics': {},
             'traceback': traceback.format_exc()
         }
+        # Also log to stderr for debugging
+        print(f"FATAL ERROR: {str(e)}", file=sys.stderr)
+        print(traceback.format_exc(), file=sys.stderr)
         print(json.dumps(error_result))
         sys.exit(1)
 
