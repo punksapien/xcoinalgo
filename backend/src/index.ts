@@ -15,6 +15,7 @@ import { strategyExecutionRoutes } from './routes/strategy-execution';
 import { backtestRoutes } from './routes/backtest';
 import { settingsRoutes } from './routes/settings';
 import { marketplaceRoutes } from './routes/marketplace';
+import { marketDataRoutes } from './routes/market-data';
 import { errorHandler } from './middleware/errorHandler';
 import { startHealthCheckMonitoring } from './services/strategyExecutor';
 import { startOrderMonitoring } from './workers/order-monitor';
@@ -101,6 +102,7 @@ app.use('/api/strategies', strategyExecutionRoutes);
 app.use('/api/backtest', backtestRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/marketplace', marketplaceRoutes);
+app.use('/api/market-data', marketDataRoutes);
 
 // Error handling middleware
 app.use(errorHandler);

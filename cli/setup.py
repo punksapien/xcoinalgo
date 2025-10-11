@@ -6,7 +6,7 @@ from setuptools import setup, find_packages
 import pathlib
 
 HERE = pathlib.Path(__file__).parent
-README = (HERE / "README.md").read_text() if (HERE / "README.md").exists() else ""
+README = (HERE / "README.md").read_text(encoding="utf-8") if (HERE / "README.md").exists() else ""
 
 setup(
     name="xcoin-cli",

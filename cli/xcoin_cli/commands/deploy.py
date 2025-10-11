@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from rich.console import Console
 from rich.panel import Panel
-from rich.prompt import Confirm
+from rich.prompt import Confirm, Prompt
 from rich.table import Table
 from rich import box
 
@@ -112,6 +112,70 @@ def deploy(strategy_name, force, marketplace):
     except Exception as e:
         console.print(f"[red]✗ Failed to read config.json: {e}[/]")
         exit(1)
+
+    # Validate symbol against CoinDCX
+    symbol = config_data.get('pair') or (config_data.get('pairs', [None])[0] if config_data.get('pairs') else None)
+    if symbol:
+        console.print(f"[dim]Validating symbol: {symbol}...[/]")
+        try:
+            validation_result = client.validate_symbol(symbol)
+
+            if not validation_result.get('isValid'):
+                console.print()
+                console.print(f"[yellow]⚠ Symbol '{symbol}' not found on CoinDCX[/]")
+
+                suggestions = validation_result.get('suggestions', [])
+                if suggestions:
+                    console.print()
+                    console.print("[bold]Did you mean:[/]")
+                    for idx, suggestion in enumerate(suggestions[:5], 1):
+                        console.print(f"  {idx}. {suggestion}")
+                    console.print()
+
+                    if not force:
+                        choice = Prompt.ask(
+                            "Select a symbol (1-5) or enter a different symbol",
+                            default=suggestions[0]
+                        )
+
+                        # Check if user entered a number (selection)
+                        try:
+                            choice_idx = int(choice) - 1
+                            if 0 <= choice_idx < len(suggestions):
+                                selected_symbol = suggestions[choice_idx]
+                            else:
+                                selected_symbol = choice
+                        except ValueError:
+                            selected_symbol = choice
+
+                        # Update config with corrected symbol
+                        if 'pair' in config_data:
+                            config_data['pair'] = selected_symbol
+                        if 'pairs' in config_data and isinstance(config_data['pairs'], list):
+                            config_data['pairs'][0] = selected_symbol
+
+                        # Write updated config back
+                        with open(config_file, 'w') as f:
+                            json.dump(config_data, f, indent=2)
+
+                        console.print(f"[green]✓ Updated symbol to: {selected_symbol}[/]")
+                        symbol = selected_symbol
+                    else:
+                        console.print(f"[yellow]⚠ Using invalid symbol in force mode: {symbol}[/]")
+                else:
+                    console.print("[yellow]⚠ No suggestions available. Please check CoinDCX for valid symbols.[/]")
+                    if not force:
+                        if not Confirm.ask("Continue anyway?", default=False):
+                            console.print("[dim]Deployment cancelled[/]")
+                            exit(0)
+            else:
+                validated_type = validation_result.get('type', 'unknown')
+                console.print(f"[green]✓ Symbol validated: {symbol} ({validated_type})[/]")
+        except Exception as e:
+            console.print(f"[yellow]⚠ Could not validate symbol: {e}[/]")
+            console.print("[dim]Continuing with deployment...[/]")
+
+        console.print()
 
     # Display files to be uploaded
     console.print("[bold]Files to upload:[/]")

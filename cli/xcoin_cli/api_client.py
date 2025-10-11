@@ -562,3 +562,71 @@ class APIClient:
             APIError: If unpublish fails
         """
         return self._request('POST', f'/api/marketplace/{strategy_id}/unpublish')
+
+    # Market Data
+
+    def validate_symbol(self, symbol: str) -> Dict[str, Any]:
+        """
+        Validate a trading symbol against CoinDCX markets
+
+        Args:
+            symbol: Trading symbol to validate (e.g., 'B-AVAX_USDT', 'AVAXUSDT')
+
+        Returns:
+            Validation result including:
+                - isValid: Whether symbol exists on CoinDCX
+                - normalized: Normalized symbol format
+                - type: Market type ('spot' or 'futures')
+                - suggestions: List of similar symbols if invalid
+                - market: Market details if valid
+
+        Raises:
+            APIError: If validation request fails
+        """
+        return self._request('GET', f'/api/market-data/validate/{symbol}')
+
+    def search_symbols(self, query: str, limit: int = 10) -> Dict[str, Any]:
+        """
+        Search for trading symbols matching a query
+
+        Args:
+            query: Search query (e.g., 'avax', 'btc')
+            limit: Maximum number of results (default: 10, max: 50)
+
+        Returns:
+            Search results including:
+                - query: The search query
+                - count: Number of results
+                - symbols: List of matching symbols with metadata
+
+        Raises:
+            APIError: If search request fails
+        """
+        return self._request('GET', '/api/market-data/symbols', params={'search': query, 'limit': limit})
+
+    def get_all_symbols(self) -> Dict[str, Any]:
+        """
+        Get all available trading symbols from CoinDCX
+
+        Returns:
+            All symbols organized by market type:
+                - spot: Number of spot markets
+                - futures: Number of futures markets
+                - symbols: Complete symbol lists
+
+        Raises:
+            APIError: If request fails
+        """
+        return self._request('GET', '/api/market-data/all-symbols')
+
+    def refresh_symbols_cache(self) -> Dict[str, Any]:
+        """
+        Force refresh of CoinDCX symbols cache
+
+        Returns:
+            Refresh confirmation with updated counts
+
+        Raises:
+            APIError: If refresh fails
+        """
+        return self._request('POST', '/api/market-data/refresh')

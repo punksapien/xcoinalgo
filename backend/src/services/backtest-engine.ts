@@ -14,6 +14,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import CoinDCXClient from './coindcx-client';
+import { symbolValidator } from './symbol-validator';
 import { Logger } from '../utils/logger';
 import { spawn } from 'child_process';
 import path from 'path';
@@ -262,28 +263,45 @@ class BacktestEngine {
     close: number;
     volume: number;
   }>> {
-    // Check if this is a futures symbol (starts with "B-")
-    const isFutures = symbol.startsWith('B-');
+    // Validate symbol against CoinDCX markets
+    const validation = await symbolValidator.validateSymbol(symbol);
+
+    if (!validation.isValid) {
+      const suggestions = validation.suggestions.slice(0, 3);
+      const suggestionText = suggestions.length > 0
+        ? `Did you mean: ${suggestions.join(', ')}?`
+        : 'Please check CoinDCX for available symbols.';
+
+      throw new Error(
+        `Symbol "${symbol}" not found on CoinDCX. ${suggestionText}`
+      );
+    }
+
+    logger.info(`Symbol validated: ${validation.normalized} (${validation.type})`);
+
+    // Use validated symbol
+    const validatedSymbol = validation.normalized;
+    const isFutures = validation.type === 'futures';
 
     if (isFutures) {
       // Futures trading - use getFuturesCandles
-      logger.info(`Fetching futures data for ${symbol} from ${startDate.toISOString()} to ${endDate.toISOString()}`);
+      logger.info(`Fetching futures data for ${validatedSymbol} from ${startDate.toISOString()} to ${endDate.toISOString()}`);
 
       const fromTimestamp = Math.floor(startDate.getTime() / 1000);
       const toTimestamp = Math.floor(endDate.getTime() / 1000);
       const apiResolution = this.mapResolution(resolution);
 
       const candles = await CoinDCXClient.getFuturesCandles(
-        symbol,
+        validatedSymbol,
         fromTimestamp,
         toTimestamp,
         apiResolution as any
       );
 
-      logger.info(`Fetched ${candles.length} futures candles for ${symbol}`);
+      logger.info(`Fetched ${candles.length} futures candles for ${validatedSymbol}`);
 
       if (candles.length === 0) {
-        const errorMsg = `No historical data available for ${symbol}. ` +
+        const errorMsg = `No historical data available for ${validatedSymbol}. ` +
                         `Please verify: (1) Symbol exists on CoinDCX, (2) Has trading history, (3) Date range contains data. ` +
                         `API params: from=${new Date(fromTimestamp * 1000).toISOString()}, to=${new Date(toTimestamp * 1000).toISOString()}, resolution=${apiResolution}`;
         logger.error(errorMsg);
@@ -294,9 +312,9 @@ class BacktestEngine {
 
     } else {
       // Spot trading - use getHistoricalCandles
-      logger.info(`Fetching spot data for ${symbol}`);
+      logger.info(`Fetching spot data for ${validatedSymbol}`);
 
-      const market = CoinDCXClient.normalizeMarket(symbol) + 'INR';
+      const market = CoinDCXClient.normalizeMarket(validatedSymbol) + 'INR';
       const candles = await CoinDCXClient.getHistoricalCandles(
         market,
         resolution as any,
@@ -309,10 +327,10 @@ class BacktestEngine {
         return candleTime >= startDate && candleTime <= endDate;
       });
 
-      logger.info(`Fetched ${filtered.length} spot candles for ${symbol}`);
+      logger.info(`Fetched ${filtered.length} spot candles for ${validatedSymbol}`);
 
       if (filtered.length === 0) {
-        const errorMsg = `No historical data available for ${symbol}. ` +
+        const errorMsg = `No historical data available for ${validatedSymbol}. ` +
                         `Please verify: (1) Symbol exists on CoinDCX, (2) Has trading history in date range. ` +
                         `Date range: ${startDate.toISOString()} to ${endDate.toISOString()}`;
         logger.error(errorMsg);
