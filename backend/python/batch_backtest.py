@@ -411,48 +411,22 @@ class BatchBacktestRunner:
 
 def main():
     """Main entry point"""
-    # Debug logging
-    debug_log_path = '/tmp/batch_backtest_debug.log'
-
     try:
-        with open(debug_log_path, 'a') as debug_log:
-            debug_log.write(f"\n\n=== Backtest started at {datetime.now()} ===\n")
-            debug_log.write(f"Args: {sys.argv}\n")
-            debug_log.flush()
-
         # Read input from file if provided, otherwise from stdin
         if len(sys.argv) > 1:
             # File path provided as command line argument
-            with open(debug_log_path, 'a') as debug_log:
-                debug_log.write(f"Reading from file: {sys.argv[1]}\n")
-                debug_log.flush()
             with open(sys.argv[1], 'r') as f:
                 input_data = json.load(f)
         else:
             # Read from stdin
-            with open(debug_log_path, 'a') as debug_log:
-                debug_log.write("Reading from stdin\n")
-                debug_log.flush()
             input_data = json.loads(sys.stdin.read())
 
         # Extract parameters
-        with open(debug_log_path, 'a') as debug_log:
-            debug_log.write("Extracting parameters...\n")
-            debug_log.flush()
-
         strategy_code = input_data['strategy_code']
         historical_data = input_data['historical_data']
         config = input_data['config']
 
-        with open(debug_log_path, 'a') as debug_log:
-            debug_log.write(f"Data loaded: {len(historical_data)} candles, strategy code: {len(strategy_code)} bytes\n")
-            debug_log.flush()
-
         # Create backtest runner
-        with open(debug_log_path, 'a') as debug_log:
-            debug_log.write("Creating backtest runner...\n")
-            debug_log.flush()
-
         runner = BatchBacktestRunner({
             'initial_capital': input_data.get('initial_capital', 10000),
             'risk_per_trade': input_data.get('risk_per_trade', 0.01),
@@ -460,16 +434,8 @@ def main():
             'commission': input_data.get('commission', 0.001)
         })
 
-        with open(debug_log_path, 'a') as debug_log:
-            debug_log.write("Starting backtest...\n")
-            debug_log.flush()
-
         # Run backtest
         result = runner.run_backtest(strategy_code, historical_data, config)
-
-        with open(debug_log_path, 'a') as debug_log:
-            debug_log.write(f"Backtest complete: {result.get('success')}}\n")
-            debug_log.flush()
 
         # Output result
         print(json.dumps(result))
@@ -483,16 +449,7 @@ def main():
             'metrics': {},
             'traceback': traceback.format_exc()
         }
-        # Log to debug file
-        try:
-            with open(debug_log_path, 'a') as debug_log:
-                debug_log.write(f"FATAL ERROR: {str(e)}\n")
-                debug_log.write(traceback.format_exc())
-                debug_log.write("\n")
-                debug_log.flush()
-        except:
-            pass
-        # Also log to stderr for debugging
+        # Log to stderr for debugging
         print(f"FATAL ERROR: {str(e)}", file=sys.stderr)
         print(traceback.format_exc(), file=sys.stderr)
         print(json.dumps(error_result))
