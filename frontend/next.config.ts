@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // Proxy specific backend API routes, excluding /api/auth/* for NextAuth
   async rewrites() {
-    const backendUrl = process.env.BACKEND_URL || 'http://localhost:3001';
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
     return [
       // Backend routes - explicitly list to avoid conflicting with NextAuth /api/auth/*
       {
