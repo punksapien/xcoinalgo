@@ -411,14 +411,28 @@ class BatchBacktestRunner:
 
 def main():
     """Main entry point"""
+    # Debug logging
+    debug_log_path = '/tmp/batch_backtest_debug.log'
+
     try:
+        with open(debug_log_path, 'a') as debug_log:
+            debug_log.write(f"\n\n=== Backtest started at {datetime.now()} ===\n")
+            debug_log.write(f"Args: {sys.argv}\n")
+            debug_log.flush()
+
         # Read input from file if provided, otherwise from stdin
         if len(sys.argv) > 1:
             # File path provided as command line argument
+            with open(debug_log_path, 'a') as debug_log:
+                debug_log.write(f"Reading from file: {sys.argv[1]}\n")
+                debug_log.flush()
             with open(sys.argv[1], 'r') as f:
                 input_data = json.load(f)
         else:
             # Read from stdin
+            with open(debug_log_path, 'a') as debug_log:
+                debug_log.write("Reading from stdin\n")
+                debug_log.flush()
             input_data = json.loads(sys.stdin.read())
 
         # Extract parameters
@@ -449,6 +463,15 @@ def main():
             'metrics': {},
             'traceback': traceback.format_exc()
         }
+        # Log to debug file
+        try:
+            with open(debug_log_path, 'a') as debug_log:
+                debug_log.write(f"FATAL ERROR: {str(e)}\n")
+                debug_log.write(traceback.format_exc())
+                debug_log.write("\n")
+                debug_log.flush()
+        except:
+            pass
         # Also log to stderr for debugging
         print(f"FATAL ERROR: {str(e)}", file=sys.stderr)
         print(traceback.format_exc(), file=sys.stderr)
