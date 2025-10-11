@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from '@/lib/auth';
@@ -16,7 +16,12 @@ import {
   Search,
   Plus,
   FileText,
-  Users
+  Users,
+  TrendingUp,
+  Bot,
+  Zap,
+  Target,
+  Clock
 } from "lucide-react";
 
 interface Strategy {
@@ -28,14 +33,20 @@ interface Strategy {
   version: string;
   isActive: boolean;
   tags: string;
+  instrument: string;
   createdAt: string;
   updatedAt: string;
   subscriberCount: number;
+  deploymentCount: number;
   winRate?: number;
   roi?: number;
   riskReward?: number;
   maxDrawdown?: number;
   marginRequired?: number;
+  features?: {
+    timeframes: string[];
+    leverage: number;
+  };
   executionConfig?: {
     symbol: string;
     resolution: string;
@@ -126,16 +137,6 @@ export default function StrategiesPage() {
     fetchStrategies();
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'ACTIVE': return 'bg-green-100 text-green-800';
-      case 'DEPLOYING': return 'bg-blue-100 text-blue-800';
-      case 'STOPPED': return 'bg-gray-100 text-gray-800';
-      case 'FAILED': return 'bg-red-100 text-red-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
-
   const filteredStrategies = strategies.filter(strategy => {
     const tagsString = typeof strategy.tags === 'string' ? strategy.tags : '';
     const matchesSearch = searchTerm === '' ||
@@ -153,6 +154,28 @@ export default function StrategiesPage() {
 
   const getUserSubscriptionStatus = (strategyId: string) => {
     return userSubscriptions.get(strategyId);
+  };
+
+  const formatPercentage = (value?: number) => {
+    if (!value) return 'N/A';
+    return `${value.toFixed(1)}%`;
+  };
+
+  const formatCurrency = (value?: number) => {
+    if (!value) return 'N/A';
+    return `₹${value.toLocaleString()}`;
+  };
+
+  const getStrategyTypeIcon = (tags: string) => {
+    const tagLower = tags.toLowerCase();
+    if (tagLower.includes('scalping') || tagLower.includes('high-frequency')) {
+      return <Zap className="h-4 w-4 text-yellow-500" />;
+    } else if (tagLower.includes('swing') || tagLower.includes('trend')) {
+      return <TrendingUp className="h-4 w-4 text-green-500" />;
+    } else if (tagLower.includes('arbitrage')) {
+      return <Target className="h-4 w-4 text-blue-500" />;
+    }
+    return <Bot className="h-4 w-4 text-primary" />;
   };
 
   if (loading) {
@@ -235,19 +258,21 @@ export default function StrategiesPage() {
           {filteredStrategies.map((strategy) => (
             <Card key={strategy.id} className="hover:shadow-lg transition-shadow dark:bg-gray-800 dark:border-gray-700">
               <CardHeader className="pb-3">
-                <div className="flex items-start justify-between">
+                <div className="flex justify-between items-start">
                   <div className="flex-1">
-                    <CardTitle className="text-lg mb-1 dark:text-white">{strategy.name}</CardTitle>
-                    <CardDescription className="line-clamp-2 dark:text-gray-400">
-                      {strategy.description || 'No description provided'}
-                    </CardDescription>
+                    <div className="flex items-center gap-2 mb-1">
+                      {getStrategyTypeIcon(strategy.tags)}
+                      <CardTitle className="text-lg text-foreground leading-tight">{strategy.name}</CardTitle>
+                    </div>
+                    <p className="text-sm text-muted-foreground font-mono">{strategy.code}</p>
                   </div>
-                  {strategy.isActive ? (
-                    <Badge className="bg-green-100 text-green-800">Active</Badge>
-                  ) : (
-                    <Badge variant="secondary">Inactive</Badge>
-                  )}
+                  <Badge variant="outline" className="text-xs border-primary/30 text-primary">
+                    {strategy.instrument}
+                  </Badge>
                 </div>
+                <p className="text-sm text-muted-foreground line-clamp-2 mt-2">
+                  {strategy.description}
+                </p>
               </CardHeader>
 
               <CardContent className="space-y-4">
@@ -262,13 +287,13 @@ export default function StrategiesPage() {
                   <div>
                     <p className="text-muted-foreground">Win Rate</p>
                     <p className="font-semibold text-primary">
-                      {strategy.winRate ? `${strategy.winRate.toFixed(1)}%` : 'N/A'}
+                      {formatPercentage(strategy.winRate)}
                     </p>
                   </div>
                   <div>
                     <p className="text-muted-foreground">ROI</p>
                     <p className="font-semibold text-accent">
-                      {strategy.roi ? `${strategy.roi.toFixed(1)}%` : 'N/A'}
+                      {formatPercentage(strategy.roi)}
                     </p>
                   </div>
                   <div>
@@ -278,17 +303,61 @@ export default function StrategiesPage() {
                   <div>
                     <p className="text-muted-foreground">Max Drawdown</p>
                     <p className="font-semibold text-destructive">
-                      {strategy.maxDrawdown ? `${strategy.maxDrawdown.toFixed(1)}%` : 'N/A'}
+                      {formatPercentage(strategy.maxDrawdown)}
                     </p>
                   </div>
                 </div>
 
+                {/* Additional Features */}
+                {strategy.features && (
+                  <div className="border-t border-border/50 pt-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Clock className="h-3 w-3 text-muted-foreground" />
+                      <span className="text-xs text-muted-foreground">Timeframes:</span>
+                      <span className="text-xs text-foreground">{strategy.features.timeframes.join(', ')}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Target className="h-3 w-3 text-muted-foreground" />
+                      <span className="text-xs text-muted-foreground">Leverage:</span>
+                      <span className="text-xs text-foreground">{strategy.features.leverage}x</span>
+                    </div>
+                  </div>
+                )}
+
                 {/* Margin Required */}
                 <div className="border-t border-border/50 pt-3">
                   <p className="text-xs text-muted-foreground">Margin Required</p>
-                  <p className="font-semibold text-foreground">
-                    {strategy.marginRequired ? `₹${strategy.marginRequired.toLocaleString()}` : 'N/A'}
-                  </p>
+                  <p className="font-semibold text-foreground">{formatCurrency(strategy.marginRequired)}</p>
+                </div>
+
+                {/* Tags */}
+                <div className="flex flex-wrap gap-1">
+                  {strategy.tags && strategy.tags.trim() ? (
+                    <>
+                      {strategy.tags.split(',').map(tag => tag.trim()).filter(tag => tag).slice(0, 3).map((tag, index) => (
+                        <Badge key={index} variant="secondary" className="text-xs hover:bg-primary/10 transition-colors">
+                          {tag}
+                        </Badge>
+                      ))}
+                      {strategy.tags.split(',').length > 3 && (
+                        <Badge variant="secondary" className="text-xs hover:bg-primary/10 transition-colors">
+                          +{strategy.tags.split(',').length - 3}
+                        </Badge>
+                      )}
+                    </>
+                  ) : (
+                    <Badge variant="secondary" className="text-xs">
+                      No tags
+                    </Badge>
+                  )}
+                </div>
+
+                {/* Deployment Count */}
+                <div className="flex items-center justify-between text-sm">
+                  <span className="flex items-center space-x-1 text-muted-foreground">
+                    <TrendingUp className="h-3 w-3" />
+                    <span>{strategy.deploymentCount || 0} active</span>
+                  </span>
                 </div>
 
                 {/* Subscription Status */}
@@ -306,46 +375,29 @@ export default function StrategiesPage() {
                   </div>
                 )}
 
-                {/* Tags */}
-                {strategy.tags && typeof strategy.tags === 'string' && strategy.tags.trim() && (
-                  <div className="flex flex-wrap gap-1">
-                    {strategy.tags.split(',').slice(0, 3).map((tag, index) => (
-                      <Badge key={index} variant="outline" className="text-xs">
-                        {tag.trim()}
-                      </Badge>
-                    ))}
-                    {strategy.tags.split(',').length > 3 && (
-                      <Badge variant="outline" className="text-xs">
-                        +{strategy.tags.split(',').length - 3}
-                      </Badge>
-                    )}
-                  </div>
-                )}
-
-                {/* Actions */}
-                <div className="flex gap-2 pt-2">
+                {/* Action Buttons */}
+                <div className="flex space-x-2 pt-2">
                   <Link href={`/dashboard/strategy/${strategy.id}`} className="flex-1">
-                    <Button variant="outline" size="sm" className="w-full">
-                      <FileText className="h-4 w-4 mr-1" />
-                      View
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full hover:bg-primary/5 hover:border-primary/50 transition-all"
+                    >
+                      View Details
                     </Button>
                   </Link>
-
                   {getUserSubscriptionStatus(strategy.id) ? (
                     <Link href="/dashboard/subscriptions" className="flex-1">
                       <Button variant="outline" size="sm" className="w-full">
-                        <Users className="h-4 w-4 mr-1" />
                         Manage
                       </Button>
                     </Link>
                   ) : (
                     <Button
-                      variant="outline"
                       size="sm"
-                      className="flex-1"
+                      className="flex-1 bg-primary hover:bg-primary/90 transition-all hover:scale-105"
                       onClick={() => handleSubscribe(strategy)}
                     >
-                      <Plus className="h-4 w-4 mr-1" />
                       Subscribe
                     </Button>
                   )}
