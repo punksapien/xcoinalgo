@@ -216,7 +216,7 @@ class APIClient:
 
     def list_strategies(self) -> List[Dict[str, Any]]:
         """
-        List all user strategies
+        List all available strategies (marketplace)
 
         Returns:
             List of strategies
@@ -224,7 +224,7 @@ class APIClient:
         Raises:
             APIError: If fetch fails
         """
-        response = self._request('GET', '/api/strategy-upload/my-strategies')
+        response = self._request('GET', '/api/strategy-upload/strategies')
         return response.get('strategies', [])
 
     def upload_strategy_code(
