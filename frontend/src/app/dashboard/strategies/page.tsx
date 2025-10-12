@@ -193,17 +193,11 @@ export default function StrategiesPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-3xl font-bold mb-2 dark:text-white">My Strategies</h1>
+          <h1 className="text-3xl font-bold mb-2 dark:text-white">Available Strategies</h1>
           <p className="text-gray-600 dark:text-gray-400">
-            Manage and deploy your trading strategies
+            Browse and subscribe to trading strategies from our quant team
           </p>
         </div>
-        <Link href="/dashboard/strategies/upload">
-          <Button className="flex items-center gap-2">
-            <Upload className="h-4 w-4" />
-            Upload Strategy
-          </Button>
-        </Link>
       </div>
 
       {/* Filters */}
@@ -239,18 +233,10 @@ export default function StrategiesPage() {
             <h3 className="text-lg font-medium mb-2 dark:text-white">No strategies found</h3>
             <p className="text-gray-600 dark:text-gray-400 mb-4">
               {strategies.length === 0
-                ? "Upload your first trading strategy to get started"
+                ? "No strategies are currently available. Our quant team is working on adding new strategies. Check back soon!"
                 : "No strategies match your current filters"
               }
             </p>
-            {strategies.length === 0 && (
-              <Link href="/dashboard/strategies/upload">
-                <Button>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Upload Your First Strategy
-                </Button>
-              </Link>
-            )}
           </CardContent>
         </Card>
       ) : (

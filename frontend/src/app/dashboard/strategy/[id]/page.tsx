@@ -877,62 +877,69 @@ export default function StrategyDetailPage() {
                 <Separator />
 
                 {/* Full Trade Report */}
-                {backtest.tradeHistory && backtest.tradeHistory.length > 0 && (
-                  <div>
-                    <div className="flex items-center justify-between mb-4">
-                      <div>
-                        <h3 className="text-lg font-semibold">Full Trade Report</h3>
-                        <p className="text-sm text-yellow-500">Note: Trade Report is Based on 1x Multiplier</p>
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h3 className="text-lg font-semibold">Full Trade Report</h3>
+                      <p className="text-sm text-yellow-500">Note: Trade Report is Based on 1x Multiplier</p>
+                      {backtest?.tradeHistory && filteredTrades.length > 0 ? (
                         <p className="text-sm text-muted-foreground">
                           Showing {filteredTrades.length > 0 ? ((currentPage - 1) * itemsPerPage + 1) : 0} - {Math.min(currentPage * itemsPerPage, filteredTrades.length)} of {filteredTrades.length} trades
                         </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          placeholder="Search trades..."
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                          className="px-3 py-2 rounded-md border border-input bg-background text-sm"
-                        />
-                        <button
-                          onClick={downloadTradesCSV}
-                          disabled={filteredTrades.length === 0}
-                          className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm hover:bg-primary/90 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <Download className="h-4 w-4" />
-                          Download Report
-                        </button>
-                        <button
-                          onClick={() => setShowingUSD(!showingUSD)}
-                          className="px-4 py-2 rounded-md border border-input bg-background text-sm hover:bg-accent"
-                        >
-                          💲 Showing in {showingUSD ? 'USD' : 'INR'}
-                        </button>
-                      </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          No trade history available yet
+                        </p>
+                      )}
                     </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full border-collapse text-sm">
-                        <thead>
-                          <tr className="bg-primary/10">
-                            <th className="border border-border/50 px-3 py-2 text-left">Index #</th>
-                            <th className="border border-border/50 px-3 py-2 text-left">Entry Time</th>
-                            <th className="border border-border/50 px-3 py-2 text-left">Exit Time</th>
-                            <th className="border border-border/50 px-3 py-2 text-left">Entry Date</th>
-                            <th className="border border-border/50 px-3 py-2 text-left">Exit Date</th>
-                            <th className="border border-border/50 px-3 py-2 text-left">Order Type</th>
-                            <th className="border border-border/50 px-3 py-2 text-left">Strike</th>
-                            <th className="border border-border/50 px-3 py-2 text-left">Action</th>
-                            <th className="border border-border/50 px-3 py-2 text-left">Quantity</th>
-                            <th className="border border-border/50 px-3 py-2 text-left">Entry Price</th>
-                            <th className="border border-border/50 px-3 py-2 text-left">Exit Price</th>
-                            <th className="border border-border/50 px-3 py-2 text-left">Profit Loss</th>
-                            <th className="border border-border/50 px-3 py-2 text-left">Charges</th>
-                            <th className="border border-border/50 px-3 py-2 text-left">Remarks</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {paginatedTrades.map((trade) => (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        placeholder="Search trades..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="px-3 py-2 rounded-md border border-input bg-background text-sm"
+                        disabled={!backtest?.tradeHistory || filteredTrades.length === 0}
+                      />
+                      <button
+                        onClick={downloadTradesCSV}
+                        disabled={!backtest?.tradeHistory || filteredTrades.length === 0}
+                        className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm hover:bg-primary/90 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <Download className="h-4 w-4" />
+                        Download Report
+                      </button>
+                      <button
+                        onClick={() => setShowingUSD(!showingUSD)}
+                        className="px-4 py-2 rounded-md border border-input bg-background text-sm hover:bg-accent"
+                      >
+                        💲 Showing in {showingUSD ? 'USD' : 'INR'}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse text-sm">
+                      <thead>
+                        <tr className="bg-primary/10">
+                          <th className="border border-border/50 px-3 py-2 text-left">Index #</th>
+                          <th className="border border-border/50 px-3 py-2 text-left">Entry Time</th>
+                          <th className="border border-border/50 px-3 py-2 text-left">Exit Time</th>
+                          <th className="border border-border/50 px-3 py-2 text-left">Entry Date</th>
+                          <th className="border border-border/50 px-3 py-2 text-left">Exit Date</th>
+                          <th className="border border-border/50 px-3 py-2 text-left">Order Type</th>
+                          <th className="border border-border/50 px-3 py-2 text-left">Strike</th>
+                          <th className="border border-border/50 px-3 py-2 text-left">Action</th>
+                          <th className="border border-border/50 px-3 py-2 text-left">Quantity</th>
+                          <th className="border border-border/50 px-3 py-2 text-left">Entry Price</th>
+                          <th className="border border-border/50 px-3 py-2 text-left">Exit Price</th>
+                          <th className="border border-border/50 px-3 py-2 text-left">Profit Loss</th>
+                          <th className="border border-border/50 px-3 py-2 text-left">Charges</th>
+                          <th className="border border-border/50 px-3 py-2 text-left">Remarks</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {backtest?.tradeHistory && paginatedTrades.length > 0 ? (
+                          paginatedTrades.map((trade) => (
                             <tr key={trade.index} className="hover:bg-secondary/20">
                               <td className="border border-border/50 px-3 py-2">{trade.index}</td>
                               <td className="border border-border/50 px-3 py-2">{trade.entryTime}</td>
@@ -955,74 +962,80 @@ export default function StrategyDetailPage() {
                               <td className="border border-border/50 px-3 py-2">{formatCurrencyUtil(trade.charges, showingUSD, 1)}</td>
                               <td className="border border-border/50 px-3 py-2">{trade.remarks || '-'}</td>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    {/* Pagination Controls */}
-                    {totalPages > 1 && (
-                      <div className="flex items-center justify-center gap-2 mt-4">
-                        <button
-                          onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                          disabled={currentPage === 1}
-                          className="px-3 py-1 rounded-md border border-input bg-background text-sm hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          &lt;
-                        </button>
-
-                        {/* Page numbers */}
-                        {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                          let pageNum
-                          if (totalPages <= 5) {
-                            pageNum = i + 1
-                          } else if (currentPage <= 3) {
-                            pageNum = i + 1
-                          } else if (currentPage >= totalPages - 2) {
-                            pageNum = totalPages - 4 + i
-                          } else {
-                            pageNum = currentPage - 2 + i
-                          }
-
-                          return (
-                            <button
-                              key={pageNum}
-                              onClick={() => setCurrentPage(pageNum)}
-                              className={`px-3 py-1 rounded-md text-sm ${
-                                currentPage === pageNum
-                                  ? 'bg-primary text-primary-foreground'
-                                  : 'border border-input bg-background hover:bg-accent'
-                              }`}
-                            >
-                              {pageNum}
-                            </button>
-                          )
-                        })}
-
-                        {/* Show ellipsis and last page if needed */}
-                        {totalPages > 5 && currentPage < totalPages - 2 && (
-                          <>
-                            <span className="px-2 text-muted-foreground">...</span>
-                            <button
-                              onClick={() => setCurrentPage(totalPages)}
-                              className="px-3 py-1 rounded-md border border-input bg-background text-sm hover:bg-accent"
-                            >
-                              {totalPages}
-                            </button>
-                          </>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={14} className="border border-border/50 px-3 py-8 text-center text-muted-foreground">
+                              No trade data available. Backtest results will appear here once the strategy has been tested.
+                            </td>
+                          </tr>
                         )}
-
-                        <button
-                          onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                          disabled={currentPage === totalPages}
-                          className="px-3 py-1 rounded-md border border-input bg-background text-sm hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          &gt;
-                        </button>
-                      </div>
-                    )}
+                      </tbody>
+                    </table>
                   </div>
-                )}
+
+                  {/* Pagination Controls */}
+                  {backtest?.tradeHistory && totalPages > 1 && (
+                    <div className="flex items-center justify-center gap-2 mt-4">
+                      <button
+                        onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                        disabled={currentPage === 1}
+                        className="px-3 py-1 rounded-md border border-input bg-background text-sm hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        &lt;
+                      </button>
+
+                      {/* Page numbers */}
+                      {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                        let pageNum
+                        if (totalPages <= 5) {
+                          pageNum = i + 1
+                        } else if (currentPage <= 3) {
+                          pageNum = i + 1
+                        } else if (currentPage >= totalPages - 2) {
+                          pageNum = totalPages - 4 + i
+                        } else {
+                          pageNum = currentPage - 2 + i
+                        }
+
+                        return (
+                          <button
+                            key={pageNum}
+                            onClick={() => setCurrentPage(pageNum)}
+                            className={`px-3 py-1 rounded-md text-sm ${
+                              currentPage === pageNum
+                                ? 'bg-primary text-primary-foreground'
+                                : 'border border-input bg-background hover:bg-accent'
+                            }`}
+                          >
+                            {pageNum}
+                          </button>
+                        )
+                      })}
+
+                      {/* Show ellipsis and last page if needed */}
+                      {totalPages > 5 && currentPage < totalPages - 2 && (
+                        <>
+                          <span className="px-2 text-muted-foreground">...</span>
+                          <button
+                            onClick={() => setCurrentPage(totalPages)}
+                            className="px-3 py-1 rounded-md border border-input bg-background text-sm hover:bg-accent"
+                          >
+                            {totalPages}
+                          </button>
+                        </>
+                      )}
+
+                      <button
+                        onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                        disabled={currentPage === totalPages}
+                        className="px-3 py-1 rounded-md border border-input bg-background text-sm hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        &gt;
+                      </button>
+                    </div>
+                  )}
+                </div>
               </CardContent>
             </Card>
           </section>
