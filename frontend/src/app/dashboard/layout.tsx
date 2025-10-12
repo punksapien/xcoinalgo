@@ -13,13 +13,18 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, hasHydrated } = useAuth();
   const { data: session, status: sessionStatus } = useSession();
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
 
   useEffect(() => {
+    // Wait for Zustand to hydrate before checking auth
+    if (!hasHydrated || sessionStatus === 'loading') {
+      return;
+    }
+
     // Check auth status on mount - allow time for AuthSyncManager to sync
     const timer = setTimeout(() => {
       // Check both NextAuth session and Zustand store
@@ -30,10 +35,10 @@ export default function DashboardLayout({
         router.replace('/login');
       }
       setIsChecking(false);
-    }, 500); // Increased timeout to allow auth sync to complete
+    }, 1000); // Increased timeout to 1s to allow auth sync to complete
 
     return () => clearTimeout(timer);
-  }, [user, isAuthenticated, session, sessionStatus, router]);
+  }, [user, isAuthenticated, session, sessionStatus, router, hasHydrated]);
 
   if (isChecking || sessionStatus === 'loading') {
     return (
