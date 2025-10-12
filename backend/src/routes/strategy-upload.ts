@@ -161,8 +161,8 @@ router.post('/upload', authenticate, upload.single('strategyFile'), async (req: 
   }
 });
 
-// Get user's uploaded strategies
-router.get('/my-strategies', authenticate, async (req: AuthenticatedRequest, res, next) => {
+// Get all active strategies (public marketplace)
+router.get('/strategies', authenticate, async (req: AuthenticatedRequest, res, next) => {
   try {
     const userId = req.userId!;
     const { page = 1, limit = 10, search, status } = req.query;
@@ -616,7 +616,7 @@ router.post('/cli-upload', authenticate, async (req: AuthenticatedRequest, res, 
           validationStatus: validationResult.isValid ? 'VALID' : 'INVALID',
           validationErrors: validationResult.errors?.join(', '),
           lastValidatedAt: new Date(),
-          isActive: false,
+          isActive: true, // Auto-activate CLI uploads so they appear in marketplace
           isApproved: true, // Auto-approve for CLI uploads
           winRate: parsedConfig.winRate,
           riskReward: parsedConfig.riskReward,
