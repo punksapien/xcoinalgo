@@ -12,9 +12,7 @@ import { SubscribeModal } from '@/components/strategy/subscribe-modal';
 import { showErrorToast, showSuccessToast } from '@/lib/toast-utils';
 import { getUserFriendlyError } from '@/lib/error-messages';
 import {
-  Upload,
   Search,
-  Plus,
   FileText,
   Users,
   TrendingUp,

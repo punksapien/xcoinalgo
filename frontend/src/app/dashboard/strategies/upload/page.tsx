@@ -43,10 +43,10 @@ export default function StrategyUploadPageDisabled() {
             Strategy uploads are restricted to the quant team only.
           </p>
           <p className="text-red-600 dark:text-red-300 text-sm">
-            If you're a client, you can browse and subscribe to available strategies from the strategies page.
+            If you&apos;re a client, you can browse and subscribe to available strategies from the strategies page.
           </p>
           <p className="text-red-600 dark:text-red-300 text-sm">
-            If you're a quant team member, please use the backend upload script or CLI tools to upload strategies.
+            If you&apos;re a quant team member, please use the backend upload script or CLI tools to upload strategies.
           </p>
           <div className="pt-4">
             <Button
