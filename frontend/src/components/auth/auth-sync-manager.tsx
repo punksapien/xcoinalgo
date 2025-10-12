@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useAuth } from '@/lib/auth';
 
@@ -11,7 +11,7 @@ import { useAuth } from '@/lib/auth';
 export function AuthSyncManager() {
   const { data: session, status } = useSession();
   const { login, token, hasHydrated } = useAuth();
-  const [syncAttempted, setSyncAttempted] = useState(false);
+  const lastSyncedTokenRef = useRef<string | null>(null);
 
   useEffect(() => {
     // Wait for both NextAuth and Zustand to be ready
@@ -25,13 +25,21 @@ export function AuthSyncManager() {
       const sessionUser = session.user as { id?: string; email?: string; accessToken?: string };
       const accessToken = sessionUser.accessToken;
 
-      // Sync if we have a token from NextAuth and Zustand is empty or has different token
-      if (accessToken && accessToken !== token && !syncAttempted) {
-        console.log('[AuthSync] Syncing NextAuth session to Zustand store', {
-          hasNextAuthToken: !!accessToken,
-          hasZustandToken: !!token,
-          tokensMatch: accessToken === token
-        });
+      // Log token comparison details (first 20 chars only for security)
+      console.log('[AuthSync] Token comparison:', {
+        nextAuthToken: accessToken ? `${accessToken.substring(0, 20)}...` : 'null',
+        zustandToken: token ? `${token.substring(0, 20)}...` : 'null',
+        lastSyncedToken: lastSyncedTokenRef.current ? `${lastSyncedTokenRef.current.substring(0, 20)}...` : 'null',
+        tokensMatch: accessToken === token,
+        willSync: !!(accessToken && accessToken !== token && accessToken !== lastSyncedTokenRef.current)
+      });
+
+      // Sync if:
+      // 1. We have a NextAuth token
+      // 2. AND it's different from Zustand token
+      // 3. AND we haven't already synced this exact token (prevent loops)
+      if (accessToken && accessToken !== token && accessToken !== lastSyncedTokenRef.current) {
+        console.log('[AuthSync] Syncing NextAuth session to Zustand store - tokens differ or Zustand is empty');
 
         login(
           {
@@ -42,19 +50,22 @@ export function AuthSyncManager() {
           accessToken
         );
 
-        setSyncAttempted(true);
+        lastSyncedTokenRef.current = accessToken;
         console.log('[AuthSync] Sync completed successfully');
-      } else if (accessToken === token && token) {
-        console.log('[AuthSync] Tokens already in sync');
+      } else if (accessToken && accessToken === token) {
+        console.log('[AuthSync] Tokens already in sync - no action needed');
+        lastSyncedTokenRef.current = accessToken;
+      } else if (!accessToken) {
+        console.warn('[AuthSync] NextAuth session has no accessToken!');
       }
     }
 
-    // Reset sync flag if session is gone
+    // Reset sync tracking if session is gone
     if (status === 'unauthenticated') {
       console.log('[AuthSync] Session unauthenticated, resetting sync state');
-      setSyncAttempted(false);
+      lastSyncedTokenRef.current = null;
     }
-  }, [session, status, login, token, hasHydrated, syncAttempted]);
+  }, [session, status, login, token, hasHydrated]);
 
   // This component doesn't render anything
   return null;
