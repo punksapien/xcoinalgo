@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { signOut } from 'next-auth/react';
 import { cn } from '@/lib/utils';
 import {
   Bot,
@@ -47,6 +48,13 @@ export function Sidebar({ onNavigate }: SidebarProps = {}) {
   const pathname = usePathname();
   const { logout, user } = useAuth();
   const { isDark, toggleTheme } = useTheme();
+
+  const handleLogout = async () => {
+    // Clear Zustand state (will also try to call backend logout endpoint)
+    await logout();
+    // Clear NextAuth session
+    await signOut({ callbackUrl: '/login' });
+  };
 
   return (
     <div className="flex flex-col h-full bg-sidebar border-r border-sidebar-border">
@@ -108,7 +116,7 @@ export function Sidebar({ onNavigate }: SidebarProps = {}) {
             </div>
           </div>
           <button
-            onClick={logout}
+            onClick={handleLogout}
             className="w-full flex items-center justify-center px-3 py-2 text-sm font-medium text-sidebar-foreground/80 bg-sidebar-accent hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950 dark:hover:text-red-400 rounded-lg transition-all duration-200"
             title="Sign out"
           >
