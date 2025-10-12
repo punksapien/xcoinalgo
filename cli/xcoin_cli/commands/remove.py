@@ -26,6 +26,7 @@ def remove(strategy_name, remote, hard, force):
         xcoin remove my-strategy              # delete local folder only
         xcoin remove my-strategy --remote     # soft delete from backend (can restore)
         xcoin remove my-strategy --remote --hard  # PERMANENT delete (cant undo!)
+        xcoin remove cmgo13eop0005... --remote   # delete by strategy ID from backend
 
     Soft delete marks strategies as inactive (isActive=false) in backend.
     Use 'xcoin restore my-strategy' to recover soft-deleted strategies.
@@ -34,18 +35,26 @@ def remove(strategy_name, remote, hard, force):
     console.print("[bold cyan]🗑️  removing strategy[/]")
     console.print()
 
+    # check if strategy_name looks like a strategy ID (starts with 'c' and is long)
+    is_strategy_id = len(strategy_name) > 20 and strategy_name.startswith('c')
+
     # find local strategy folder
     strat_folder = Path.cwd() / strategy_name
     local_exists = strat_folder.exists() and strat_folder.is_dir()
 
-    if not local_exists and not remote:
+    if not local_exists and not remote and not is_strategy_id:
         console.print(f"[yellow]⚠ folder '{strategy_name}' doesn't exist[/]")
         console.print("[dim](use --remote to remove from backend only)[/]")
         exit(1)
 
-    # get strategy id if exists locally
+    # get strategy id
     strat_id = None
-    if local_exists:
+
+    # if it looks like a strategy ID, use it directly
+    if is_strategy_id and remote:
+        strat_id = strategy_name
+    # otherwise try to get it from local folder
+    elif local_exists:
         deploy_file = strat_folder / '.xcoin' / 'deploy.json'
         if deploy_file.exists():
             import json
@@ -123,8 +132,8 @@ def remove(strategy_name, remote, hard, force):
                     if not Confirm.ask("continue with local deletion?", default=True):
                         exit(1)
 
-    # remove local folder
-    if local_exists:
+    # remove local folder (only if not using strategy ID directly)
+    if local_exists and not is_strategy_id:
         try:
             shutil.rmtree(strat_folder)
             console.print(f"[green]✓ deleted local folder: {strategy_name}/[/]")
@@ -136,7 +145,7 @@ def remove(strategy_name, remote, hard, force):
         except Exception as e:
             console.print(f"[red]✗ failed to delete folder: {e}[/]")
             exit(1)
-    elif not remote:
+    elif not remote and not is_strategy_id:
         # if we didnt try remote deletion and local doesnt exist, show friendly msg
         console.print(f"[yellow]⚠ folder '{strategy_name}' doesn't exist[/]")
         console.print("[dim](use --remote to remove from backend only)[/]")
