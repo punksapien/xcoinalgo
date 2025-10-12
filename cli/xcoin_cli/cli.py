@@ -50,34 +50,22 @@ def version():
     )
 
 
-# Import and register commands
+# import and register commands (only the essential ones now)
 from .commands.init import init
 from .commands.login import login
 from .commands.validate import validate
-from .commands.test_cmd import test as test_cmd
-from .commands.link_git import link_git
-from .commands.status import status
 from .commands.deploy import deploy
-from .commands.logs import logs
 from .commands.list import list as list_cmd
-from .commands.delete import delete
-from .commands.unpublish import unpublish
-from .commands.local import local
-from .commands.sync import sync
+from .commands.remove import remove
+from .commands.restore import restore
 
 cli.add_command(init)
 cli.add_command(login)
 cli.add_command(validate)
-cli.add_command(test_cmd, name="test")
-cli.add_command(link_git)
-cli.add_command(status)
 cli.add_command(deploy)
-cli.add_command(logs)
 cli.add_command(list_cmd, name="list")
-cli.add_command(delete)
-cli.add_command(unpublish)
-cli.add_command(local)
-cli.add_command(sync)
+cli.add_command(remove)
+cli.add_command(restore)
 
 
 if __name__ == "__main__":

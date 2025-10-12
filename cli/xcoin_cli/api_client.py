@@ -214,9 +214,12 @@ class APIClient:
         response = self._request('GET', f'/api/strategy-upload/{strategy_id}')
         return response.get('strategy', response)
 
-    def list_strategies(self) -> List[Dict[str, Any]]:
+    def list_strategies(self, show_all: bool = False) -> List[Dict[str, Any]]:
         """
         List all available strategies (marketplace)
+
+        Args:
+            show_all: If True, show all strategies including inactive ones (default: False)
 
         Returns:
             List of strategies
@@ -224,7 +227,11 @@ class APIClient:
         Raises:
             APIError: If fetch fails
         """
-        response = self._request('GET', '/api/strategy-upload/strategies')
+        params = {}
+        if show_all:
+            params['all'] = 'true'
+
+        response = self._request('GET', '/api/strategy-upload/strategies', params=params if params else None)
         return response.get('strategies', [])
 
     def upload_strategy_code(
@@ -535,7 +542,7 @@ class APIClient:
 
     def delete_strategy(self, strategy_id: str) -> Dict[str, Any]:
         """
-        Delete a strategy
+        Delete a strategy (permanent)
 
         Args:
             strategy_id: Strategy ID
@@ -547,6 +554,36 @@ class APIClient:
             APIError: If deletion fails
         """
         return self._request('DELETE', f'/api/strategy-upload/{strategy_id}')
+
+    def soft_delete_strategy(self, strategy_id: str) -> Dict[str, Any]:
+        """
+        Soft delete (deactivate) a strategy - can be restored later
+
+        Args:
+            strategy_id: Strategy ID
+
+        Returns:
+            Deactivation confirmation
+
+        Raises:
+            APIError: If deactivation fails
+        """
+        return self._request('PATCH', f'/api/strategy-upload/{strategy_id}/deactivate')
+
+    def restore_strategy(self, strategy_id: str) -> Dict[str, Any]:
+        """
+        Restore (reactivate) a soft-deleted strategy
+
+        Args:
+            strategy_id: Strategy ID
+
+        Returns:
+            Activation confirmation
+
+        Raises:
+            APIError: If activation fails
+        """
+        return self._request('PATCH', f'/api/strategy-upload/{strategy_id}/activate')
 
     def unpublish_from_marketplace(self, strategy_id: str) -> Dict[str, Any]:
         """

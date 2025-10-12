@@ -1,15 +1,13 @@
 {
   "name": "{{strategy_name}}",
   "code": "{{strategy_code}}",
-  "author": {
-    "name": "{{author_name}}",
-    "email": "{{author_email}}"
-  },
+  "author": "{{author_name}} <{{author_email}}>",
   "description": "{{description}}",
   "detailedDescription": "{{detailed_description}}",
   "tags": ["{{strategy_type}}"],
   "strategyType": "{{strategy_type}}",
   "complexity": "MEDIUM",
+  "pair": "{{default_pair}}",
   "pairs": ["{{default_pair}}", "B-BTC_USDT", "B-ETH_USDT"],
   "timeframes": ["{{default_timeframe}}"],
   "supportsFutures": true,

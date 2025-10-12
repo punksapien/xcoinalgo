@@ -220,7 +220,7 @@ class SecurityScanner:
 class SDKComplianceChecker:
     """Check if strategy complies with SDK requirements"""
 
-    REQUIRED_FUNCTION = 'generate_signal'
+    REQUIRED_FUNCTION = 'generate_signals'
     REQUIRED_BASE_CLASS = 'BaseStrategy'
 
     def check(self, code: str) -> ValidationResult:
@@ -254,12 +254,12 @@ class SDKComplianceChecker:
             else:
                 info.append(f"✓ Found strategy class: {strategy_class}")
 
-            # Check for generate_signal function
-            has_generate_signal = self._has_generate_signal(tree)
-            if not has_generate_signal:
-                errors.append("Missing 'generate_signal()' function at module level")
+            # Check for generate_signals function
+            has_generate_signals = self._has_generate_signals(tree)
+            if not has_generate_signals:
+                errors.append("Missing 'generate_signals()' function at module level")
             else:
-                info.append("✓ Found generate_signal() entry point")
+                info.append("✓ Found generate_signals() entry point")
 
             # Check for proper method signature
             signature_errors = self._check_generate_signal_signature(tree)
@@ -305,8 +305,8 @@ class SDKComplianceChecker:
                         return node.name
         return None
 
-    def _has_generate_signal(self, tree: ast.AST) -> bool:
-        """Check if generate_signal function exists at module level"""
+    def _has_generate_signals(self, tree: ast.AST) -> bool:
+        """Check if generate_signals function exists at module level"""
         for node in tree.body:
             if isinstance(node, ast.FunctionDef):
                 if node.name == self.REQUIRED_FUNCTION:
@@ -314,7 +314,7 @@ class SDKComplianceChecker:
         return False
 
     def _check_generate_signal_signature(self, tree: ast.AST) -> List[str]:
-        """Check if generate_signal has correct signature"""
+        """Check if generate_signals has correct signature"""
         errors = []
 
         # Check module-level function
@@ -323,13 +323,13 @@ class SDKComplianceChecker:
                 args = node.args.args
                 if len(args) < 2:
                     errors.append(
-                        f"generate_signal() must accept at least 2 parameters (candles, settings)"
+                        f"generate_signals() must accept at least 2 parameters (candles, settings)"
                     )
                 else:
                     param_names = [arg.arg for arg in args]
                     if 'candles' not in param_names or 'settings' not in param_names:
                         errors.append(
-                            f"generate_signal() parameters should be named 'candles' and 'settings'"
+                            f"generate_signals() parameters should be named 'candles' and 'settings'"
                         )
 
         return errors
@@ -373,7 +373,7 @@ class ConfigValidator:
     REQUIRED_FIELDS = {
         'name': str,
         'code': str,
-        'author': dict,
+        'author': str,
         'description': str,
         'pairs': list,
         'timeframes': list,
@@ -412,10 +412,7 @@ class ConfigValidator:
                 else:
                     info.append(f"✓ Field '{field}' is valid")
 
-            # Validate author structure
-            if 'author' in config:
-                author_errors = self._validate_author(config['author'])
-                errors.extend(author_errors)
+            # Author is now a string, no need to validate structure
 
             # Validate pairs
             if 'pairs' in config:

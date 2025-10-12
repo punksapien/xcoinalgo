@@ -165,7 +165,7 @@ router.post('/upload', authenticate, upload.single('strategyFile'), async (req: 
 router.get('/strategies', authenticate, async (req: AuthenticatedRequest, res, next) => {
   try {
     const userId = req.userId!;
-    const { page = 1, limit = 10, search, status } = req.query;
+    const { page = 1, limit = 10, search, status, all } = req.query;
 
     const skip = (Number(page) - 1) * Number(limit);
 
@@ -180,9 +180,14 @@ router.get('/strategies', authenticate, async (req: AuthenticatedRequest, res, n
       ];
     }
 
+    // by default, only show active strategies (unless 'all' param is true)
     if (status) {
       whereConditions.isActive = status === 'active';
+    } else if (!all || all === 'false') {
+      // default: only active strategies
+      whereConditions.isActive = true;
     }
+    // if all=true, show both active and inactive
 
     const [strategies, total] = await Promise.all([
       prisma.strategy.findMany({
@@ -526,6 +531,78 @@ router.delete('/:id', authenticate, async (req: AuthenticatedRequest, res, next)
   }
 });
 
+// Soft delete (deactivate) strategy
+router.patch('/:id/deactivate', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = req.userId!;
+    const strategyId = req.params.id;
+
+    // check if strategy exists
+    const strategy = await prisma.strategy.findUnique({
+      where: { id: strategyId }
+    });
+
+    if (!strategy) {
+      return res.status(404).json({
+        error: 'Strategy not found'
+      });
+    }
+
+    // soft delete: just set isActive to false
+    await prisma.strategy.update({
+      where: { id: strategyId },
+      data: { isActive: false }
+    });
+
+    logger.info(`Strategy soft deleted: ${strategyId} by user ${userId}`);
+
+    res.json({
+      success: true,
+      message: 'Strategy deactivated successfully (can be restored later)'
+    });
+
+  } catch (error) {
+    logger.error('Strategy deactivation failed:', error);
+    next(error);
+  }
+});
+
+// Restore (activate) strategy
+router.patch('/:id/activate', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = req.userId!;
+    const strategyId = req.params.id;
+
+    // check if strategy exists
+    const strategy = await prisma.strategy.findUnique({
+      where: { id: strategyId }
+    });
+
+    if (!strategy) {
+      return res.status(404).json({
+        error: 'Strategy not found'
+      });
+    }
+
+    // restore: set isActive back to true
+    await prisma.strategy.update({
+      where: { id: strategyId },
+      data: { isActive: true }
+    });
+
+    logger.info(`Strategy restored: ${strategyId} by user ${userId}`);
+
+    res.json({
+      success: true,
+      message: 'Strategy activated successfully'
+    });
+
+  } catch (error) {
+    logger.error('Strategy activation failed:', error);
+    next(error);
+  }
+});
+
 // CLI-friendly upload: accepts JSON payload with file contents (no multipart)
 router.post('/cli-upload', authenticate, async (req: AuthenticatedRequest, res, next) => {
   try {
@@ -648,79 +725,9 @@ router.post('/cli-upload', authenticate, async (req: AuthenticatedRequest, res, 
       logger.info(`New strategy created via CLI: ${strategy.id} by user ${userId}`);
     }
 
-    // Auto-trigger backtest after successful upload
-    let backtestMetrics = null;
-    try {
-      logger.info(`Auto-triggering backtest for strategy ${strategy.id}`);
-
-      // Import backtest engine
-      const { backtestEngine } = await import('../services/backtest-engine');
-
-      // Get execution config from parsed config
-      const executionConfig = parsedConfig.executionConfig || {};
-      const symbol = executionConfig.symbol || parsedConfig.pair || parsedConfig.pairs?.[0];
-      const resolution = executionConfig.resolution || parsedConfig.timeframes?.[0] || '5';
-
-      if (!symbol) {
-        logger.warn(`Cannot run auto-backtest: no symbol found in config`);
-      } else {
-        // Calculate backtest period (last 1 year)
-        const endDate = new Date();
-        const startDate = new Date();
-        startDate.setDate(startDate.getDate() - 365);
-
-        // Map resolution to backtest format
-        const resolutionMap: Record<string, string> = {
-          '1': '1m', '5': '5m', '15': '15m', '30': '30m',
-          '60': '1h', '120': '2h', '240': '4h', '1D': '1d'
-        };
-        const mappedResolution = resolutionMap[resolution] || `${resolution}m`;
-
-        // Run backtest
-        const backtestResult = await backtestEngine.runBacktest({
-          strategyId: strategy.id,
-          symbol,
-          resolution: mappedResolution as any,
-          startDate,
-          endDate,
-          initialCapital: 10000,
-          riskPerTrade: 0.01,
-          leverage: parsedConfig.riskProfile?.leverage || 10,
-          commission: 0.001,
-        });
-
-        // Update strategy metrics
-        await prisma.strategy.update({
-          where: { id: strategy.id },
-          data: {
-            winRate: backtestResult.metrics.winRate,
-            roi: backtestResult.metrics.totalPnlPct,
-            maxDrawdown: backtestResult.metrics.maxDrawdownPct,
-            sharpeRatio: backtestResult.metrics.sharpeRatio,
-            profitFactor: backtestResult.metrics.profitFactor,
-            totalTrades: backtestResult.metrics.totalTrades,
-            avgTradeReturn: backtestResult.metrics.totalTrades > 0
-              ? backtestResult.metrics.totalPnl / backtestResult.metrics.totalTrades
-              : 0,
-            updatedAt: new Date(),
-          },
-        });
-
-        backtestMetrics = {
-          winRate: backtestResult.metrics.winRate,
-          roi: backtestResult.metrics.totalPnlPct,
-          maxDrawdown: backtestResult.metrics.maxDrawdownPct,
-          sharpeRatio: backtestResult.metrics.sharpeRatio,
-          profitFactor: backtestResult.metrics.profitFactor,
-          totalTrades: backtestResult.metrics.totalTrades,
-        };
-
-        logger.info(`Auto-backtest completed for strategy ${strategy.id}: ${backtestResult.metrics.totalTrades} trades, ${backtestResult.metrics.winRate.toFixed(2)}% win rate`);
-      }
-    } catch (backtestError) {
-      logger.error(`Auto-backtest failed for strategy ${strategy.id}:`, backtestError);
-      // Don't fail the entire upload if backtest fails
-    }
+    // Note: Auto-backtest removed for simplicity
+    // Quants can trigger backtests manually when needed via the dashboard or API
+    // This prevents upload failures due to missing dependencies, symbol validation issues, etc.
 
     res.json({
       success: true,
@@ -735,8 +742,7 @@ router.post('/cli-upload', authenticate, async (req: AuthenticatedRequest, res, 
         updatedAt: strategy.updatedAt,
         isNew: !existingStrategy,
       },
-      validation: validationResult,
-      backtest: backtestMetrics
+      validation: validationResult
     });
 
   } catch (error) {
