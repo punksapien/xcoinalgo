@@ -10,6 +10,7 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
+    "migrate:margin": "ts-node scripts/migrate-margin.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
