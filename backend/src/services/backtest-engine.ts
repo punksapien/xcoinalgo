@@ -24,7 +24,7 @@ import os from 'os';
 const prisma = new PrismaClient();
 const logger = new Logger('BacktestEngine');
 
-type BacktestStage = 'IDLE' | 'FETCHING' | 'RUNNING' | 'SAVING' | 'DONE' | 'FAILED'
+type BacktestStage = 'NO_RUN' | 'IDLE' | 'FETCHING' | 'RUNNING' | 'SAVING' | 'DONE' | 'FAILED'
 interface BacktestStatus {
   stage: BacktestStage
   progress: number
@@ -38,12 +38,12 @@ interface BacktestStatus {
 const backtestStatus: Record<string, BacktestStatus> = {}
 
 function setBacktestStatus(strategyId: string, update: Partial<BacktestStatus>) {
-  const prev: BacktestStatus = backtestStatus[strategyId] || { stage: 'IDLE', progress: 0 }
+  const prev: BacktestStatus = backtestStatus[strategyId] || { stage: 'NO_RUN', progress: 0, message: 'No active backtest' }
   backtestStatus[strategyId] = { ...prev, ...update }
 }
 
 export function getBacktestStatus(strategyId: string): BacktestStatus {
-  return backtestStatus[strategyId] || { stage: 'IDLE', progress: 0 }
+  return backtestStatus[strategyId] || { stage: 'NO_RUN', progress: 0, message: 'No active backtest' }
 }
 
 interface BacktestConfig {
@@ -452,7 +452,7 @@ class BacktestEngine {
           logger.error(`stderr: ${stderr}`);
           resolve({
             success: false,
-            error: `Python process exited with code ${code}`,
+            error: `Python process exited with code ${code}${stderr ? `: ${stderr.split('\n').slice(-5).join(' | ')}` : ''}`,
             trades: [],
             metrics: {},
           });
