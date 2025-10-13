@@ -1,3 +1,32 @@
+import os
+import requests
+
+
+class APIClient:
+    def __init__(self):
+        self.base_url = os.environ.get('XCOIN_API_URL', 'http://localhost:3001')
+        self.token = os.environ.get('XCOIN_API_TOKEN')
+
+    def _headers(self):
+        h = {'Content-Type': 'application/json'}
+        if self.token:
+            h['Authorization'] = f'Bearer {self.token}'
+        return h
+
+    def find_strategy_by_code(self, code: str):
+        # Simplified: list strategies and match by code
+        r = requests.get(f"{self.base_url}/api/strategies?all=true", headers=self._headers(), timeout=30)
+        r.raise_for_status()
+        items = r.json().get('strategies') or []
+        for s in items:
+            if s.get('code') == code:
+                return s
+        return None
+
+    def get_strategy_logs(self, strategy_id: str, since: str = '1h'):
+        r = requests.get(f"{self.base_url}/api/logs/strategy/{strategy_id}", params={'since': since}, headers=self._headers(), timeout=30)
+        r.raise_for_status()
+        return r.json().get('logs') or []
 """
 API Client for xcoinalgo backend communication
 """

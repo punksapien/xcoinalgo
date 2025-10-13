@@ -42,7 +42,9 @@
     "symbol": "{{default_pair}}",
     "resolution": "{{default_resolution}}",
     "lookbackPeriod": 100,
-    "executionMode": "live"
+    "executionMode": "live",
+    "tradingType": "{{default_trading_type}}",
+    "marginCurrency": "USDT"
   },
   "riskProfile": {
     "maxDrawdown": 0.15,

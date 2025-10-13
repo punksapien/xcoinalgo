@@ -233,7 +233,7 @@ export function SubscribeModal({
                   <span className="text-sm font-medium text-green-700">Available Balance:</span>
                 </div>
                 <span className="text-lg font-bold text-green-700">
-                  ${availableBalance.toFixed(2)}
+                  ₹{availableBalance.toFixed(2)}
                 </span>
               </div>
             ) : null}
@@ -258,7 +258,7 @@ export function SubscribeModal({
             <div className="space-y-2">
               <Label htmlFor="capital" className="flex items-center gap-2">
                 <DollarSign className="h-4 w-4" />
-                Capital ($)
+                Capital (₹)
               </Label>
               <Input
                 id="capital"
@@ -277,7 +277,7 @@ export function SubscribeModal({
                 </p>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  Amount of capital to allocate to this strategy (Min: $100)
+                  Amount of capital to allocate to this strategy (Min: ₹100)
                 </p>
               )}
             </div>
@@ -304,7 +304,7 @@ export function SubscribeModal({
                 </span>
               </div>
               <p className="text-sm text-muted-foreground">
-                Maximum risk: ${calculateMaxRisk()} per trade
+                Maximum risk: ₹{calculateMaxRisk()} per trade
               </p>
             </div>
 
@@ -370,7 +370,7 @@ export function SubscribeModal({
                 </span>
               </div>
               <p className="text-sm text-muted-foreground">
-                Stop trading after ${calculateMaxDailyRisk()} loss in one day
+                Stop trading after ₹{calculateMaxDailyRisk()} loss in one day
               </p>
             </div>
 

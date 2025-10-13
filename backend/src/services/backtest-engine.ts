@@ -350,7 +350,7 @@ class BacktestEngine {
     historicalData: any[],
     config: BacktestConfig
   ): Promise<any> {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       const pythonScriptPath = path.join(
         __dirname,
         '../../python/batch_backtest.py'
@@ -376,7 +376,26 @@ class BacktestEngine {
 
       logger.info(`Wrote ${input.length} bytes to temp file: ${tempFilePath}`);
 
-      const pythonProcess = spawn('python3', [pythonScriptPath, tempFilePath], {
+      // Determine python interpreter (uv env if requirements present)
+      let pythonCmd = 'python3'
+      try {
+        // Fetch latest strategy version to read requirements
+        const strategy = await prisma.strategy.findUnique({
+          where: { id: config.strategyId },
+          include: { versions: { orderBy: { createdAt: 'desc' }, take: 1 } }
+        })
+        const requirements = strategy?.versions?.[0]?.requirements
+        if (requirements && requirements.trim().length > 0) {
+          const { uvEnvManager } = await import('./python-env')
+          const env = uvEnvManager.ensureEnv(requirements)
+          pythonCmd = env.pythonPath
+          logger.info(`Using python interpreter: ${pythonCmd}`)
+        }
+      } catch (e) {
+        logger.warn(`UV env setup failed or skipped: ${e}`)
+      }
+
+      const pythonProcess = spawn(pythonCmd, [pythonScriptPath, tempFilePath], {
         env: { ...process.env },
       });
 

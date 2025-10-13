@@ -90,7 +90,7 @@ router.post('/upload', authenticate, upload.single('strategyFile'), async (req: 
       });
     }
 
-    // Store strategy code in a version
+    // Store strategy code in a version (start as non-marketplace until backtest succeeds)
     const strategy = await prisma.strategy.create({
       data: {
         name,
@@ -106,6 +106,7 @@ router.post('/upload', authenticate, upload.single('strategyFile'), async (req: 
         lastValidatedAt: new Date(),
         isActive: false,
         isApproved: false,
+        isMarketplace: false,
         winRate: parsedConfig.winRate,
         riskReward: parsedConfig.riskReward,
         maxDrawdown: parsedConfig.maxDrawdown,
@@ -128,7 +129,7 @@ router.post('/upload', authenticate, upload.single('strategyFile'), async (req: 
 
     logger.info(`Strategy uploaded: ${strategy.id} by user ${userId}`);
 
-    // Auto-trigger backtest after successful upload
+    // Auto-trigger backtest after successful upload; only list on success
     let backtestMetrics = null;
     try {
       logger.info(`Auto-triggering backtest for strategy ${strategy.id}`);
@@ -169,7 +170,7 @@ router.post('/upload', authenticate, upload.single('strategyFile'), async (req: 
           commission: 0.001,
         });
 
-        // Update strategy metrics
+        // Update strategy metrics and mark as marketplace-visible
         await prisma.strategy.update({
           where: { id: strategy.id },
           data: {
@@ -177,6 +178,10 @@ router.post('/upload', authenticate, upload.single('strategyFile'), async (req: 
             riskReward: backtestResult.metrics.profitFactor,
             maxDrawdown: backtestResult.metrics.maxDrawdownPct,
             roi: backtestResult.metrics.totalPnlPct,
+            isMarketplace: true,
+            isPublic: true,
+            isApproved: true,
+            isActive: true,
           },
         });
 
@@ -194,7 +199,7 @@ router.post('/upload', authenticate, upload.single('strategyFile'), async (req: 
       }
     } catch (backtestError) {
       logger.error('Auto-backtest failed (non-fatal):', backtestError);
-      // Don't fail the upload if backtest fails
+      // Don't fail the upload; remain non-marketplace and include failure in response
     }
 
     res.json({
@@ -209,7 +214,11 @@ router.post('/upload', authenticate, upload.single('strategyFile'), async (req: 
         createdAt: strategy.createdAt,
       },
       validation: validationResult,
-      backtest: backtestMetrics
+      backtest: backtestMetrics,
+      visibility: {
+        marketplace: !!(backtestMetrics),
+        processing: !backtestMetrics
+      }
     });
 
   } catch (error) {

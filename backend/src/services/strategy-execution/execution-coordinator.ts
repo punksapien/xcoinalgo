@@ -541,7 +541,7 @@ class ExecutionCoordinator {
     }
 
     try {
-      const tradingType = subscription?.tradingType || 'spot';
+      const tradingType = subscription?.tradingType === 'futures' ? 'futures' : 'spot';
       const leverage = subscription?.leverage || 1;
       const marginCurrency = subscription?.marginCurrency || 'USDT';
       const marginConversionRate = subscription?.marginConversionRate || 1;
@@ -631,7 +631,7 @@ class ExecutionCoordinator {
       }
 
       // SPOT TRADING (existing logic)
-      const market = CoinDCXClient.normalizeMarket(symbol) + 'INR';
+      const market = CoinDCXClient.normalizeMarket(symbol);
 
       // Place market order for immediate execution
       const order = await CoinDCXClient.placeMarketOrder(

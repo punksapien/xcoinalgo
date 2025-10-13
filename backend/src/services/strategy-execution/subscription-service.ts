@@ -22,6 +22,8 @@ interface CreateSubscriptionParams {
   slAtrMultiplier?: number
   tpAtrMultiplier?: number
   brokerCredentialId: string
+  tradingType?: 'spot' | 'futures'
+  marginCurrency?: string
 }
 
 interface SubscriptionWithStrategy extends StrategySubscription {
@@ -55,6 +57,8 @@ class SubscriptionService {
       slAtrMultiplier,
       tpAtrMultiplier,
       brokerCredentialId,
+      tradingType,
+      marginCurrency,
     } = params
 
     try {
@@ -90,6 +94,12 @@ class SubscriptionService {
 
       const isFirstSubscriber = strategy.subscriberCount === 0
 
+      // Infer trading type if not provided
+      const inferredTradingType: 'spot' | 'futures' = tradingType
+        ? tradingType
+        : (strategy?.executionConfig?.symbol?.startsWith('B-') || strategy?.executionConfig?.supportsFutures)
+          ? 'futures' : 'spot'
+
       // Create subscription in database
       const subscription = await prisma.strategySubscription.create({
         data: {
@@ -103,6 +113,8 @@ class SubscriptionService {
           slAtrMultiplier,
           tpAtrMultiplier,
           brokerCredentialId,
+          tradingType: inferredTradingType,
+          marginCurrency: marginCurrency || 'USDT',
           isActive: true,
           isPaused: false,
         },

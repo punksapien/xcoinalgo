@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/auth';
+import * as CoinDCXClient from '../services/coindcx-client';
 import prisma from '../utils/database';
 import { AuthenticatedRequest } from '../types';
 import { subscriptionService } from '../services/strategy-execution/subscription-service';
@@ -97,7 +98,9 @@ router.post('/:id/subscribe', authenticate, async (req: AuthenticatedRequest, re
       maxDailyLoss = 0.05,
       slAtrMultiplier,
       tpAtrMultiplier,
-      brokerCredentialId
+      brokerCredentialId,
+      tradingType,
+      marginCurrency
     } = req.body;
 
     // Validate required fields
@@ -122,6 +125,36 @@ router.post('/:id/subscribe', authenticate, async (req: AuthenticatedRequest, re
       });
     }
 
+    // Server-side balance check (futures by default for B- pairs or supportsFutures)
+    try {
+      const strategy = await prisma.strategy.findUnique({
+        where: { id: strategyId },
+        select: { configData: true }
+      });
+
+      const execCfg: any = strategy?.configData || {};
+      const symbol: string | undefined = execCfg.executionConfig?.symbol || execCfg.pair;
+      const supportsFutures: boolean = !!(execCfg.supportsFutures ?? true);
+      const inferredType: 'spot' | 'futures' = (tradingType as any) || (symbol?.startsWith('B-') || supportsFutures ? 'futures' : 'spot');
+
+      if (inferredType === 'futures') {
+        const wallets = await CoinDCXClient.getFuturesWallets(
+          brokerCredential.apiKey,
+          brokerCredential.apiSecret
+        );
+        const margin = (marginCurrency || 'USDT').toUpperCase();
+        const w = wallets.find(w => (w as any).margin_currency_short_name === margin);
+        const available = w ? Number((w as any).available_balance || 0) : 0;
+        if (!isFinite(available) || available <= 0 || available < Number(capital)) {
+          return res.status(400).json({
+            error: `Insufficient ${margin} futures wallet balance. Required: ${capital}, Available: ${available}`
+          });
+        }
+      }
+    } catch (balanceErr) {
+      return res.status(400).json({ error: 'Failed to validate broker balance', details: String(balanceErr) });
+    }
+
     // Create subscription
     const result = await subscriptionService.createSubscription({
       userId,
@@ -133,7 +166,9 @@ router.post('/:id/subscribe', authenticate, async (req: AuthenticatedRequest, re
       maxDailyLoss,
       slAtrMultiplier,
       tpAtrMultiplier,
-      brokerCredentialId
+      brokerCredentialId,
+      tradingType,
+      marginCurrency
     });
 
     res.json({

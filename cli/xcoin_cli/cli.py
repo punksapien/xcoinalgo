@@ -58,6 +58,8 @@ from .commands.deploy import deploy
 from .commands.list import list as list_cmd
 from .commands.remove import remove
 from .commands.restore import restore
+from .commands.logs import log_cmd
+from .commands.backtest import backtest
 
 cli.add_command(init)
 cli.add_command(login)
@@ -66,6 +68,8 @@ cli.add_command(deploy)
 cli.add_command(list_cmd, name="list")
 cli.add_command(remove)
 cli.add_command(restore)
+cli.add_command(log_cmd, name='log')
+cli.add_command(backtest)
 
 
 if __name__ == "__main__":

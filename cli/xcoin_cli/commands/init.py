@@ -53,6 +53,7 @@ def init(name):
         'default_pair': 'B-BTC_USDT',
         'default_timeframe': '15m',
         'default_resolution': '15',
+        'default_trading_type': 'futures',
         'strategy_type': 'trend-following',
         'creation_date': datetime.now().strftime('%Y-%m-%d'),
         'strategy_code': folder_name.upper().replace('-', '_') + '_V1',

@@ -16,6 +16,8 @@ import { backtestRoutes } from './routes/backtest';
 import { settingsRoutes } from './routes/settings';
 import { marketplaceRoutes } from './routes/marketplace';
 import { marketDataRoutes } from './routes/market-data';
+import { logsRoutes } from './routes/logs';
+import { executionAuditRoutes } from './routes/execution-audit';
 import { errorHandler } from './middleware/errorHandler';
 import { startHealthCheckMonitoring } from './services/strategyExecutor';
 import { startOrderMonitoring } from './workers/order-monitor';
@@ -101,6 +103,8 @@ app.use('/api/positions', positionsRoutes);
 app.use('/api/strategies', strategyExecutionRoutes);
 app.use('/api/backtest', backtestRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/logs', logsRoutes);
+app.use('/api/execution/audit', executionAuditRoutes);
 app.use('/api/marketplace', marketplaceRoutes);
 app.use('/api/market-data', marketDataRoutes);
 
