@@ -103,6 +103,11 @@ router.post('/run', authenticate, async (req: AuthenticatedRequest, res, next) =
 router.get('/status/:strategyId', authenticate, async (req: AuthenticatedRequest, res, next) => {
   try {
     const { strategyId } = req.params
+    const { default: prisma } = await import('../utils/database');
+    const exists = await prisma.strategy.findUnique({ where: { id: strategyId }, select: { id: true } })
+    if (!exists) {
+      return res.status(404).json({ error: 'Strategy not found' })
+    }
     const status = getBacktestStatus(strategyId)
     res.json({ status })
   } catch (error) {

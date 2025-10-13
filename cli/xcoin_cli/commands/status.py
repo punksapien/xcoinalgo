@@ -38,10 +38,19 @@ def status(strategy_folder_or_code, watch):
             strategy_id = None
 
     if not strategy_id:
-        click.echo('✗ could not resolve strategy id')
+        click.echo('✗ strategy not found (could not resolve id from input)')
         return
 
     def once():
+        # Verify existence first by listing
+        try:
+            items = api.list_strategies(show_all=True)
+            if not any(s.get('id') == strategy_id for s in items):
+                click.echo('✗ strategy not found in backend')
+                return 'FAILED'
+        except Exception:
+            pass
+
         s = api.get_backtest_status(strategy_id)
         st = s.get('stage', 'IDLE')
         pr = s.get('progress', 0)
