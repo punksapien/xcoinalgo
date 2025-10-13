@@ -78,7 +78,7 @@ class BatchBacktestRunner:
 
             if custom_backtest:
                 # Use custom backtest implementation
-                return self._run_custom_backtest(custom_backtest, historical_data)
+                return self._run_custom_backtest(custom_backtest, historical_data, strategy_config)
 
             # Fall back to default backtest using generate_signal
             generate_signal = exec_scope.get('generate_signal') or exec_scope.get('generate_signals')
@@ -193,14 +193,15 @@ class BatchBacktestRunner:
             print(f"Error checking for custom backtest: {e}", file=sys.stderr)
             return None
 
-    def _run_custom_backtest(self, custom_backtest, historical_data: List[Dict]) -> Dict[str, Any]:
+    def _run_custom_backtest(self, custom_backtest, historical_data: List[Dict], strategy_config: Dict) -> Dict[str, Any]:
         """Run custom backtest implementation provided by strategy"""
         try:
             # Convert historical data to DataFrame
             df = pd.DataFrame(historical_data)
 
-            # Prepare config
+            # Prepare config: merge backtest params with strategy params
             config = {
+                **strategy_config,  # Include all strategy parameters
                 'initial_capital': self.initial_capital,
                 'risk_per_trade': self.risk_per_trade,
                 'leverage': self.leverage,
