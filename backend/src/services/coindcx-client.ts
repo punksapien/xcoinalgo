@@ -201,38 +201,40 @@ async function makeAuthenticatedRequest<T>(
 
 /**
  * Make authenticated GET request to CoinDCX
- * IMPORTANT: CoinDCX GET requests are unusual - they include a body with timestamp
- * The body is used for signature calculation AND sent with the request
+ * CRITICAL: CoinDCX sends body even with GET requests (matches Python implementation)
  */
 async function makeAuthenticatedGetRequest<T>(
   endpoint: string,
-  credentials: CoinDCXCredentials
+  credentials: CoinDCXCredentials,
+  payload: any = {}
 ): Promise<T> {
   await rateLimit();
 
+  // Add timestamp to payload (matches Python: payload['timestamp'] = int(time.time() * 1000))
   const timestamp = Date.now();
-  const bodyObj = { timestamp };
-  const body = JSON.stringify(bodyObj);
+  payload.timestamp = timestamp;
+
+  // Stringify with separators like Python: json.dumps(payload, separators=(',', ':'))
+  const body = JSON.stringify(payload).replace(/:\s+/g, ':').replace(/,\s+/g, ',');
 
   const signature = createSignature(body, credentials.apiSecret);
 
-  logger.info(`Making authenticated GET request to ${endpoint}`);
-  logger.debug(`Request timestamp: ${timestamp}`);
-  logger.debug(`Request body: ${body}`);
-  logger.debug(`API Key (first 10 chars): ${credentials.apiKey.substring(0, 10)}...`);
+  logger.info(`Making authenticated request to ${endpoint}`);
+  logger.debug(`Timestamp: ${timestamp}`);
+  logger.debug(`Body: ${body}`);
 
+  // CRITICAL: Even for GET, we send body (like Python's requests.request with data=json_body)
   const response = await fetch(`${COINDCX_BASE_URL}${endpoint}`, {
-    method: 'GET',
+    method: 'POST', // CoinDCX actually expects POST for authenticated endpoints
     headers: {
       'Content-Type': 'application/json',
       'X-AUTH-APIKEY': credentials.apiKey,
       'X-AUTH-SIGNATURE': signature,
     },
-    // CoinDCX GET requests include body (unusual but documented)
     body: body,
   });
 
-  logger.info(`CoinDCX GET response status: ${response.status}`);
+  logger.info(`CoinDCX response status: ${response.status}`);
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -241,7 +243,7 @@ async function makeAuthenticatedGetRequest<T>(
   }
 
   const data = await response.json();
-  logger.debug('CoinDCX GET response data:', JSON.stringify(data));
+  logger.debug('CoinDCX response:', JSON.stringify(data));
   return data as T;
 }
 

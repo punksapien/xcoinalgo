@@ -164,37 +164,29 @@ router.get('/futures-balance', authenticate, async (req: AuthenticatedRequest, r
       });
     }
 
-    // Fetch futures wallet balances
+    // Fetch futures wallet balances (matches Python: get_wallet_details)
     try {
       const wallets = await CoinDCXClient.getFuturesWallets(
         brokerCredential.apiKey,
         brokerCredential.apiSecret
       );
 
-      console.log('🔍 RAW WALLETS FROM COINDCX:', JSON.stringify(wallets, null, 2));
-
       // Find USDT wallet (primary margin currency for futures)
       const usdtWallet = wallets.find((w: any) =>
         w.currency_short_name === 'USDT'
       );
 
-      console.log('🔍 FOUND USDT WALLET:', JSON.stringify(usdtWallet, null, 2));
-
       // Calculate available balance: balance - (locked_balance + cross_order_margin + cross_user_margin)
+      // Matches Python implementation
       const calculateAvailable = (wallet: any): number => {
         const balance = Number(wallet.balance || 0);
         const locked = Number(wallet.locked_balance || 0);
         const crossOrder = Number(wallet.cross_order_margin || 0);
         const crossUser = Number(wallet.cross_user_margin || 0);
-        console.log(`💰 Calculating for ${wallet.currency_short_name}: balance=${balance}, locked=${locked}, crossOrder=${crossOrder}, crossUser=${crossUser}`);
-        const available = balance - (locked + crossOrder + crossUser);
-        console.log(`💰 Result: ${available}`);
-        return available;
+        return balance - (locked + crossOrder + crossUser);
       };
 
       const usdtAvailable = usdtWallet ? calculateAvailable(usdtWallet) : 0;
-
-      console.log('✅ FINAL usdtAvailable:', usdtAvailable);
 
       res.json({
         totalAvailable: usdtAvailable, // USDT only for futures
