@@ -15,14 +15,27 @@ def status(strategy_folder_or_code, watch):
     # Resolve strategy id from folder or code
     strat_dir = Path(strategy_folder_or_code)
     strategy_id = None
-    if strat_dir.exists() and strat_dir.is_dir():
-        cfg = json.loads((strat_dir / 'config.json').read_text(encoding='utf-8'))
-        code = cfg.get('code')
-        strat = api.find_strategy_by_code(code)
-        strategy_id = strat['id'] if strat else None
+    # If it looks like a strategy ID, use it directly
+    if len(strategy_folder_or_code) > 20 and strategy_folder_or_code.startswith('c'):
+        strategy_id = strategy_folder_or_code
+    elif strat_dir.exists() and strat_dir.is_dir():
+        # Resolve by code from local config
+        try:
+            cfg = json.loads((strat_dir / 'config.json').read_text(encoding='utf-8'))
+            code = cfg.get('code')
+            items = api.list_strategies(show_all=True)
+            match = next((s for s in items if s.get('code') == code), None)
+            strategy_id = match['id'] if match else None
+        except Exception:
+            strategy_id = None
     else:
-        strat = api.find_strategy_by_code(strategy_folder_or_code)
-        strategy_id = strat['id'] if strat else None
+        # Treat as code; search remotely
+        try:
+            items = api.list_strategies(show_all=True)
+            match = next((s for s in items if s.get('code') == strategy_folder_or_code), None)
+            strategy_id = match['id'] if match else None
+        except Exception:
+            strategy_id = None
 
     if not strategy_id:
         click.echo('✗ could not resolve strategy id')
