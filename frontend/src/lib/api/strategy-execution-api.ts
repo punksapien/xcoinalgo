@@ -301,6 +301,26 @@ export class StrategyExecutionAPI {
 
     return handleResponse(response);
   }
+
+  /**
+   * Get futures wallet balance (for margin trading)
+   */
+  static async getFuturesBalance(
+    token: string
+  ): Promise<{ 
+    totalAvailable: number; 
+    usdtAvailable: number;
+    inrAvailable: number;
+    wallets: { currency: string; available: number; locked: number; total: number }[]; 
+    currency: string 
+  }> {
+    const response = await fetch(`${API_BASE_URL}/api/broker/futures-balance`, {
+      method: 'GET',
+      headers: getAuthHeaders(token),
+    });
+
+    return handleResponse(response);
+  }
 }
 
 // Export default for convenience

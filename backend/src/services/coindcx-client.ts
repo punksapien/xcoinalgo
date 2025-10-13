@@ -711,7 +711,7 @@ export async function getFuturesCandles(
     const response = await makePublicRequest<{ data: any[][] }>(
       `/market_data/candlesticks?pair=${pair}&from=${chunkStartTs}&to=${currentEndTs}&resolution=${resolution}&pcode=f`
     );
-    
+
     const candles: OHLCVCandle[] = response.data.map((candle: any) => ({
       time: candle.time,
       open: candle.open,

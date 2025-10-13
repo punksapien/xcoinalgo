@@ -143,6 +143,62 @@ router.get('/balance', authenticate, async (req: AuthenticatedRequest, res, next
   }
 });
 
+// Get futures wallet balances (for margin trading)
+router.get('/futures-balance', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = req.userId!;
+
+    // Get user's broker credentials
+    const brokerCredential = await prisma.brokerCredential.findUnique({
+      where: {
+        userId_brokerName: {
+          userId,
+          brokerName: 'coindcx'
+        }
+      }
+    });
+
+    if (!brokerCredential || !brokerCredential.isActive) {
+      return res.status(404).json({
+        error: 'No active broker credentials found. Please connect your broker first.'
+      });
+    }
+
+    // Fetch futures wallet balances
+    const wallets = await CoinDCXClient.getFuturesWallets(
+      brokerCredential.apiKey,
+      brokerCredential.apiSecret
+    );
+
+    // Find USDT wallet (most common margin currency)
+    const usdtWallet = wallets.find((w: any) => 
+      w.margin_currency_short_name === 'USDT'
+    );
+    const inrWallet = wallets.find((w: any) => 
+      w.margin_currency_short_name === 'INR'
+    );
+
+    const usdtAvailable = usdtWallet ? Number((usdtWallet as any).available_balance || 0) : 0;
+    const inrAvailable = inrWallet ? Number((inrWallet as any).available_balance || 0) : 0;
+
+    res.json({
+      totalAvailable: usdtAvailable, // Default to USDT for futures
+      usdtAvailable,
+      inrAvailable,
+      wallets: wallets.map((w: any) => ({
+        currency: w.margin_currency_short_name,
+        available: Number(w.available_balance || 0),
+        locked: Number(w.locked_balance || 0),
+        total: Number(w.balance || 0)
+      })),
+      currency: 'USDT',
+    });
+  } catch (error) {
+    console.error('Failed to fetch futures balance:', error);
+    next(error);
+  }
+});
+
 // Get broker connection status
 router.get('/status', authenticate, async (req: AuthenticatedRequest, res, next) => {
   try {

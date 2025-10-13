@@ -97,12 +97,21 @@ export function SubscribeModal({
 
     try {
       setLoadingBalance(true);
-      const balanceData = await StrategyExecutionAPI.getUserBalance(token);
+      // For futures strategies (B- pairs), fetch futures balance; otherwise spot balance
+      // We'll always fetch futures balance since most strategies use futures
+      const balanceData = await StrategyExecutionAPI.getFuturesBalance(token);
       setAvailableBalance(balanceData.totalAvailable);
     } catch (err) {
-      console.error('Failed to fetch balance:', err);
-      // Don't show error toast for balance fetch failure, just log it
-      setAvailableBalance(null);
+      console.error('Failed to fetch futures balance:', err);
+      // Fallback to spot balance if futures fails
+      try {
+        const spotBalanceData = await StrategyExecutionAPI.getUserBalance(token);
+        setAvailableBalance(spotBalanceData.totalAvailable);
+      } catch (spotErr) {
+        console.error('Failed to fetch spot balance:', spotErr);
+        // Don't show error toast for balance fetch failure, just log it
+        setAvailableBalance(null);
+      }
     } finally {
       setLoadingBalance(false);
     }
@@ -230,10 +239,10 @@ export function SubscribeModal({
               <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
                 <div className="flex items-center gap-2">
                   <CheckCircle className="h-4 w-4 text-green-600" />
-                  <span className="text-sm font-medium text-green-700">Available Balance:</span>
+                  <span className="text-sm font-medium text-green-700">Available Futures Balance (USDT):</span>
                 </div>
                 <span className="text-lg font-bold text-green-700">
-                  ₹{availableBalance.toFixed(2)}
+                  ${availableBalance.toFixed(2)}
                 </span>
               </div>
             ) : null}
