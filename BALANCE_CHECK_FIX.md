@@ -1,6 +1,6 @@
 # Balance Check Fix - Futures Trading
 
-**Date:** 2025-10-13  
+**Date:** 2025-10-13
 **Issue:** "Insufficient balance" error when subscribing to futures strategies
 
 ## Problem Summary
@@ -63,7 +63,7 @@ const available = w ? Number(w.available_balance || 0) : 0;
 
 if (available < capital) {
   return res.status(400).json({
-    error: `Insufficient ${margin} futures wallet balance. 
+    error: `Insufficient ${margin} futures wallet balance.
             Required: ${capital}, Available: ${available}`
   });
 }

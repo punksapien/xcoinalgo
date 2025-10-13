@@ -171,10 +171,10 @@ router.get('/futures-balance', authenticate, async (req: AuthenticatedRequest, r
     );
 
     // Find USDT wallet (most common margin currency)
-    const usdtWallet = wallets.find((w: any) => 
+    const usdtWallet = wallets.find((w: any) =>
       w.margin_currency_short_name === 'USDT'
     );
-    const inrWallet = wallets.find((w: any) => 
+    const inrWallet = wallets.find((w: any) =>
       w.margin_currency_short_name === 'INR'
     );
 
