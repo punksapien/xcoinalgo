@@ -1,7 +1,7 @@
 # ✅ Margin Calculation Fixed - Option A Implemented!
 
-**Date:** October 13, 2025  
-**Status:** ✅ COMPLETE (Frontend auto-deploying, Backend sync needed)  
+**Date:** October 13, 2025
+**Status:** ✅ COMPLETE (Frontend auto-deploying, Backend sync needed)
 **Commit:** `9783efc`
 
 ---
@@ -37,12 +37,12 @@ model Strategy {
 
 **Margin Calculation Logic (`backend/src/routes/strategy-upload.ts`):**
 ```typescript
-function calculateMarginFromConfig(config: any): { 
-  marginRequired: number | null, 
-  marginCurrency: string 
+function calculateMarginFromConfig(config: any): {
+  marginRequired: number | null,
+  marginCurrency: string
 } {
   let marginCurrency = 'INR'; // Default for spot
-  
+
   // Determine currency from pair
   const pair = config.pair || '';
   if (pair.startsWith('B-')) {
@@ -52,7 +52,7 @@ function calculateMarginFromConfig(config: any): {
   // Calculate from riskProfile (Option A)
   if (config.riskProfile) {
     const { recommendedCapital, leverage } = config.riskProfile;
-    
+
     if (recommendedCapital && leverage > 0) {
       // Futures: margin = capital / leverage
       // Spot: margin = capital

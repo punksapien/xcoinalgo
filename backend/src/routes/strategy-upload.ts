@@ -33,7 +33,7 @@ function calculateMarginFromConfig(config: any): { marginRequired: number | null
   // Calculate margin from riskProfile (Option A)
   if (config.riskProfile) {
     const { recommendedCapital, leverage } = config.riskProfile;
-    
+
     if (recommendedCapital && leverage && leverage > 0) {
       // For futures: margin = capital / leverage
       // For spot: margin = capital (no leverage)
@@ -763,7 +763,7 @@ router.post('/cli-upload', authenticate, async (req: AuthenticatedRequest, res, 
     if (existingStrategy) {
       // Update existing strategy with new version
       const newVersion = incrementVersion(existingStrategy.version);
-      
+
       // Recalculate margin from updated config (Option A)
       const { marginRequired, marginCurrency } = calculateMarginFromConfig(parsedConfig);
 
@@ -800,7 +800,7 @@ router.post('/cli-upload', authenticate, async (req: AuthenticatedRequest, res, 
     } else {
       // Calculate margin from config (Option A)
       const { marginRequired, marginCurrency } = calculateMarginFromConfig(parsedConfig);
-      
+
       // Create new strategy (do NOT publish to marketplace until backtest succeeds)
       strategy = await prisma.strategy.create({
         data: {
