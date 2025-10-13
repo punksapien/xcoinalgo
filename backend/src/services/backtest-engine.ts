@@ -409,11 +409,15 @@ class BacktestEngine {
       // Determine python interpreter (uv env if requirements present)
       let pythonCmd = 'python3'
       try {
-        // Prefer explicit requirements from version; else derive from config.dependencies
-        const requirementsRaw = (latestVersion as any).requirements || ''
-        let reqString = requirementsRaw.trim()
+        // Fetch latest strategy version to read requirements/config
+        const strat = await prisma.strategy.findUnique({
+          where: { id: config.strategyId },
+          include: { versions: { orderBy: { createdAt: 'desc' }, take: 1 } }
+        })
+        const ver = strat?.versions?.[0] as any
+        let reqString = (ver?.requirements || '').trim()
         if (!reqString || reqString.length === 0) {
-          const deps = ((latestVersion as any)?.configData as any)?.dependencies
+          const deps = (ver?.configData as any)?.dependencies
           if (Array.isArray(deps) && deps.length > 0) {
             reqString = deps.join('\n')
             logger.info(`Derived requirements from config.dependencies (${deps.length} packages)`)
