@@ -171,11 +171,6 @@ router.get('/futures-balance', authenticate, async (req: AuthenticatedRequest, r
         brokerCredential.apiSecret
       );
 
-      // Find USDT wallet (primary margin currency for futures)
-      const usdtWallet = wallets.find((w: any) =>
-        w.currency_short_name === 'USDT'
-      );
-
       // Calculate available balance: balance - (locked_balance + cross_order_margin + cross_user_margin)
       // Matches Python implementation
       const calculateAvailable = (wallet: any): number => {
@@ -186,18 +181,26 @@ router.get('/futures-balance', authenticate, async (req: AuthenticatedRequest, r
         return balance - (locked + crossOrder + crossUser);
       };
 
-      const usdtAvailable = usdtWallet ? calculateAvailable(usdtWallet) : 0;
+      // Find primary futures wallet (USDT or INR)
+      const usdtWallet = wallets.find((w: any) => w.currency_short_name === 'USDT');
+      const inrWallet = wallets.find((w: any) => w.currency_short_name === 'INR');
+      
+      // Use whichever wallet exists (prefer USDT if both exist)
+      const primaryWallet = usdtWallet || inrWallet;
+      const currency = primaryWallet?.currency_short_name || 'USDT';
+      const totalAvailable = primaryWallet ? calculateAvailable(primaryWallet) : 0;
 
       res.json({
-        totalAvailable: usdtAvailable, // USDT only for futures
-        usdtAvailable,
+        totalAvailable,
+        usdtAvailable: usdtWallet ? calculateAvailable(usdtWallet) : 0,
+        inrAvailable: inrWallet ? calculateAvailable(inrWallet) : 0,
         wallets: wallets.map((w: any) => ({
           currency: w.currency_short_name,
           available: calculateAvailable(w),
           locked: Number(w.locked_balance || 0),
           total: Number(w.balance || 0)
         })),
-        currency: 'USDT',
+        currency, // Return actual currency (USDT or INR)
       });
     } catch (walletError: any) {
       // Handle 404 or API errors gracefully - return empty balance

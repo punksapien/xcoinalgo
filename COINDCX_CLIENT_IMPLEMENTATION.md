@@ -9,20 +9,20 @@ Our TypeScript implementation **MUST** match the quant team's Python implementat
 ```python
 def _make_request(self, method: str, endpoint: str, payload: Optional[Dict[str, Any]] = None) -> Any:
     url = self.base_url + endpoint
-    
+
     if payload is None:
         payload = {}
-    
+
     payload['timestamp'] = int(time.time() * 1000)
     json_body = json.dumps(payload, separators=(',', ':'))
     signature = self._sign(json_body)
-    
+
     headers = {
         'Content-Type': 'application/json',
         'X-AUTH-APIKEY': self.api_key,
         'X-AUTH-SIGNATURE': signature
     }
-    
+
     # KEY: Always send body, even for "GET" endpoints
     response = requests.request(method.upper(), url, data=json_body, headers=headers)
     response.raise_for_status()
@@ -56,7 +56,7 @@ def _make_request(self, method: str, endpoint: str, payload: Optional[Dict[str, 
    def get_wallet_details(self) -> List[Dict[str, Any]]:
        return self._make_request('GET', '/exchange/v1/derivatives/futures/wallets')
    ```
-   
+
    Response format:
    ```json
    [

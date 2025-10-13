@@ -97,9 +97,11 @@ export function SubscribeModal({
 
     try {
       setLoadingBalance(true);
-      // Fetch futures balance (USDT wallet) - all strategies use futures
+      // Fetch futures balance (USDT or INR wallet) - all strategies use futures
       const balanceData = await StrategyExecutionAPI.getFuturesBalance(token);
       setAvailableBalance(balanceData.totalAvailable);
+      // Store currency for display (₹ for INR, $ for USDT)
+      (window as any).__futures_currency = balanceData.currency;
     } catch (err) {
       console.error('Failed to fetch futures balance:', err);
       // Don't show error toast for balance fetch failure, just log it
@@ -231,10 +233,12 @@ export function SubscribeModal({
               <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
                 <div className="flex items-center gap-2">
                   <CheckCircle className="h-4 w-4 text-green-600" />
-                  <span className="text-sm font-medium text-green-700">Available Futures Balance (USDT):</span>
+                  <span className="text-sm font-medium text-green-700">
+                    Available Futures Balance ({(window as any).__futures_currency || 'USDT'}):
+                  </span>
                 </div>
                 <span className="text-lg font-bold text-green-700">
-                  ${availableBalance.toFixed(2)}
+                  {(window as any).__futures_currency === 'INR' ? '₹' : '$'}{availableBalance.toFixed(2)}
                 </span>
               </div>
             ) : null}
