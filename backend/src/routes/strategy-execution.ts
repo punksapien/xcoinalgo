@@ -134,7 +134,7 @@ router.post('/:id/subscribe', authenticate, async (req: AuthenticatedRequest, re
 
       const execCfg: any = (strategy?.executionConfig as any) || {};
       const symbol: string | undefined = execCfg.executionConfig?.symbol || execCfg.pair;
-      
+
       // All strategies are futures-based (B- pairs use USDT margin)
       const margin = (marginCurrency || 'USDT').toUpperCase();
 
@@ -143,10 +143,10 @@ router.post('/:id/subscribe', authenticate, async (req: AuthenticatedRequest, re
           brokerCredential.apiKey,
           brokerCredential.apiSecret
         );
-        
+
         const w = wallets.find(w => (w as any).margin_currency_short_name === margin);
         const available = w ? Number((w as any).available_balance || 0) : 0;
-        
+
         if (!isFinite(available) || available < Number(capital)) {
           return res.status(400).json({
             error: `Insufficient ${margin} futures wallet balance. Required: $${capital} USDT, Available: $${available.toFixed(2)} USDT. Please deposit ${margin} to your CoinDCX futures wallet.`
@@ -155,21 +155,21 @@ router.post('/:id/subscribe', authenticate, async (req: AuthenticatedRequest, re
       } catch (walletErr: any) {
         // Provide specific error message based on failure reason
         const errorMsg = walletErr.message || String(walletErr);
-        
+
         if (errorMsg.includes('not_found') || errorMsg.includes('404')) {
           return res.status(400).json({
             error: 'Unable to access CoinDCX futures wallet. Please ensure your API key has futures trading permissions enabled.',
             details: 'Go to CoinDCX → Settings → API Management → Edit your API key → Enable "Futures Trading" permission'
           });
         }
-        
+
         if (errorMsg.includes('401') || errorMsg.includes('Authentication')) {
           return res.status(400).json({
             error: 'Invalid API credentials. Please reconnect your broker account.',
             details: errorMsg
           });
         }
-        
+
         // Generic wallet fetch error
         return res.status(400).json({
           error: 'Failed to validate futures wallet balance',
@@ -177,9 +177,9 @@ router.post('/:id/subscribe', authenticate, async (req: AuthenticatedRequest, re
         });
       }
     } catch (balanceErr) {
-      return res.status(400).json({ 
-        error: 'Failed to validate broker balance', 
-        details: String(balanceErr) 
+      return res.status(400).json({
+        error: 'Failed to validate broker balance',
+        details: String(balanceErr)
       });
     }
 
