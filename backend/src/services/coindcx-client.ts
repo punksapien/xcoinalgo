@@ -563,6 +563,7 @@ export async function getFuturesWallets(
   );
 
   logger.info(`Fetched ${wallets.length} futures wallets`);
+  logger.debug('Futures wallets response:', JSON.stringify(wallets));
   return wallets;
 }
 
