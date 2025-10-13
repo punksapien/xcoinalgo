@@ -410,10 +410,10 @@ class BacktestEngine {
       let pythonCmd = 'python3'
       try {
         // Prefer explicit requirements from version; else derive from config.dependencies
-        const requirementsRaw = latestVersion.requirements || ''
+        const requirementsRaw = (latestVersion as any).requirements || ''
         let reqString = requirementsRaw.trim()
         if (!reqString || reqString.length === 0) {
-          const deps = (latestVersion as any)?.configData?.dependencies
+          const deps = ((latestVersion as any)?.configData as any)?.dependencies
           if (Array.isArray(deps) && deps.length > 0) {
             reqString = deps.join('\n')
             logger.info(`Derived requirements from config.dependencies (${deps.length} packages)`)
