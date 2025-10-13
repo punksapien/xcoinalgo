@@ -43,6 +43,7 @@ export function SubscribeModal({
   const [error, setError] = useState<string | null>(null);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [availableBalance, setAvailableBalance] = useState<number | null>(null);
+  const [balanceCurrency, setBalanceCurrency] = useState<'INR' | 'USDT'>('USDT');
 
   // Form state
   const [capital, setCapital] = useState('10000');
@@ -101,7 +102,7 @@ export function SubscribeModal({
       const balanceData = await StrategyExecutionAPI.getFuturesBalance(token);
       setAvailableBalance(balanceData.totalAvailable);
       // Store currency for display (₹ for INR, $ for USDT)
-      (window as any).__futures_currency = balanceData.currency;
+      setBalanceCurrency(balanceData.currency as 'INR' | 'USDT');
     } catch (err) {
       console.error('Failed to fetch futures balance:', err);
       // Don't show error toast for balance fetch failure, just log it
@@ -234,11 +235,11 @@ export function SubscribeModal({
                 <div className="flex items-center gap-2">
                   <CheckCircle className="h-4 w-4 text-green-600" />
                   <span className="text-sm font-medium text-green-700">
-                    Available Futures Balance ({(window as any).__futures_currency || 'USDT'}):
+                    Available Futures Balance ({balanceCurrency}):
                   </span>
                 </div>
                 <span className="text-lg font-bold text-green-700">
-                  {(window as any).__futures_currency === 'INR' ? '₹' : '$'}{availableBalance.toFixed(2)}
+                  {balanceCurrency === 'INR' ? '₹' : '$'}{availableBalance.toFixed(2)}
                 </span>
               </div>
             ) : null}

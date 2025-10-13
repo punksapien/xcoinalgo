@@ -184,7 +184,7 @@ router.get('/futures-balance', authenticate, async (req: AuthenticatedRequest, r
       // Find primary futures wallet (USDT or INR)
       const usdtWallet = wallets.find((w: any) => w.currency_short_name === 'USDT');
       const inrWallet = wallets.find((w: any) => w.currency_short_name === 'INR');
-      
+
       // Use whichever wallet exists (prefer USDT if both exist)
       const primaryWallet = usdtWallet || inrWallet;
       const currency = primaryWallet?.currency_short_name || 'USDT';
