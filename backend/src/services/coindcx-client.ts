@@ -230,7 +230,7 @@ async function makeAuthenticatedGetRequest<T>(
   // CRITICAL: Python uses GET with body via requests.request()
   // We need to replicate this exactly - using native https module for GET with body
   const url = new URL(`${COINDCX_BASE_URL}${endpoint}`);
-  
+
   const response = await new Promise<any>((resolve, reject) => {
     const options = {
       hostname: url.hostname,
@@ -244,7 +244,7 @@ async function makeAuthenticatedGetRequest<T>(
         'X-AUTH-SIGNATURE': signature,
       },
     };
-    
+
     const req = https.request(options, (res: any) => {
       let data = '';
       res.on('data', (chunk: any) => { data += chunk; });
@@ -257,7 +257,7 @@ async function makeAuthenticatedGetRequest<T>(
         });
       });
     });
-    
+
     req.on('error', reject);
     req.write(body); // Send body with GET request
     req.end();

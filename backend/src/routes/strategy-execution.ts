@@ -135,16 +135,12 @@ router.post('/:id/subscribe', authenticate, async (req: AuthenticatedRequest, re
       const execCfg: any = (strategy?.executionConfig as any) || {};
       const symbol: string | undefined = execCfg.executionConfig?.symbol || execCfg.pair;
 
-      // All strategies are futures-based (B- pairs use USDT margin)
-      const margin = (marginCurrency || 'USDT').toUpperCase();
-
+      // Fetch futures wallets and determine which currency user has (INR or USDT)
       try {
         const wallets = await CoinDCXClient.getFuturesWallets(
           brokerCredential.apiKey,
           brokerCredential.apiSecret
         );
-
-        const w = wallets.find(w => (w as any).currency_short_name === margin);
 
         // Calculate available balance: balance - (locked_balance + cross_order_margin + cross_user_margin)
         const calculateAvailable = (wallet: any): number => {
@@ -155,11 +151,24 @@ router.post('/:id/subscribe', authenticate, async (req: AuthenticatedRequest, re
           return balance - (locked + crossOrder + crossUser);
         };
 
-        const available = w ? calculateAvailable(w) : 0;
+        // Find which wallet user has (prefer USDT, fallback to INR)
+        const usdtWallet = wallets.find(w => (w as any).currency_short_name === 'USDT');
+        const inrWallet = wallets.find(w => (w as any).currency_short_name === 'INR');
+        const primaryWallet = usdtWallet || inrWallet;
+
+        if (!primaryWallet) {
+          return res.status(400).json({
+            error: 'No futures wallet found. Please ensure you have a USDT or INR futures wallet on CoinDCX.'
+          });
+        }
+
+        const currency = (primaryWallet as any).currency_short_name;
+        const symbol = currency === 'INR' ? '₹' : '$';
+        const available = calculateAvailable(primaryWallet);
 
         if (!isFinite(available) || available < Number(capital)) {
           return res.status(400).json({
-            error: `Insufficient ${margin} futures wallet balance. Required: $${capital} USDT, Available: $${available.toFixed(2)} USDT. Please deposit ${margin} to your CoinDCX futures wallet.`
+            error: `Insufficient ${currency} futures wallet balance. Required: ${symbol}${capital}, Available: ${symbol}${available.toFixed(2)}. Please deposit ${currency} to your CoinDCX futures wallet.`
           });
         }
       } catch (walletErr: any) {
