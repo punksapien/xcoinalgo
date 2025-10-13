@@ -550,6 +550,117 @@ class ConfigValidator:
         return errors
 
 
+class BacktestSchemaValidator:
+    """Validate backtest() method return format matches frontend schema"""
+
+    def check(self, code: str) -> ValidationResult:
+        """
+        Check if strategy has backtest() method and validate its implementation
+
+        Args:
+            code: Python source code as string
+
+        Returns:
+            ValidationResult with backtest schema findings
+        """
+        errors = []
+        warnings = []
+        info = []
+
+        try:
+            tree = ast.parse(code)
+
+            # Check if strategy has backtest method
+            has_backtest = self._has_backtest_method(tree)
+
+            if not has_backtest:
+                info.append("✓ No custom backtest() - will use default backtester")
+                return ValidationResult(
+                    is_valid=True,
+                    errors=[],
+                    warnings=[],
+                    info=info
+                )
+
+            info.append("✓ Found custom backtest() method")
+
+            # Check return type annotation
+            return_type_warnings = self._check_return_type(tree)
+            warnings.extend(return_type_warnings)
+
+            # Check method signature
+            signature_errors = self._check_backtest_signature(tree)
+            errors.extend(signature_errors)
+
+            # Add reminder about validation
+            info.append("Remember: backtest() must return {trades, metrics, equity_curve}")
+            info.append("See FRONTEND_SCHEMA.md for exact field requirements")
+
+        except SyntaxError as e:
+            errors.append(f"Syntax error: {e.msg} at line {e.lineno}")
+        except Exception as e:
+            errors.append(f"Failed to parse code: {str(e)}")
+
+        return ValidationResult(
+            is_valid=len(errors) == 0,
+            errors=errors,
+            warnings=warnings,
+            info=info
+        )
+
+    def _has_backtest_method(self, tree: ast.AST) -> bool:
+        """Check if any class has a backtest method"""
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef):
+                for item in node.body:
+                    if isinstance(item, ast.FunctionDef) and item.name == 'backtest':
+                        return True
+        return False
+
+    def _check_return_type(self, tree: ast.AST) -> List[str]:
+        """Check if backtest method has proper return type annotation"""
+        warnings = []
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef):
+                for item in node.body:
+                    if isinstance(item, ast.FunctionDef) and item.name == 'backtest':
+                        if item.returns is None:
+                            warnings.append(
+                                "backtest() method should have return type annotation: -> BacktestResult"
+                            )
+                        elif isinstance(item.returns, ast.Name):
+                            if item.returns.id != 'BacktestResult':
+                                warnings.append(
+                                    f"backtest() return type should be 'BacktestResult', got '{item.returns.id}'"
+                                )
+
+        return warnings
+
+    def _check_backtest_signature(self, tree: ast.AST) -> List[str]:
+        """Check if backtest method has correct signature"""
+        errors = []
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ClassDef):
+                for item in node.body:
+                    if isinstance(item, ast.FunctionDef) and item.name == 'backtest':
+                        args = item.args.args
+                        # Should have self, historical_data, config
+                        if len(args) < 3:
+                            errors.append(
+                                "backtest() must accept (self, historical_data: pd.DataFrame, config: Dict)"
+                            )
+                        else:
+                            param_names = [arg.arg for arg in args]
+                            if 'historical_data' not in param_names or 'config' not in param_names:
+                                errors.append(
+                                    "backtest() parameters should be named 'historical_data' and 'config'"
+                                )
+
+        return errors
+
+
 class StrategyValidator:
     """Main validator that orchestrates all validation checks"""
 
@@ -557,6 +668,7 @@ class StrategyValidator:
         self.security_scanner = SecurityScanner()
         self.sdk_checker = SDKComplianceChecker()
         self.config_validator = ConfigValidator()
+        self.backtest_validator = BacktestSchemaValidator()
 
     def validate_project(self, project_path: Path) -> Dict[str, ValidationResult]:
         """
@@ -589,6 +701,7 @@ class StrategyValidator:
 
             results['security'] = self.security_scanner.scan(code)
             results['sdk_compliance'] = self.sdk_checker.check(code)
+            results['backtest_schema'] = self.backtest_validator.check(code)
         else:
             results['error'] = ValidationResult(
                 is_valid=False,

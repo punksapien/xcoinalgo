@@ -67,8 +67,21 @@ class BatchBacktestRunner:
             strategy_config: Strategy parameters
         """
         try:
-            # Load strategy code
-            generate_signal = self._load_strategy(strategy_code)
+            # Load strategy code and check for custom backtest method
+            exec_scope = self._load_strategy_scope(strategy_code)
+
+            if not exec_scope:
+                return self._error_result("Failed to load strategy code")
+
+            # Check if strategy has custom backtest() method
+            custom_backtest = self._get_custom_backtest(exec_scope)
+
+            if custom_backtest:
+                # Use custom backtest implementation
+                return self._run_custom_backtest(custom_backtest, historical_data)
+
+            # Fall back to default backtest using generate_signal
+            generate_signal = exec_scope.get('generate_signal') or exec_scope.get('generate_signals')
 
             if not generate_signal:
                 return self._error_result("Failed to load strategy generate_signal function")
@@ -125,8 +138,8 @@ class BatchBacktestRunner:
         except Exception as e:
             return self._error_result(f"Backtest failed: {str(e)}\n{traceback.format_exc()}")
 
-    def _load_strategy(self, strategy_code: str):
-        """Execute strategy code and extract generate_signal function"""
+    def _load_strategy_scope(self, strategy_code: str):
+        """Execute strategy code and return execution scope"""
         try:
             # Create execution scope with common imports
             import pandas as pd
@@ -155,18 +168,187 @@ class BatchBacktestRunner:
             # Execute strategy code
             exec(strategy_code, exec_scope)
 
-            # Get generate_signal function
-            if 'generate_signal' in exec_scope:
-                return exec_scope['generate_signal']
-            elif 'generate_signals' in exec_scope:
-                return exec_scope['generate_signals']
-            else:
-                return None
+            return exec_scope
 
         except Exception as e:
             print(f"Error loading strategy: {e}", file=sys.stderr)
             traceback.print_exc(file=sys.stderr)
             return None
+
+    def _get_custom_backtest(self, exec_scope: Dict):
+        """Check if strategy has custom backtest() method"""
+        try:
+            # Look for strategy instance with backtest method
+            if 'strategy' in exec_scope:
+                strategy_instance = exec_scope['strategy']
+                if hasattr(strategy_instance, 'backtest') and callable(getattr(strategy_instance, 'backtest')):
+                    return strategy_instance.backtest
+
+            # Look for standalone backtest function
+            if 'backtest' in exec_scope and callable(exec_scope['backtest']):
+                return exec_scope['backtest']
+
+            return None
+        except Exception as e:
+            print(f"Error checking for custom backtest: {e}", file=sys.stderr)
+            return None
+
+    def _run_custom_backtest(self, custom_backtest, historical_data: List[Dict]) -> Dict[str, Any]:
+        """Run custom backtest implementation provided by strategy"""
+        try:
+            # Convert historical data to DataFrame
+            df = pd.DataFrame(historical_data)
+
+            # Prepare config
+            config = {
+                'initial_capital': self.initial_capital,
+                'risk_per_trade': self.risk_per_trade,
+                'leverage': self.leverage,
+                'commission': self.commission
+            }
+
+            # Call custom backtest
+            result = custom_backtest(df, config)
+
+            # Validate result format (strict validation)
+            validation_errors = self._validate_backtest_result(result)
+            if validation_errors:
+                error_msg = "Custom backtest result validation failed:\n" + "\n".join(validation_errors)
+                return self._error_result(error_msg)
+
+            # Mark as successful
+            result['success'] = True
+            result['custom_backtest'] = True
+
+            return result
+
+        except NotImplementedError:
+            # Custom backtest not implemented, fall back to default
+            return None
+        except Exception as e:
+            return self._error_result(f"Custom backtest failed: {str(e)}\n{traceback.format_exc()}")
+
+    def _validate_backtest_result(self, result: Dict[str, Any]) -> List[str]:
+        """Validate backtest result matches frontend schema"""
+        errors = []
+
+        # Check top-level structure
+        if not isinstance(result, dict):
+            return ["Result must be a dictionary"]
+
+        # Required fields
+        if 'trades' not in result:
+            errors.append("Missing required field 'trades'")
+        elif not isinstance(result['trades'], list):
+            errors.append(f"'trades' must be a list, got {type(result['trades'])}")
+        else:
+            # Validate each trade
+            for i, trade in enumerate(result['trades']):
+                errors.extend(self._validate_trade(trade, i))
+
+        if 'metrics' not in result:
+            errors.append("Missing required field 'metrics'")
+        elif not isinstance(result['metrics'], dict):
+            errors.append(f"'metrics' must be a dict, got {type(result['metrics'])}")
+        else:
+            errors.extend(self._validate_metrics(result['metrics']))
+
+        if 'equity_curve' not in result:
+            errors.append("Missing required field 'equity_curve'")
+        elif not isinstance(result['equity_curve'], list):
+            errors.append(f"'equity_curve' must be a list, got {type(result['equity_curve'])}")
+        else:
+            errors.extend(self._validate_equity_curve(result['equity_curve']))
+
+        return errors
+
+    def _validate_trade(self, trade: Dict, index: int) -> List[str]:
+        """Validate single trade"""
+        errors = []
+        required_fields = {
+            'entry_time': int,
+            'exit_time': int,
+            'side': str,
+            'entry_price': (int, float),
+            'exit_price': (int, float),
+            'quantity': (int, float),
+            'pnl': (int, float),
+            'pnl_pct': (int, float),
+            'reason': str
+        }
+
+        for field, expected_type in required_fields.items():
+            if field not in trade:
+                errors.append(f"Trade {index}: Missing '{field}'")
+            elif not isinstance(trade[field], expected_type):
+                errors.append(f"Trade {index}: '{field}' must be {expected_type}")
+
+        # Validate enums
+        if 'side' in trade and trade['side'] not in ['LONG', 'SHORT']:
+            errors.append(f"Trade {index}: 'side' must be 'LONG' or 'SHORT'")
+
+        if 'reason' in trade and trade['reason'] not in ['stop_loss', 'take_profit', 'signal', 'manual']:
+            errors.append(f"Trade {index}: 'reason' must be one of ['stop_loss', 'take_profit', 'signal', 'manual']")
+
+        # Validate logic
+        if 'entry_time' in trade and 'exit_time' in trade and trade['exit_time'] <= trade['entry_time']:
+            errors.append(f"Trade {index}: exit_time must be after entry_time")
+
+        return errors
+
+    def _validate_metrics(self, metrics: Dict) -> List[str]:
+        """Validate metrics"""
+        errors = []
+        required_fields = {
+            'total_trades': int,
+            'winning_trades': int,
+            'losing_trades': int,
+            'win_rate': (int, float),
+            'total_pnl': (int, float),
+            'total_pnl_pct': (int, float),
+            'max_drawdown': (int, float),
+            'max_drawdown_pct': (int, float),
+            'sharpe_ratio': (int, float),
+            'profit_factor': (int, float)
+        }
+
+        for field, expected_type in required_fields.items():
+            if field not in metrics:
+                errors.append(f"Metrics: Missing '{field}'")
+            elif not isinstance(metrics[field], expected_type):
+                errors.append(f"Metrics: '{field}' must be {expected_type}")
+
+        # Validate ranges
+        if 'win_rate' in metrics and not (0 <= metrics['win_rate'] <= 100):
+            errors.append(f"Metrics: win_rate must be 0-100, got {metrics['win_rate']}")
+
+        # Validate consistency
+        if all(k in metrics for k in ['total_trades', 'winning_trades', 'losing_trades']):
+            if metrics['total_trades'] != metrics['winning_trades'] + metrics['losing_trades']:
+                errors.append("Metrics: total_trades must equal winning_trades + losing_trades")
+
+        return errors
+
+    def _validate_equity_curve(self, equity_curve: List) -> List[str]:
+        """Validate equity curve"""
+        errors = []
+
+        for i, point in enumerate(equity_curve):
+            if not isinstance(point, dict):
+                errors.append(f"Equity point {i}: Must be a dict")
+                continue
+
+            if 'timestamp' not in point:
+                errors.append(f"Equity point {i}: Missing 'timestamp'")
+            elif not isinstance(point['timestamp'], int):
+                errors.append(f"Equity point {i}: 'timestamp' must be int")
+
+            if 'equity' not in point:
+                errors.append(f"Equity point {i}: Missing 'equity'")
+            elif not isinstance(point['equity'], (int, float)):
+                errors.append(f"Equity point {i}: 'equity' must be numeric")
+
+        return errors
 
     def _process_signal(self, signal: Dict, candle: Dict):
         """Process trading signal"""
