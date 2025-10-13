@@ -208,6 +208,18 @@ class SymbolValidator {
       };
     }
 
+    // Heuristic fallback: accept Binance-style futures pairs like B-XXX_USDT
+    const binanceFuturesPattern = /^B-[A-Z0-9]+_USDT$/;
+    if (binanceFuturesPattern.test(normalizedInput)) {
+      logger.warn(`Heuristic accepting futures symbol ${normalizedInput} (not found in cache)`);
+      return {
+        isValid: true,
+        normalized: normalizedInput,
+        type: 'futures',
+        suggestions: [],
+      };
+    }
+
     // Still not found - generate suggestions
     const suggestions = this.findSuggestions(normalizedInput);
 
