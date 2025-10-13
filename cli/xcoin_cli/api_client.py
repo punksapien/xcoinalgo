@@ -514,6 +514,17 @@ class APIClient:
         """
         return self._request('GET', f'/api/strategies/{strategy_id}/status')
 
+    def list_strategies(self, show_all: bool = False) -> List[Dict[str, Any]]:
+        """List strategies from backend (optionally include inactive)."""
+        params = {'all': 'true'} if show_all else None
+        data = self._request('GET', '/api/strategy-upload/strategies', params=params)
+        return data.get('strategies') or []
+
+    def get_backtest_status(self, strategy_id: str) -> Dict[str, Any]:
+        """Get backtest progress/status for a strategy."""
+        data = self._request('GET', f'/api/backtest/status/{strategy_id}')
+        return data.get('status') or {}
+
     # Logs
 
     def get_execution_logs(
