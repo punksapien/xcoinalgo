@@ -29,6 +29,21 @@ export class UvEnvManager {
   }
 
   hasUv(): boolean {
+    // Check common uv installation paths
+    const uvPaths = [
+      path.join(process.env.HOME || '/home/ubuntu', '.local/bin/uv'),
+      path.join(process.env.HOME || '/home/ubuntu', '.cargo/bin/uv'),
+      'uv' // fallback to PATH
+    ]
+    
+    // Try direct file check first
+    for (const uvPath of uvPaths) {
+      if (fs.existsSync(uvPath)) {
+        return true
+      }
+    }
+    
+    // Fallback to which command
     const which = spawnSync(process.platform === 'win32' ? 'where' : 'which', ['uv'], { encoding: 'utf-8' })
     return which.status === 0
   }
@@ -52,11 +67,18 @@ export class UvEnvManager {
 
     // Preferred path: uv
     if (this.hasUv()) {
-      const venv = spawnSync('uv', ['venv', envDir], { stdio: 'inherit' })
+      // Find uv executable
+      const uvCmd = fs.existsSync(path.join(process.env.HOME || '/home/ubuntu', '.local/bin/uv'))
+        ? path.join(process.env.HOME || '/home/ubuntu', '.local/bin/uv')
+        : fs.existsSync(path.join(process.env.HOME || '/home/ubuntu', '.cargo/bin/uv'))
+        ? path.join(process.env.HOME || '/home/ubuntu', '.cargo/bin/uv')
+        : 'uv'
+      
+      const venv = spawnSync(uvCmd, ['venv', envDir], { stdio: 'inherit' })
       if (venv.status === 0) {
         const reqFile = path.join(envDir, 'requirements.txt')
         fs.writeFileSync(reqFile, requirements)
-        const pip = spawnSync('uv', ['pip', 'install', '-r', reqFile], { stdio: 'inherit' })
+        const pip = spawnSync(uvCmd, ['pip', 'install', '-r', reqFile], { stdio: 'inherit' })
         if (pip.status === 0 && fs.existsSync(pythonBin)) {
           fs.writeFileSync(marker, new Date().toISOString())
           return { pythonPath: pythonBin, created: true }
