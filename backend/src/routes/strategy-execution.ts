@@ -129,10 +129,10 @@ router.post('/:id/subscribe', authenticate, async (req: AuthenticatedRequest, re
     try {
       const strategy = await prisma.strategy.findUnique({
         where: { id: strategyId },
-        select: { configData: true }
+        select: { executionConfig: true }
       });
 
-      const execCfg: any = strategy?.configData || {};
+      const execCfg: any = (strategy?.executionConfig as any) || {};
       const symbol: string | undefined = execCfg.executionConfig?.symbol || execCfg.pair;
       const supportsFutures: boolean = !!(execCfg.supportsFutures ?? true);
       const inferredType: 'spot' | 'futures' = (tradingType as any) || (symbol?.startsWith('B-') || supportsFutures ? 'futures' : 'spot');

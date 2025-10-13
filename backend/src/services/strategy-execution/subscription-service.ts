@@ -95,9 +95,10 @@ class SubscriptionService {
       const isFirstSubscriber = strategy.subscriberCount === 0
 
       // Infer trading type if not provided
+      const execCfg: any = (strategy?.executionConfig as any) || {}
       const inferredTradingType: 'spot' | 'futures' = tradingType
         ? tradingType
-        : (strategy?.executionConfig?.symbol?.startsWith('B-') || strategy?.executionConfig?.supportsFutures)
+        : (execCfg.symbol?.startsWith('B-') || !!execCfg.supportsFutures)
           ? 'futures' : 'spot'
 
       // Create subscription in database
