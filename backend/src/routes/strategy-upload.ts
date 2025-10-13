@@ -16,6 +16,41 @@ import { v4 as uuidv4 } from 'uuid';
 const logger = new Logger('StrategyUpload');
 const router = Router();
 
+/**
+ * Calculate margin required and currency from config
+ * Option A: Use riskProfile from config.json
+ */
+function calculateMarginFromConfig(config: any): { marginRequired: number | null, marginCurrency: string } {
+  let marginRequired: number | null = null;
+  let marginCurrency = 'INR'; // Default for spot
+
+  // Determine currency based on pair
+  const pair = config.pair || config.instrument || '';
+  if (pair.startsWith('B-')) {
+    marginCurrency = 'USDT'; // Futures use USDT
+  }
+
+  // Calculate margin from riskProfile (Option A)
+  if (config.riskProfile) {
+    const { recommendedCapital, leverage } = config.riskProfile;
+    
+    if (recommendedCapital && leverage && leverage > 0) {
+      // For futures: margin = capital / leverage
+      // For spot: margin = capital (no leverage)
+      if (marginCurrency === 'USDT' && leverage > 1) {
+        marginRequired = recommendedCapital / leverage;
+      } else {
+        marginRequired = recommendedCapital;
+      }
+    } else if (recommendedCapital) {
+      // No leverage specified, use capital as margin
+      marginRequired = recommendedCapital;
+    }
+  }
+
+  return { marginRequired, marginCurrency };
+}
+
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -728,12 +763,17 @@ router.post('/cli-upload', authenticate, async (req: AuthenticatedRequest, res, 
     if (existingStrategy) {
       // Update existing strategy with new version
       const newVersion = incrementVersion(existingStrategy.version);
+      
+      // Recalculate margin from updated config (Option A)
+      const { marginRequired, marginCurrency } = calculateMarginFromConfig(parsedConfig);
 
       strategy = await prisma.strategy.update({
         where: { id: existingStrategy.id },
         data: {
           version: newVersion,
           description: description || parsedConfig.description || existingStrategy.description,
+          marginRequired: marginRequired,
+          marginCurrency: marginCurrency,
           validationStatus: validationResult.isValid ? 'VALID' : 'INVALID',
           validationErrors: validationResult.errors?.join(', '),
           lastValidatedAt: new Date(),
@@ -758,6 +798,9 @@ router.post('/cli-upload', authenticate, async (req: AuthenticatedRequest, res, 
 
       logger.info(`Strategy updated via CLI: ${strategy.id} (v${newVersion}) by user ${userId}`);
     } else {
+      // Calculate margin from config (Option A)
+      const { marginRequired, marginCurrency } = calculateMarginFromConfig(parsedConfig);
+      
       // Create new strategy (do NOT publish to marketplace until backtest succeeds)
       strategy = await prisma.strategy.create({
         data: {
@@ -780,7 +823,8 @@ router.post('/cli-upload', authenticate, async (req: AuthenticatedRequest, res, 
           riskReward: parsedConfig.riskReward,
           maxDrawdown: parsedConfig.maxDrawdown,
           roi: parsedConfig.roi,
-          marginRequired: parsedConfig.marginRequired,
+          marginRequired: marginRequired,
+          marginCurrency: marginCurrency,
           supportedPairs: parsedConfig.supportedPairs ? JSON.stringify(parsedConfig.supportedPairs) : null,
           timeframes: parsedConfig.timeframes ? JSON.stringify(parsedConfig.timeframes) : null,
           strategyType: parsedConfig.strategyType,

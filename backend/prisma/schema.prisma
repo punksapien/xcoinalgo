@@ -93,6 +93,7 @@ model Strategy {
   maxDrawdown     Float?
   roi             Float?
   marginRequired  Float?
+  marginCurrency  String?  @default("INR") // "USDT" for futures, "INR" for spot
 
   // Enhanced metrics
   sharpeRatio     Float?

@@ -109,9 +109,10 @@ function DashboardContent() {
     return `${value.toFixed(1)}%`;
   }, []);
 
-  const formatCurrency = useCallback((value?: number) => {
+  const formatCurrency = useCallback((value?: number, currency: string = 'INR') => {
     if (!value) return 'N/A';
-    return `₹${value.toLocaleString()}`;
+    const symbol = currency === 'USDT' ? '$' : '₹';
+    return `${symbol}${value.toLocaleString()}`;
   }, []);
 
   const getStrategyTypeIcon = useCallback((tags: string) => {
@@ -318,8 +319,8 @@ function DashboardContent() {
 
                 {/* Margin Required */}
                 <div className="border-t border-border/50 pt-3">
-                  <p className="text-xs text-muted-foreground">Margin Required</p>
-                  <p className="font-semibold text-foreground">{formatCurrency(strategy.marginRequired)}</p>
+                  <p className="text-xs text-muted-foreground">Min Margin</p>
+                  <p className="font-semibold text-foreground">{formatCurrency(strategy.marginRequired, strategy.marginCurrency)}</p>
                 </div>
 
                 {/* Tags */}

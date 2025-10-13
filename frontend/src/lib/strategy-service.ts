@@ -11,6 +11,7 @@ export interface Strategy {
   maxDrawdown?: number;
   roi?: number;
   marginRequired?: number;
+  marginCurrency?: string;
   deploymentCount: number;
   subscriberCount?: number;
   createdAt: string;

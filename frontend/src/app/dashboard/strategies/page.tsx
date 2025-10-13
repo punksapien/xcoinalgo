@@ -41,6 +41,7 @@ interface Strategy {
   riskReward?: number;
   maxDrawdown?: number;
   marginRequired?: number;
+  marginCurrency?: string;
   features?: {
     timeframes: string[];
     leverage: number;
@@ -159,9 +160,10 @@ export default function StrategiesPage() {
     return `${value.toFixed(1)}%`;
   };
 
-  const formatCurrency = (value?: number) => {
+  const formatCurrency = (value?: number, currency: string = 'INR') => {
     if (value == null) return 'N/A';
-    return `₹${value.toLocaleString()}`;
+    const symbol = currency === 'USDT' ? '$' : '₹';
+    return `${symbol}${value.toLocaleString()}`;
   };
 
   const getStrategyTypeIcon = (tags: string) => {
@@ -310,8 +312,8 @@ export default function StrategiesPage() {
 
                 {/* Margin Required */}
                 <div className="border-t border-border/50 pt-3">
-                  <p className="text-xs text-muted-foreground">Margin Required</p>
-                  <p className="font-semibold text-foreground">{formatCurrency(strategy.marginRequired)}</p>
+                  <p className="text-xs text-muted-foreground">Min Margin</p>
+                  <p className="font-semibold text-foreground">{formatCurrency(strategy.marginRequired, strategy.marginCurrency)}</p>
                 </div>
 
                 {/* Tags */}
