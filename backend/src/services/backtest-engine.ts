@@ -222,7 +222,7 @@ class BacktestEngine {
           : 0,
         totalCommission: trades.reduce((sum, t) => sum + t.commission, 0),
         netPnl: pythonMetrics.total_pnl ?? pythonMetrics.totalPnl ?? 0,
-        finalCapital: pythonMetrics.final_capital ?? pythonMetrics.finalCapital ?? metrics.totalPnl + config.initialCapital,
+        finalCapital: pythonMetrics.final_capital ?? pythonMetrics.finalCapital ?? (pythonMetrics.total_pnl ?? pythonMetrics.totalPnl ?? 0) + config.initialCapital,
       };
 
       logger.info(`Batch backtest completed: ${trades.length} trades, ${metrics.winRate.toFixed(2)}% win rate`);
