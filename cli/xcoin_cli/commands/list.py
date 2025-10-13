@@ -15,7 +15,8 @@ console = Console()
 @click.command()
 @click.option('--remote', is_flag=True, help='Show strategies from backend instead')
 @click.option('--all', is_flag=True, help='Show all strategies (including inactive)')
-def list(remote, all):
+@click.option('--full', 'show_full', is_flag=True, help='Show full IDs (no truncation)')
+def list(remote, all, show_full):
     """
     List strategies (local or remote)
 
@@ -66,7 +67,8 @@ def list(remote, all):
 
         for s in backend_strats:
             name = s.get('name', 'unknown')
-            strat_id = s.get('id', 'n/a')[:20] + '...'
+            sid = s.get('id', 'n/a')
+            strat_id = sid if show_full else (sid[:20] + '...' if len(sid) > 23 else sid)
             version = s.get('version', '1.0.0')
             created = s.get('createdAt', 'unknown')[:10]
 
@@ -79,6 +81,8 @@ def list(remote, all):
             table.add_row(*row_data)
 
         console.print(table)
+        if not show_full:
+            console.print("[dim]Tip: use[/] [bold]xcoin list --remote --full[/] [dim]to show full IDs[/]")
         console.print()
         console.print(f"[dim]found {len(backend_strats)} strategie(s) in backend[/]")
         console.print()
