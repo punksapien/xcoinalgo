@@ -60,6 +60,7 @@ from .commands.remove import remove
 from .commands.restore import restore
 from .commands.logs import log_cmd
 from .commands.backtest import backtest
+from .commands.status import status
 
 cli.add_command(init)
 cli.add_command(login)
@@ -70,6 +71,7 @@ cli.add_command(remove)
 cli.add_command(restore)
 cli.add_command(log_cmd, name='log')
 cli.add_command(backtest)
+cli.add_command(status)
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ import { Router } from 'express';
 import { authenticate } from '../middleware/auth';
 import { AuthenticatedRequest } from '../types';
 import { backtestEngine } from '../services/backtest-engine';
+import { getBacktestStatus } from '../services/backtest-engine';
 import { Logger } from '../utils/logger';
 
 const logger = new Logger('BacktestRoutes');
@@ -95,6 +96,20 @@ router.post('/run', authenticate, async (req: AuthenticatedRequest, res, next) =
     next(error);
   }
 });
+/**
+ * Get backtest status for a strategy
+ * GET /api/backtest/status/:strategyId
+ */
+router.get('/status/:strategyId', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const { strategyId } = req.params
+    const status = getBacktestStatus(strategyId)
+    res.json({ status })
+  } catch (error) {
+    next(error)
+  }
+})
+
 
 /**
  * Get backtest history for a strategy

@@ -27,6 +27,20 @@ class APIClient:
         r = requests.get(f"{self.base_url}/api/logs/strategy/{strategy_id}", params={'since': since}, headers=self._headers(), timeout=30)
         r.raise_for_status()
         return r.json().get('logs') or []
+
+    def get_backtest_status(self, strategy_id: str):
+        r = requests.get(f"{self.base_url}/api/backtest/status/{strategy_id}", headers=self._headers(), timeout=30)
+        r.raise_for_status()
+        return (r.json() or {}).get('status', {})
+
+    def is_authenticated(self):
+        return bool(self.token)
+
+    def list_strategies(self, show_all: bool = False):
+        params = {'all': 'true'} if show_all else {}
+        r = requests.get(f"{self.base_url}/api/strategy-upload/strategies", params=params, headers=self._headers(), timeout=30)
+        r.raise_for_status()
+        return r.json().get('strategies') or []
 """
 API Client for xcoinalgo backend communication
 """

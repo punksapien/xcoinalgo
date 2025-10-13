@@ -24,6 +24,28 @@ import os from 'os';
 const prisma = new PrismaClient();
 const logger = new Logger('BacktestEngine');
 
+type BacktestStage = 'IDLE' | 'FETCHING' | 'RUNNING' | 'SAVING' | 'DONE' | 'FAILED'
+interface BacktestStatus {
+  stage: BacktestStage
+  progress: number
+  startedAt?: number
+  endedAt?: number
+  message?: string
+  error?: string
+}
+
+// In-memory status store (per-process)
+const backtestStatus: Record<string, BacktestStatus> = {}
+
+function setBacktestStatus(strategyId: string, update: Partial<BacktestStatus>) {
+  const prev: BacktestStatus = backtestStatus[strategyId] || { stage: 'IDLE', progress: 0 }
+  backtestStatus[strategyId] = { ...prev, ...update }
+}
+
+export function getBacktestStatus(strategyId: string): BacktestStatus {
+  return backtestStatus[strategyId] || { stage: 'IDLE', progress: 0 }
+}
+
 interface BacktestConfig {
   strategyId: string;
   symbol: string;
@@ -99,6 +121,8 @@ class BacktestEngine {
     logger.info(`Period: ${config.startDate.toISOString()} to ${config.endDate.toISOString()}`);
     logger.info(`Market: ${config.symbol} ${config.resolution}`);
 
+    setBacktestStatus(config.strategyId, { stage: 'FETCHING', progress: 10, startedAt: startTime, message: `Preparing data for ${config.symbol} ${config.resolution}` })
+
     try {
       // Fetch strategy with latest version from database
       const strategy = await prisma.strategy.findUnique({
@@ -137,6 +161,7 @@ class BacktestEngine {
       );
 
       logger.info(`Fetched ${historicalData.length} candles for backtesting`);
+      setBacktestStatus(config.strategyId, { stage: 'RUNNING', progress: 40, message: `Running backtest (${historicalData.length} candles)` })
 
       // Run batch backtest using optimized Python processor
       logger.info('Running batch backtest (single-pass processing)...');
@@ -148,6 +173,7 @@ class BacktestEngine {
       );
 
       if (!batchResult.success) {
+        setBacktestStatus(config.strategyId, { stage: 'FAILED', progress: 100, error: batchResult.error, endedAt: Date.now() })
         throw new Error(`Batch backtest failed: ${batchResult.error}`);
       }
 
@@ -174,6 +200,7 @@ class BacktestEngine {
 
       // Convert Python metrics to TypeScript format
       const pythonMetrics = batchResult.metrics;
+      setBacktestStatus(config.strategyId, { stage: 'SAVING', progress: 80, message: 'Saving results' })
       const metrics: BacktestResult['metrics'] = {
         totalTrades: pythonMetrics.totalTrades,
         winningTrades: pythonMetrics.winningTrades,
@@ -211,6 +238,7 @@ class BacktestEngine {
       await this.storeBacktestResult(config.strategyId, result);
 
       logger.info(`Backtest completed in ${result.executionTime}ms`);
+      setBacktestStatus(config.strategyId, { stage: 'DONE', progress: 100, endedAt: Date.now(), message: 'Completed' })
       logger.info(`Total Trades: ${metrics.totalTrades}, Win Rate: ${metrics.winRate.toFixed(2)}%`);
       logger.info(`Total P&L: ${metrics.totalPnl.toFixed(2)} (${metrics.totalPnlPct.toFixed(2)}%)`);
       logger.info(`Sharpe Ratio: ${metrics.sharpeRatio.toFixed(2)}, Max Drawdown: ${metrics.maxDrawdownPct.toFixed(2)}%`);
@@ -218,6 +246,7 @@ class BacktestEngine {
       return result;
     } catch (error) {
       logger.error('Backtest failed:', error);
+      setBacktestStatus(config.strategyId, { stage: 'FAILED', progress: 100, error: error instanceof Error ? error.message : String(error), endedAt: Date.now() })
       throw error;
     }
   }
