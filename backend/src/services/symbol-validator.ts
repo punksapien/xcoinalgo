@@ -90,10 +90,10 @@ class SymbolValidator {
       this.spotMarkets.clear();
       for (const market of spotMarkets) {
         if (market.status === 'active') {
-          // Index by multiple keys for flexible lookup
-          this.spotMarkets.set(market.symbol, market);
-          this.spotMarkets.set(market.pair, market);
-          this.spotMarkets.set(market.coindcx_name, market);
+          // Index by multiple keys for flexible lookup (only if defined strings)
+          if (typeof market.symbol === 'string' && market.symbol) this.spotMarkets.set(market.symbol, market);
+          if (typeof market.pair === 'string' && market.pair) this.spotMarkets.set(market.pair, market);
+          if (typeof (market as any).coindcx_name === 'string' && (market as any).coindcx_name) this.spotMarkets.set((market as any).coindcx_name, market);
         }
       }
 
@@ -136,8 +136,10 @@ class SymbolValidator {
 
         this.futuresMarkets.clear();
         for (const instrument of futuresInstruments) {
-          if (instrument.status === 'active' || !instrument.status) {
-            this.futuresMarkets.set(instrument.pair, instrument);
+          if (instrument && (instrument.status === 'active' || !instrument.status)) {
+            if (typeof instrument.pair === 'string' && instrument.pair) {
+              this.futuresMarkets.set(instrument.pair, instrument);
+            }
           }
         }
 
@@ -226,6 +228,7 @@ class SymbolValidator {
 
     // Search in spot markets
     for (const [key, market] of this.spotMarkets.entries()) {
+      if (typeof key !== 'string') continue;
       const normalizedKey = key.toLowerCase().replace(/[-_/]/g, '');
 
       // Check if input is contained in the symbol
@@ -237,6 +240,7 @@ class SymbolValidator {
 
     // Search in futures markets
     for (const [key, instrument] of this.futuresMarkets.entries()) {
+      if (typeof key !== 'string') continue;
       const normalizedKey = key.toLowerCase().replace(/[-_/]/g, '');
 
       if (normalizedKey.includes(normalizedInput) || normalizedInput.includes(normalizedKey)) {
