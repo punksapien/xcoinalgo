@@ -437,33 +437,33 @@ export default function StrategyDetailPage() {
   // Calculate dynamic Y-axis domain for better chart visibility
   const yAxisDomain = useMemo(() => {
     if (equityCurveData.length === 0) return [0, 10000]
-    
+
     const equityValues = equityCurveData.map(d => Number(d.equity)).filter(v => !isNaN(v))
     if (equityValues.length === 0) return [0, 10000]
-    
+
     const minEquity = Math.min(...equityValues)
     const maxEquity = Math.max(...equityValues)
-    
+
     // Add 10% padding for better visibility
     const padding = (maxEquity - minEquity) * 0.1
     const paddedMin = Math.max(0, minEquity - padding)
     const paddedMax = maxEquity + padding
-    
+
     return [Math.floor(paddedMin), Math.ceil(paddedMax)]
   }, [equityCurveData])
 
   // Calculate dynamic drawdown Y-axis domain
   const drawdownYAxisDomain = useMemo(() => {
     if (equityCurveData.length === 0) return [0, 100]
-    
+
     const drawdownValues = equityCurveData.map(d => Math.abs(Number(d.drawdown))).filter(v => !isNaN(v))
     if (drawdownValues.length === 0) return [0, 100]
-    
+
     const maxDrawdown = Math.max(...drawdownValues)
-    
+
     // Add 20% padding for drawdown chart
     const paddedMax = maxDrawdown * 1.2
-    
+
     return [0, Math.ceil(paddedMax)]
   }, [equityCurveData])
 

@@ -68,7 +68,7 @@ async function migrateMargin() {
 
     for (const strategy of strategies) {
       const latestVersion = strategy.versions[0];
-      
+
       if (!latestVersion || !latestVersion.configData) {
         console.log(`⏭️  Skipping ${strategy.code} - No config found`);
         skipped++;

@@ -165,34 +165,42 @@ router.get('/futures-balance', authenticate, async (req: AuthenticatedRequest, r
     }
 
     // Fetch futures wallet balances
-    const wallets = await CoinDCXClient.getFuturesWallets(
-      brokerCredential.apiKey,
-      brokerCredential.apiSecret
-    );
+    try {
+      const wallets = await CoinDCXClient.getFuturesWallets(
+        brokerCredential.apiKey,
+        brokerCredential.apiSecret
+      );
 
-    // Find USDT wallet (most common margin currency)
-    const usdtWallet = wallets.find((w: any) =>
-      w.margin_currency_short_name === 'USDT'
-    );
-    const inrWallet = wallets.find((w: any) =>
-      w.margin_currency_short_name === 'INR'
-    );
+      // Find USDT wallet (primary margin currency for futures)
+      const usdtWallet = wallets.find((w: any) =>
+        w.margin_currency_short_name === 'USDT'
+      );
 
-    const usdtAvailable = usdtWallet ? Number((usdtWallet as any).available_balance || 0) : 0;
-    const inrAvailable = inrWallet ? Number((inrWallet as any).available_balance || 0) : 0;
+      const usdtAvailable = usdtWallet ? Number((usdtWallet as any).available_balance || 0) : 0;
 
-    res.json({
-      totalAvailable: usdtAvailable, // Default to USDT for futures
-      usdtAvailable,
-      inrAvailable,
-      wallets: wallets.map((w: any) => ({
-        currency: w.margin_currency_short_name,
-        available: Number(w.available_balance || 0),
-        locked: Number(w.locked_balance || 0),
-        total: Number(w.balance || 0)
-      })),
-      currency: 'USDT',
-    });
+      res.json({
+        totalAvailable: usdtAvailable, // USDT only for futures
+        usdtAvailable,
+        wallets: wallets.map((w: any) => ({
+          currency: w.margin_currency_short_name,
+          available: Number(w.available_balance || 0),
+          locked: Number(w.locked_balance || 0),
+          total: Number(w.balance || 0)
+        })),
+        currency: 'USDT',
+      });
+    } catch (walletError: any) {
+      // Handle 404 or API errors gracefully - return empty balance
+      console.warn('CoinDCX futures wallet API error:', walletError.message);
+      
+      res.json({
+        totalAvailable: 0,
+        usdtAvailable: 0,
+        wallets: [],
+        currency: 'USDT',
+        warning: 'Unable to fetch futures wallet. Please ensure your API key has futures trading permissions enabled on CoinDCX.'
+      });
+    }
   } catch (error) {
     console.error('Failed to fetch futures balance:', error);
     next(error);

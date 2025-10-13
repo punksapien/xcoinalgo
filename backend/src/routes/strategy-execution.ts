@@ -125,7 +125,7 @@ router.post('/:id/subscribe', authenticate, async (req: AuthenticatedRequest, re
       });
     }
 
-    // Server-side balance check (futures by default for B- pairs or supportsFutures)
+    // Futures-only balance check (all strategies use futures)
     try {
       const strategy = await prisma.strategy.findUnique({
         where: { id: strategyId },
@@ -134,25 +134,53 @@ router.post('/:id/subscribe', authenticate, async (req: AuthenticatedRequest, re
 
       const execCfg: any = (strategy?.executionConfig as any) || {};
       const symbol: string | undefined = execCfg.executionConfig?.symbol || execCfg.pair;
-      const supportsFutures: boolean = !!(execCfg.supportsFutures ?? true);
-      const inferredType: 'spot' | 'futures' = (tradingType as any) || (symbol?.startsWith('B-') || supportsFutures ? 'futures' : 'spot');
+      
+      // All strategies are futures-based (B- pairs use USDT margin)
+      const margin = (marginCurrency || 'USDT').toUpperCase();
 
-      if (inferredType === 'futures') {
+      try {
         const wallets = await CoinDCXClient.getFuturesWallets(
           brokerCredential.apiKey,
           brokerCredential.apiSecret
         );
-        const margin = (marginCurrency || 'USDT').toUpperCase();
+        
         const w = wallets.find(w => (w as any).margin_currency_short_name === margin);
         const available = w ? Number((w as any).available_balance || 0) : 0;
-        if (!isFinite(available) || available <= 0 || available < Number(capital)) {
+        
+        if (!isFinite(available) || available < Number(capital)) {
           return res.status(400).json({
-            error: `Insufficient ${margin} futures wallet balance. Required: ${capital}, Available: ${available}`
+            error: `Insufficient ${margin} futures wallet balance. Required: $${capital} USDT, Available: $${available.toFixed(2)} USDT. Please deposit ${margin} to your CoinDCX futures wallet.`
           });
         }
+      } catch (walletErr: any) {
+        // Provide specific error message based on failure reason
+        const errorMsg = walletErr.message || String(walletErr);
+        
+        if (errorMsg.includes('not_found') || errorMsg.includes('404')) {
+          return res.status(400).json({
+            error: 'Unable to access CoinDCX futures wallet. Please ensure your API key has futures trading permissions enabled.',
+            details: 'Go to CoinDCX → Settings → API Management → Edit your API key → Enable "Futures Trading" permission'
+          });
+        }
+        
+        if (errorMsg.includes('401') || errorMsg.includes('Authentication')) {
+          return res.status(400).json({
+            error: 'Invalid API credentials. Please reconnect your broker account.',
+            details: errorMsg
+          });
+        }
+        
+        // Generic wallet fetch error
+        return res.status(400).json({
+          error: 'Failed to validate futures wallet balance',
+          details: errorMsg
+        });
       }
     } catch (balanceErr) {
-      return res.status(400).json({ error: 'Failed to validate broker balance', details: String(balanceErr) });
+      return res.status(400).json({ 
+        error: 'Failed to validate broker balance', 
+        details: String(balanceErr) 
+      });
     }
 
     // Create subscription

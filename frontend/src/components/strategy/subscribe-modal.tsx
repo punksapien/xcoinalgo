@@ -97,21 +97,13 @@ export function SubscribeModal({
 
     try {
       setLoadingBalance(true);
-      // For futures strategies (B- pairs), fetch futures balance; otherwise spot balance
-      // We'll always fetch futures balance since most strategies use futures
+      // Fetch futures balance (USDT wallet) - all strategies use futures
       const balanceData = await StrategyExecutionAPI.getFuturesBalance(token);
       setAvailableBalance(balanceData.totalAvailable);
     } catch (err) {
       console.error('Failed to fetch futures balance:', err);
-      // Fallback to spot balance if futures fails
-      try {
-        const spotBalanceData = await StrategyExecutionAPI.getUserBalance(token);
-        setAvailableBalance(spotBalanceData.totalAvailable);
-      } catch (spotErr) {
-        console.error('Failed to fetch spot balance:', spotErr);
-        // Don't show error toast for balance fetch failure, just log it
-        setAvailableBalance(null);
-      }
+      // Don't show error toast for balance fetch failure, just log it
+      setAvailableBalance(null);
     } finally {
       setLoadingBalance(false);
     }
