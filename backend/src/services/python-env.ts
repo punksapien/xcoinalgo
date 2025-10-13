@@ -39,36 +39,48 @@ export class UvEnvManager {
   ensureEnv(requirements: string): { pythonPath: string; created: boolean } {
     const hash = this.computeRequirementsHash(requirements)
     const envDir = path.join(this.cacheRoot, hash)
-    const pythonBin = path.join(envDir, 'bin', 'python')
+    const pythonBin = process.platform === 'win32'
+      ? path.join(envDir, 'Scripts', 'python.exe')
+      : path.join(envDir, 'bin', 'python')
 
     this.ensureDir(envDir)
-
-    if (!this.hasUv()) {
-      // uv not available; fallback to system python
-      return { pythonPath: 'python3', created: false }
-    }
 
     const marker = path.join(envDir, '.ready')
     if (fs.existsSync(marker) && fs.existsSync(pythonBin)) {
       return { pythonPath: pythonBin, created: false }
     }
 
-    // Create venv
-    const venv = spawnSync('uv', ['venv', envDir], { stdio: 'inherit' })
-    if (venv.status !== 0) {
-      return { pythonPath: 'python3', created: false }
+    // Preferred path: uv
+    if (this.hasUv()) {
+      const venv = spawnSync('uv', ['venv', envDir], { stdio: 'inherit' })
+      if (venv.status === 0) {
+        const reqFile = path.join(envDir, 'requirements.txt')
+        fs.writeFileSync(reqFile, requirements)
+        const pip = spawnSync('uv', ['pip', 'install', '-r', reqFile], { stdio: 'inherit' })
+        if (pip.status === 0 && fs.existsSync(pythonBin)) {
+          fs.writeFileSync(marker, new Date().toISOString())
+          return { pythonPath: pythonBin, created: true }
+        }
+      }
+      // fall through to non-uv fallback if uv failed
     }
 
-    // Write requirements to temp file
+    // Fallback: python3 -m venv + pip
+    const py = process.env.PYTHON || 'python3'
+    const create = spawnSync(py, ['-m', 'venv', envDir], { stdio: 'inherit' })
+    if (create.status !== 0) {
+      return { pythonPath: 'python3', created: false }
+    }
+    const pipBin = process.platform === 'win32'
+      ? path.join(envDir, 'Scripts', 'pip')
+      : path.join(envDir, 'bin', 'pip')
     const reqFile = path.join(envDir, 'requirements.txt')
     fs.writeFileSync(reqFile, requirements)
-
-    // Install deps
-    const pip = spawnSync('uv', ['pip', 'install', '-r', reqFile], { stdio: 'inherit' })
-    if (pip.status !== 0) {
+    spawnSync(pipBin, ['install', '--upgrade', 'pip', 'setuptools', 'wheel'], { stdio: 'inherit' })
+    const install = spawnSync(pipBin, ['install', '-r', reqFile], { stdio: 'inherit' })
+    if (install.status !== 0) {
       return { pythonPath: 'python3', created: false }
     }
-
     fs.writeFileSync(marker, new Date().toISOString())
     return { pythonPath: pythonBin, created: true }
   }

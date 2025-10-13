@@ -417,8 +417,10 @@ class BacktestEngine {
         if (requirements && requirements.trim().length > 0) {
           const { uvEnvManager } = await import('./python-env')
           const env = uvEnvManager.ensureEnv(requirements)
-          pythonCmd = env.pythonPath
+          pythonCmd = env.pythonPath || pythonCmd
           logger.info(`Using python interpreter: ${pythonCmd}`)
+        } else {
+          logger.info('No requirements provided; using system python3')
         }
       } catch (e) {
         logger.warn(`UV env setup failed or skipped: ${e}`)
