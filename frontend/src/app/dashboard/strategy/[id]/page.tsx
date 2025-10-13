@@ -767,19 +767,23 @@ export default function StrategyDetailPage() {
                               margin={{ top: 5, right: 30, left: 20, bottom: 60 }}
                             >
                               <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                              <XAxis 
-                                dataKey="time" 
+                              <XAxis
+                                dataKey="time"
                                 stroke="#9CA3AF"
                                 tick={{ fontSize: 11 }}
                                 angle={-45}
                                 textAnchor="end"
+                                minTickGap={100}
+                                interval="preserveStartEnd"
                                 tickFormatter={(value) => {
                                   if (!value) return '';
                                   const date = new Date(value);
-                                  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
+                                  const dayOfWeek = date.toLocaleDateString('en-US', { weekday: 'short' });
+                                  const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                                  return `${dayOfWeek}, ${dateStr}`;
                                 }}
                               />
-                              <YAxis 
+                              <YAxis
                                 stroke="#9CA3AF"
                                 tickFormatter={(value) => `$${value.toLocaleString()}`}
                                 label={{ value: 'Cumulative P&L ($)', angle: -90, position: 'insideLeft', style: { fill: '#9CA3AF' } }}
@@ -796,7 +800,7 @@ export default function StrategyDetailPage() {
                                   const date = new Date(value);
                                   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
                                 }}
-                                formatter={(value: any) => [`$${value.toLocaleString()}`, 'P&L']}
+                                formatter={(value: number) => [`$${value.toLocaleString()}`, 'P&L']}
                               />
                               <Line type="monotone" dataKey="equity" stroke="#3B82F6" strokeWidth={2} dot={false} name="Cumulative P&L" />
                             </LineChart>
@@ -817,19 +821,23 @@ export default function StrategyDetailPage() {
                               margin={{ top: 5, right: 30, left: 20, bottom: 60 }}
                             >
                               <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                              <XAxis 
-                                dataKey="time" 
+                              <XAxis
+                                dataKey="time"
                                 stroke="#9CA3AF"
                                 tick={{ fontSize: 11 }}
                                 angle={-45}
                                 textAnchor="end"
+                                minTickGap={100}
+                                interval="preserveStartEnd"
                                 tickFormatter={(value) => {
                                   if (!value) return '';
                                   const date = new Date(value);
-                                  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
+                                  const dayOfWeek = date.toLocaleDateString('en-US', { weekday: 'short' });
+                                  const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                                  return `${dayOfWeek}, ${dateStr}`;
                                 }}
                               />
-                              <YAxis 
+                              <YAxis
                                 stroke="#9CA3AF"
                                 tickFormatter={(value) => `$${value.toLocaleString()}`}
                                 label={{ value: 'Drawdown ($)', angle: -90, position: 'insideLeft', style: { fill: '#9CA3AF' } }}
@@ -846,7 +854,7 @@ export default function StrategyDetailPage() {
                                   const date = new Date(value);
                                   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
                                 }}
-                                formatter={(value: any) => [`$${value.toLocaleString()}`, 'Drawdown']}
+                                formatter={(value: number) => [`$${value.toLocaleString()}`, 'Drawdown']}
                               />
                               <Line type="monotone" dataKey="drawdown" stroke="#EF4444" strokeWidth={2} dot={false} name="Drawdown" />
                             </LineChart>
