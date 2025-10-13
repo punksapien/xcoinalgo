@@ -552,7 +552,9 @@ def main(data):
 ### Using PM2
 ```bash
 npm install -g pm2
+# start single backend app from ecosystem file
 pm2 start ecosystem.config.js
+# save for restart on reboot
 pm2 save
 pm2 startup
 ```
