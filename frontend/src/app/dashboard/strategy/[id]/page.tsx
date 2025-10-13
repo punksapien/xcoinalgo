@@ -764,11 +764,26 @@ export default function StrategyDetailPage() {
                           <ResponsiveContainer width="100%" height="100%">
                             <LineChart
                               data={equityCurveData}
-                              margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                              margin={{ top: 5, right: 30, left: 20, bottom: 60 }}
                             >
                               <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                              <XAxis dataKey="index" stroke="#9CA3AF" />
-                              <YAxis stroke="#9CA3AF" />
+                              <XAxis 
+                                dataKey="time" 
+                                stroke="#9CA3AF"
+                                tick={{ fontSize: 11 }}
+                                angle={-45}
+                                textAnchor="end"
+                                tickFormatter={(value) => {
+                                  if (!value) return '';
+                                  const date = new Date(value);
+                                  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
+                                }}
+                              />
+                              <YAxis 
+                                stroke="#9CA3AF"
+                                tickFormatter={(value) => `$${value.toLocaleString()}`}
+                                label={{ value: 'Cumulative P&L ($)', angle: -90, position: 'insideLeft', style: { fill: '#9CA3AF' } }}
+                              />
                               <Tooltip
                                 contentStyle={{
                                   backgroundColor: '#1F2937',
@@ -776,8 +791,14 @@ export default function StrategyDetailPage() {
                                   borderRadius: '8px',
                                   color: '#F9FAFB'
                                 }}
+                                labelFormatter={(value) => {
+                                  if (!value) return '';
+                                  const date = new Date(value);
+                                  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                                }}
+                                formatter={(value: any) => [`$${value.toLocaleString()}`, 'P&L']}
                               />
-                              <Line type="monotone" dataKey="equity" stroke="#3B82F6" strokeWidth={2} dot={false} name="Equity" />
+                              <Line type="monotone" dataKey="equity" stroke="#3B82F6" strokeWidth={2} dot={false} name="Cumulative P&L" />
                             </LineChart>
                           </ResponsiveContainer>
                         ) : (
@@ -793,11 +814,26 @@ export default function StrategyDetailPage() {
                           <ResponsiveContainer width="100%" height="100%">
                             <LineChart
                               data={equityCurveData}
-                              margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                              margin={{ top: 5, right: 30, left: 20, bottom: 60 }}
                             >
                               <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                              <XAxis dataKey="index" stroke="#9CA3AF" />
-                              <YAxis stroke="#9CA3AF" />
+                              <XAxis 
+                                dataKey="time" 
+                                stroke="#9CA3AF"
+                                tick={{ fontSize: 11 }}
+                                angle={-45}
+                                textAnchor="end"
+                                tickFormatter={(value) => {
+                                  if (!value) return '';
+                                  const date = new Date(value);
+                                  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
+                                }}
+                              />
+                              <YAxis 
+                                stroke="#9CA3AF"
+                                tickFormatter={(value) => `$${value.toLocaleString()}`}
+                                label={{ value: 'Drawdown ($)', angle: -90, position: 'insideLeft', style: { fill: '#9CA3AF' } }}
+                              />
                               <Tooltip
                                 contentStyle={{
                                   backgroundColor: '#1F2937',
@@ -805,6 +841,12 @@ export default function StrategyDetailPage() {
                                   borderRadius: '8px',
                                   color: '#F9FAFB'
                                 }}
+                                labelFormatter={(value) => {
+                                  if (!value) return '';
+                                  const date = new Date(value);
+                                  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                                }}
+                                formatter={(value: any) => [`$${value.toLocaleString()}`, 'Drawdown']}
                               />
                               <Line type="monotone" dataKey="drawdown" stroke="#EF4444" strokeWidth={2} dot={false} name="Drawdown" />
                             </LineChart>
