@@ -758,7 +758,7 @@ router.post('/cli-upload', authenticate, async (req: AuthenticatedRequest, res, 
 
       logger.info(`Strategy updated via CLI: ${strategy.id} (v${newVersion}) by user ${userId}`);
     } else {
-      // Create new strategy
+      // Create new strategy (do NOT publish to marketplace until backtest succeeds)
       strategy = await prisma.strategy.create({
         data: {
           name: strategyName,
@@ -772,8 +772,10 @@ router.post('/cli-upload', authenticate, async (req: AuthenticatedRequest, res, 
           validationStatus: validationResult.isValid ? 'VALID' : 'INVALID',
           validationErrors: validationResult.errors?.join(', '),
           lastValidatedAt: new Date(),
-          isActive: true, // Auto-activate CLI uploads so they appear in marketplace
-          isApproved: true, // Auto-approve for CLI uploads
+          // Gate visibility until backtest completes
+          isActive: false,
+          isApproved: false,
+          isMarketplace: false,
           winRate: parsedConfig.winRate,
           riskReward: parsedConfig.riskReward,
           maxDrawdown: parsedConfig.maxDrawdown,
@@ -806,6 +808,7 @@ router.post('/cli-upload', authenticate, async (req: AuthenticatedRequest, res, 
 
     // Auto-trigger backtest after successful upload
     let backtestMetrics = null;
+    let backtestError: string | null = null;
     try {
       logger.info(`Auto-triggering backtest for strategy ${strategy.id}`);
 
@@ -845,7 +848,7 @@ router.post('/cli-upload', authenticate, async (req: AuthenticatedRequest, res, 
           commission: 0.001,
         });
 
-        // Update strategy metrics
+        // Update strategy metrics and publish to marketplace
         await prisma.strategy.update({
           where: { id: strategy.id },
           data: {
@@ -853,6 +856,9 @@ router.post('/cli-upload', authenticate, async (req: AuthenticatedRequest, res, 
             riskReward: backtestResult.metrics.profitFactor,
             maxDrawdown: backtestResult.metrics.maxDrawdownPct,
             roi: backtestResult.metrics.totalPnlPct,
+            isActive: true,
+            isApproved: true,
+            isMarketplace: true,
           },
         });
 
@@ -868,9 +874,10 @@ router.post('/cli-upload', authenticate, async (req: AuthenticatedRequest, res, 
           `Win Rate ${backtestMetrics.winRate.toFixed(1)}%, ` +
           `ROI ${backtestMetrics.roi.toFixed(2)}%`);
       }
-    } catch (backtestError) {
-      logger.error('Auto-backtest failed (non-fatal):', backtestError);
-      // Don't fail the upload if backtest fails
+    } catch (err) {
+      logger.error('Auto-backtest failed (non-fatal):', err);
+      backtestError = err instanceof Error ? err.message : String(err);
+      // Keep strategy hidden (isActive=false) so marketplace doesn't show N/A cards
     }
 
     res.json({
@@ -887,7 +894,14 @@ router.post('/cli-upload', authenticate, async (req: AuthenticatedRequest, res, 
         isNew: !existingStrategy,
       },
       validation: validationResult,
-      backtest: backtestMetrics
+      backtest: backtestMetrics,
+      backtestStatus: backtestError ? 'FAILED' : (backtestMetrics ? 'DONE' : 'PROCESSING'),
+      backtestError,
+      visibility: {
+        marketplace: !!backtestMetrics,
+        processing: !backtestMetrics && !backtestError,
+        failed: !!backtestError
+      }
     });
 
   } catch (error) {
