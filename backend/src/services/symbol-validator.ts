@@ -99,28 +99,49 @@ class SymbolValidator {
 
       logger.info(`Loaded ${this.spotMarkets.size} spot markets`);
 
-      // Load futures instruments
+      // Load futures instruments (prefer active_instruments with margin filter)
       try {
-        const futuresResponse = await fetch(`${COINDCX_API_BASE}/exchange/v1/derivatives/futures/data/instruments`);
-        if (futuresResponse.ok) {
-          const futuresData = await futuresResponse.json() as unknown;
+        const buildActiveUrl = (margins: string[]) => {
+          const params = new URLSearchParams();
+          for (const m of margins) params.append('margin_currency_short_name[]', m);
+          return `${COINDCX_API_BASE}/exchange/v1/derivatives/futures/data/active_instruments?${params.toString()}`;
+        };
 
-          // Handle different response formats
-          const futuresInstruments: FuturesInstrument[] = Array.isArray(futuresData)
-            ? futuresData
-            : (futuresData as { instruments?: FuturesInstrument[] })?.instruments || [];
+        let futuresInstruments: FuturesInstrument[] = [];
 
-          this.futuresMarkets.clear();
-          for (const instrument of futuresInstruments) {
-            if (instrument.status === 'active' || !instrument.status) {
-              this.futuresMarkets.set(instrument.pair, instrument);
-            }
-          }
-
-          logger.info(`Loaded ${this.futuresMarkets.size} futures markets`);
-        } else {
-          logger.warn(`Failed to fetch futures markets: ${futuresResponse.statusText}`);
+        // Try active instruments for USDT first
+        const activeUsdt = await fetch(buildActiveUrl(['USDT']));
+        if (activeUsdt.ok) {
+          const data = await activeUsdt.json();
+          futuresInstruments = Array.isArray(data) ? data : (data?.instruments || []);
         }
+
+        // Fallback: include INR as well if list seems too small
+        if (futuresInstruments.length < 10) {
+          const activeBoth = await fetch(buildActiveUrl(['USDT', 'INR']));
+          if (activeBoth.ok) {
+            const data = await activeBoth.json();
+            futuresInstruments = Array.isArray(data) ? data : (data?.instruments || futuresInstruments);
+          }
+        }
+
+        // Final fallback: older instruments endpoint
+        if (futuresInstruments.length === 0) {
+          const fallback = await fetch(`${COINDCX_API_BASE}/exchange/v1/derivatives/futures/data/instruments`);
+          if (fallback.ok) {
+            const data = await fallback.json() as unknown;
+            futuresInstruments = Array.isArray(data) ? data : (data as { instruments?: FuturesInstrument[] })?.instruments || [];
+          }
+        }
+
+        this.futuresMarkets.clear();
+        for (const instrument of futuresInstruments) {
+          if (instrument.status === 'active' || !instrument.status) {
+            this.futuresMarkets.set(instrument.pair, instrument);
+          }
+        }
+
+        logger.info(`Loaded ${this.futuresMarkets.size} futures markets`);
       } catch (error) {
         logger.warn('Error loading futures markets (continuing with spot only):', error);
       }
@@ -164,7 +185,28 @@ class SymbolValidator {
       };
     }
 
-    // Symbol not found - generate suggestions
+    // Symbol not found - force refresh once and retry
+    await this.loadMarkets(true);
+    if (this.spotMarkets.has(normalizedInput)) {
+      return {
+        isValid: true,
+        normalized: normalizedInput,
+        type: 'spot',
+        suggestions: [],
+        market: this.spotMarkets.get(normalizedInput)!,
+      };
+    }
+    if (this.futuresMarkets.has(normalizedInput)) {
+      return {
+        isValid: true,
+        normalized: normalizedInput,
+        type: 'futures',
+        suggestions: [],
+        market: this.futuresMarkets.get(normalizedInput)!,
+      };
+    }
+
+    // Still not found - generate suggestions
     const suggestions = this.findSuggestions(normalizedInput);
 
     return {
