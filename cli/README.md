@@ -26,10 +26,19 @@ Build, test, and deploy algorithmic trading strategies with the xcoinalgo platfo
 ## Quick Start
 
 ```bash
-# 1. Install
+# 1. Install (recommended, isolated via uv)
 git clone https://github.com/punksapien/xcoinalgo.git
-cd xcoinalgo/cli
-pip install -e .
+cd xcoinalgo
+
+# macOS/Linux
+bash scripts/install_xcoin_cli.sh
+
+# Windows (PowerShell)
+powershell -ExecutionPolicy Bypass -File scripts\install_xcoin_cli.ps1
+
+# Verify
+which xcoin || where xcoin
+xcoin --version
 
 # 2. Authenticate
 # Get your API key from: http://localhost:3000/dashboard/settings/api-keys
@@ -66,7 +75,7 @@ git push origin main  # Auto-deploys on push
 
 ## Installation
 
-### From Source
+### From Source (alternative)
 
 ```bash
 # Clone the main xcoinalgo repository
@@ -75,6 +84,15 @@ cd xcoinalgo/cli
 
 # Install in development mode
 pip install -e .
+```
+
+### Using uv directly (alternative)
+
+```bash
+python3 -m venv ~/.xcoin-cli/venv
+~/.xcoin-cli/venv/bin/python -m pip install -U pip setuptools wheel
+uv pip install --python ~/.xcoin-cli/venv/bin/python -e ./cli
+ln -sf ~/.xcoin-cli/venv/bin/xcoin ~/.local/bin/xcoin
 ```
 
 ### With Backtest Support
