@@ -92,10 +92,10 @@ export class UvEnvManager {
         : 'uv'
 
       // Use --python flag if version specified, otherwise uv uses system default
-      const venvArgs = pythonVersion 
+      const venvArgs = pythonVersion
         ? ['venv', '--python', pythonVersion, envDir]
         : ['venv', envDir]
-      
+
       const venv = spawnSync(uvCmd, venvArgs, { stdio: 'inherit' })
       if (venv.status === 0) {
         const reqFile = path.join(envDir, 'requirements.txt')

@@ -680,7 +680,8 @@ export async function exitFuturesPosition(
 }
 
 /**
- * Get futures candlestick data
+ * Get futures candlestick data (with chunking for large date ranges)
+ * CoinDCX API limits to ~30,000 candles per request
  */
 export async function getFuturesCandles(
   pair: string,
@@ -688,21 +689,51 @@ export async function getFuturesCandles(
   toTimestamp: number,
   resolution: '1' | '5' | '15' | '30' | '60' | '1D' | '1W' | '1M'
 ): Promise<OHLCVCandle[]> {
-  const response = await makePublicRequest<{ data: any[][] }>(
-    `/market_data/candlesticks?pair=${pair}&from=${fromTimestamp}&to=${toTimestamp}&resolution=${resolution}&pcode=f`
-  );
+  const API_LIMIT = 30000;
+  
+  // Calculate resolution in seconds
+  const resolutionSeconds: Record<string, number> = {
+    '1': 60, '5': 300, '15': 900, '30': 1800, '60': 3600,
+    '1D': 86400, '1W': 604800, '1M': 2592000
+  };
+  const secondsPerCandle = resolutionSeconds[resolution] || 300;
+  
+  // Max duration per API call
+  const maxDurationPerCall = API_LIMIT * secondsPerCandle;
+  
+  const allCandles: OHLCVCandle[] = [];
+  let currentEndTs = toTimestamp;
+  
+  // Chunk requests if date range exceeds API limit
+  while (currentEndTs > fromTimestamp) {
+    const chunkStartTs = Math.max(fromTimestamp, currentEndTs - maxDurationPerCall);
+    
+    const response = await makePublicRequest<{ data: any[][] }>(
+      `/market_data/candlesticks?pair=${pair}&from=${chunkStartTs}&to=${currentEndTs}&resolution=${resolution}&pcode=f`
+    );
+    
+    const candles: OHLCVCandle[] = response.data.map(candle => ({
+      time: candle[0],
+      open: parseFloat(candle[1]),
+      high: parseFloat(candle[2]),
+      low: parseFloat(candle[3]),
+      close: parseFloat(candle[4]),
+      volume: parseFloat(candle[5]),
+    }));
+    
+    allCandles.unshift(...candles); // Add to beginning to maintain chronological order
+    currentEndTs = chunkStartTs;
+    
+    if (candles.length === 0) break; // No more data
+    
+    // Small delay to avoid rate limiting
+    if (currentEndTs > fromTimestamp) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  }
 
-  const candles: OHLCVCandle[] = response.data.map(candle => ({
-    time: candle[0],
-    open: parseFloat(candle[1]),
-    high: parseFloat(candle[2]),
-    low: parseFloat(candle[3]),
-    close: parseFloat(candle[4]),
-    volume: parseFloat(candle[5]),
-  }));
-
-  logger.info(`Fetched ${candles.length} futures candles for ${pair} (${resolution})`);
-  return candles;
+  logger.info(`Fetched ${allCandles.length} futures candles for ${pair} (${resolution})`);
+  return allCandles;
 }
 
 // =============================================================================
