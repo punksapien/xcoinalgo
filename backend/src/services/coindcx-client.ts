@@ -8,6 +8,8 @@
  */
 
 import crypto from 'crypto';
+import https from 'https';
+import { URL } from 'url';
 import { decrypt } from '../utils/simple-crypto';
 import { Logger } from '../utils/logger';
 
@@ -225,15 +227,40 @@ async function makeAuthenticatedGetRequest<T>(
   logger.info(`API Key (first 20): ${credentials.apiKey.substring(0, 20)}`);
   logger.info(`Signature (first 20): ${signature.substring(0, 20)}`);
 
-  // CRITICAL: Even for GET, we send body (like Python's requests.request with data=json_body)
-  const response = await fetch(`${COINDCX_BASE_URL}${endpoint}`, {
-    method: 'POST', // CoinDCX actually expects POST for authenticated endpoints
-    headers: {
-      'Content-Type': 'application/json',
-      'X-AUTH-APIKEY': credentials.apiKey,
-      'X-AUTH-SIGNATURE': signature,
-    },
-    body: body,
+  // CRITICAL: Python uses GET with body via requests.request()
+  // We need to replicate this exactly - using native https module for GET with body
+  const url = new URL(`${COINDCX_BASE_URL}${endpoint}`);
+  
+  const response = await new Promise<any>((resolve, reject) => {
+    const options = {
+      hostname: url.hostname,
+      port: url.port || 443,
+      path: url.pathname,
+      method: 'GET', // MUST be GET like Python
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+        'X-AUTH-APIKEY': credentials.apiKey,
+        'X-AUTH-SIGNATURE': signature,
+      },
+    };
+    
+    const req = https.request(options, (res: any) => {
+      let data = '';
+      res.on('data', (chunk: any) => { data += chunk; });
+      res.on('end', () => {
+        resolve({
+          ok: res.statusCode >= 200 && res.statusCode < 300,
+          status: res.statusCode,
+          text: async () => data,
+          json: async () => JSON.parse(data),
+        });
+      });
+    });
+    
+    req.on('error', reject);
+    req.write(body); // Send body with GET request
+    req.end();
   });
 
   logger.info(`CoinDCX response status: ${response.status}`);

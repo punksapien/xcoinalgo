@@ -107,11 +107,11 @@ export function SubscribeModal({
       console.log('✅ Balance API response:', balanceData);
       console.log('💰 Total available:', balanceData.totalAvailable);
       console.log('💵 Currency:', balanceData.currency);
-      
+
       setAvailableBalance(balanceData.totalAvailable);
       // Store currency for display (₹ for INR, $ for USDT)
       setBalanceCurrency(balanceData.currency as 'INR' | 'USDT');
-      
+
       console.log('✅ State updated - balance:', balanceData.totalAvailable, 'currency:', balanceData.currency);
     } catch (err) {
       console.error('❌ Failed to fetch futures balance:', err);
