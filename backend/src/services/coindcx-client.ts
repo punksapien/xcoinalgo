@@ -201,6 +201,7 @@ async function makeAuthenticatedRequest<T>(
 
 /**
  * Make authenticated GET request to CoinDCX
+ * Note: Even though it's GET, we still need body with timestamp for signature
  */
 async function makeAuthenticatedGetRequest<T>(
   endpoint: string,
@@ -209,19 +210,25 @@ async function makeAuthenticatedGetRequest<T>(
   await rateLimit();
 
   const timestamp = Date.now();
-  const body = JSON.stringify({ timestamp });
+  const bodyObj = { timestamp };
+  const body = JSON.stringify(bodyObj);
 
   const signature = createSignature(body, credentials.apiSecret);
 
-  logger.debug(`Making authenticated GET request to ${endpoint}`);
+  logger.info(`Making authenticated GET request to ${endpoint}`);
+  logger.debug(`Request timestamp: ${timestamp}`);
+  logger.debug(`Request body for signature: ${body}`);
 
   const response = await fetch(`${COINDCX_BASE_URL}${endpoint}`, {
     method: 'GET',
     headers: {
+      'Content-Type': 'application/json',
       'X-AUTH-APIKEY': credentials.apiKey,
       'X-AUTH-SIGNATURE': signature,
     },
   });
+
+  logger.info(`CoinDCX GET response status: ${response.status}`);
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -230,6 +237,7 @@ async function makeAuthenticatedGetRequest<T>(
   }
 
   const data = await response.json();
+  logger.debug('CoinDCX GET response data:', JSON.stringify(data));
   return data as T;
 }
 
