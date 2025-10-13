@@ -131,6 +131,7 @@ class BacktestEngine {
           versions: {
             orderBy: { createdAt: 'desc' },
             take: 1,
+            select: { version: true, strategyCode: true, requirements: true, configData: true }
           },
         },
       });
@@ -408,15 +409,19 @@ class BacktestEngine {
       // Determine python interpreter (uv env if requirements present)
       let pythonCmd = 'python3'
       try {
-        // Fetch latest strategy version to read requirements
-        const strategy = await prisma.strategy.findUnique({
-          where: { id: config.strategyId },
-          include: { versions: { orderBy: { createdAt: 'desc' }, take: 1 } }
-        })
-        const requirements = strategy?.versions?.[0]?.requirements
-        if (requirements && requirements.trim().length > 0) {
+        // Prefer explicit requirements from version; else derive from config.dependencies
+        const requirementsRaw = latestVersion.requirements || ''
+        let reqString = requirementsRaw.trim()
+        if (!reqString || reqString.length === 0) {
+          const deps = (latestVersion as any)?.configData?.dependencies
+          if (Array.isArray(deps) && deps.length > 0) {
+            reqString = deps.join('\n')
+            logger.info(`Derived requirements from config.dependencies (${deps.length} packages)`)
+          }
+        }
+        if (reqString && reqString.trim().length > 0) {
           const { uvEnvManager } = await import('./python-env')
-          const env = uvEnvManager.ensureEnv(requirements)
+          const env = uvEnvManager.ensureEnv(reqString)
           pythonCmd = env.pythonPath || pythonCmd
           logger.info(`Using python interpreter: ${pythonCmd}`)
         } else {
