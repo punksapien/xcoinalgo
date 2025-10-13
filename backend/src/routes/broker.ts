@@ -173,17 +173,26 @@ router.get('/futures-balance', authenticate, async (req: AuthenticatedRequest, r
 
       // Find USDT wallet (primary margin currency for futures)
       const usdtWallet = wallets.find((w: any) =>
-        w.margin_currency_short_name === 'USDT'
+        w.currency_short_name === 'USDT'
       );
 
-      const usdtAvailable = usdtWallet ? Number((usdtWallet as any).available_balance || 0) : 0;
+      // Calculate available balance: balance - (locked_balance + cross_order_margin + cross_user_margin)
+      const calculateAvailable = (wallet: any): number => {
+        const balance = Number(wallet.balance || 0);
+        const locked = Number(wallet.locked_balance || 0);
+        const crossOrder = Number(wallet.cross_order_margin || 0);
+        const crossUser = Number(wallet.cross_user_margin || 0);
+        return balance - (locked + crossOrder + crossUser);
+      };
+
+      const usdtAvailable = usdtWallet ? calculateAvailable(usdtWallet) : 0;
 
       res.json({
         totalAvailable: usdtAvailable, // USDT only for futures
         usdtAvailable,
         wallets: wallets.map((w: any) => ({
-          currency: w.margin_currency_short_name,
-          available: Number(w.available_balance || 0),
+          currency: w.currency_short_name,
+          available: calculateAvailable(w),
           locked: Number(w.locked_balance || 0),
           total: Number(w.balance || 0)
         })),
@@ -192,7 +201,7 @@ router.get('/futures-balance', authenticate, async (req: AuthenticatedRequest, r
     } catch (walletError: any) {
       // Handle 404 or API errors gracefully - return empty balance
       console.warn('CoinDCX futures wallet API error:', walletError.message);
-
+      
       res.json({
         totalAvailable: 0,
         usdtAvailable: 0,

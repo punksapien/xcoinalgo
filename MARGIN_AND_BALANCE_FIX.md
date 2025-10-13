@@ -64,7 +64,7 @@ xcoin deploy avax-hybrid-strategy
 ```typescript
 export async function getFuturesWallets(...) {
   const wallets = await makeAuthenticatedRequest<FuturesWallet[]>(...);
-  
+
   logger.info(`Fetched ${wallets.length} futures wallets`);
   logger.debug('Futures wallets response:', JSON.stringify(wallets)); // NEW
   return wallets;
