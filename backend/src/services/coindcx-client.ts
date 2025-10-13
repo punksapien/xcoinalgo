@@ -220,8 +220,10 @@ async function makeAuthenticatedGetRequest<T>(
   const signature = createSignature(body, credentials.apiSecret);
 
   logger.info(`Making authenticated request to ${endpoint}`);
-  logger.debug(`Timestamp: ${timestamp}`);
-  logger.debug(`Body: ${body}`);
+  logger.info(`Timestamp: ${timestamp}`);
+  logger.info(`Body: ${body}`);
+  logger.info(`API Key (first 20): ${credentials.apiKey.substring(0, 20)}`);
+  logger.info(`Signature (first 20): ${signature.substring(0, 20)}`);
 
   // CRITICAL: Even for GET, we send body (like Python's requests.request with data=json_body)
   const response = await fetch(`${COINDCX_BASE_URL}${endpoint}`, {
