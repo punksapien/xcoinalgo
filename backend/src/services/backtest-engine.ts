@@ -194,38 +194,38 @@ class BacktestEngine {
 
       const equityCurve: Array<{ time: Date; equity: number; drawdown: number }> =
         batchResult.equity_curve.map((point: any) => ({
-          time: new Date(point.time),
+          time: new Date(point.timestamp || point.time),
           equity: point.equity,
-          drawdown: point.drawdown,
+          drawdown: point.drawdown || 0,
         }));
 
-      // Convert Python metrics to TypeScript format
+      // Convert Python metrics to TypeScript format (Python uses snake_case)
       const pythonMetrics = batchResult.metrics;
       setBacktestStatus(config.strategyId, { stage: 'SAVING', progress: 80, message: 'Saving results' })
       const metrics: BacktestResult['metrics'] = {
-        totalTrades: pythonMetrics.totalTrades,
-        winningTrades: pythonMetrics.winningTrades,
-        losingTrades: pythonMetrics.losingTrades,
-        winRate: pythonMetrics.winRate,
-        totalPnl: pythonMetrics.totalPnl,
-        totalPnlPct: pythonMetrics.totalPnlPct,
-        avgWin: trades.filter(t => t.pnl > 0).reduce((sum, t) => sum + t.pnl, 0) / Math.max(1, pythonMetrics.winningTrades),
-        avgLoss: Math.abs(trades.filter(t => t.pnl < 0).reduce((sum, t) => sum + t.pnl, 0)) / Math.max(1, pythonMetrics.losingTrades),
+        totalTrades: pythonMetrics.total_trades || pythonMetrics.totalTrades || 0,
+        winningTrades: pythonMetrics.winning_trades || pythonMetrics.winningTrades || 0,
+        losingTrades: pythonMetrics.losing_trades || pythonMetrics.losingTrades || 0,
+        winRate: pythonMetrics.win_rate ?? pythonMetrics.winRate ?? 0,
+        totalPnl: pythonMetrics.total_pnl ?? pythonMetrics.totalPnl ?? 0,
+        totalPnlPct: pythonMetrics.total_pnl_pct ?? pythonMetrics.totalPnlPct ?? 0,
+        avgWin: trades.filter(t => t.pnl > 0).reduce((sum, t) => sum + t.pnl, 0) / Math.max(1, pythonMetrics.winning_trades || pythonMetrics.winningTrades || 0),
+        avgLoss: Math.abs(trades.filter(t => t.pnl < 0).reduce((sum, t) => sum + t.pnl, 0)) / Math.max(1, pythonMetrics.losing_trades || pythonMetrics.losingTrades || 0),
         largestWin: trades.length > 0 ? Math.max(...trades.filter(t => t.pnl > 0).map(t => t.pnl), 0) : 0,
         largestLoss: trades.length > 0 ? Math.min(...trades.filter(t => t.pnl < 0).map(t => t.pnl), 0) : 0,
-        profitFactor: pythonMetrics.profitFactor,
-        sharpeRatio: pythonMetrics.sharpeRatio,
-        maxDrawdown: pythonMetrics.maxDrawdown,
-        maxDrawdownPct: pythonMetrics.maxDrawdownPct,
+        profitFactor: pythonMetrics.profit_factor ?? pythonMetrics.profitFactor ?? 0,
+        sharpeRatio: pythonMetrics.sharpe_ratio ?? pythonMetrics.sharpeRatio ?? 0,
+        maxDrawdown: pythonMetrics.max_drawdown ?? pythonMetrics.maxDrawdown ?? 0,
+        maxDrawdownPct: pythonMetrics.max_drawdown_pct ?? pythonMetrics.maxDrawdownPct ?? 0,
         avgTradeDuration: trades.length > 0
           ? trades.reduce((sum, t) => sum + (t.exitTime.getTime() - t.entryTime.getTime()), 0) / trades.length / 60000
           : 0,
         totalCommission: trades.reduce((sum, t) => sum + t.commission, 0),
-        netPnl: pythonMetrics.totalPnl,
-        finalCapital: pythonMetrics.finalCapital,
+        netPnl: pythonMetrics.total_pnl ?? pythonMetrics.totalPnl ?? 0,
+        finalCapital: pythonMetrics.final_capital ?? pythonMetrics.finalCapital ?? metrics.totalPnl + config.initialCapital,
       };
 
-      logger.info(`Batch backtest completed: ${trades.length} trades, ${pythonMetrics.winRate.toFixed(2)}% win rate`);
+      logger.info(`Batch backtest completed: ${trades.length} trades, ${metrics.winRate.toFixed(2)}% win rate`);
 
       const result: BacktestResult = {
         config,
