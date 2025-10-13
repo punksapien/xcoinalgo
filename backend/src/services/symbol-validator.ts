@@ -112,16 +112,16 @@ class SymbolValidator {
         // Try active instruments for USDT first
         const activeUsdt = await fetch(buildActiveUrl(['USDT']));
         if (activeUsdt.ok) {
-          const data = await activeUsdt.json();
-          futuresInstruments = Array.isArray(data) ? data : (data?.instruments || []);
+          const data: any = await activeUsdt.json();
+          futuresInstruments = Array.isArray(data) ? data : ((data as any).instruments || []);
         }
 
         // Fallback: include INR as well if list seems too small
         if (futuresInstruments.length < 10) {
           const activeBoth = await fetch(buildActiveUrl(['USDT', 'INR']));
           if (activeBoth.ok) {
-            const data = await activeBoth.json();
-            futuresInstruments = Array.isArray(data) ? data : (data?.instruments || futuresInstruments);
+            const data: any = await activeBoth.json();
+            futuresInstruments = Array.isArray(data) ? data : ((data as any).instruments || futuresInstruments);
           }
         }
 
