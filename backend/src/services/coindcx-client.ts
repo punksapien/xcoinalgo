@@ -160,7 +160,7 @@ function createSignature(payload: string, secret: string): string {
 }
 
 /**
- * Make authenticated API request to CoinDCX
+ * Make authenticated API request to CoinDCX (POST)
  */
 async function makeAuthenticatedRequest<T>(
   endpoint: string,
@@ -177,7 +177,7 @@ async function makeAuthenticatedRequest<T>(
 
   const signature = createSignature(body, credentials.apiSecret);
 
-  logger.debug(`Making authenticated request to ${endpoint}`);
+  logger.debug(`Making authenticated POST request to ${endpoint}`);
 
   const response = await fetch(`${COINDCX_BASE_URL}${endpoint}`, {
     method: 'POST',
@@ -187,6 +187,40 @@ async function makeAuthenticatedRequest<T>(
       'X-AUTH-SIGNATURE': signature,
     },
     body,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    logger.error(`CoinDCX API error (${response.status}): ${errorText}`);
+    throw new Error(`CoinDCX API error: ${errorText || response.statusText}`);
+  }
+
+  const data = await response.json();
+  return data as T;
+}
+
+/**
+ * Make authenticated GET request to CoinDCX
+ */
+async function makeAuthenticatedGetRequest<T>(
+  endpoint: string,
+  credentials: CoinDCXCredentials
+): Promise<T> {
+  await rateLimit();
+
+  const timestamp = Date.now();
+  const body = JSON.stringify({ timestamp });
+
+  const signature = createSignature(body, credentials.apiSecret);
+
+  logger.debug(`Making authenticated GET request to ${endpoint}`);
+
+  const response = await fetch(`${COINDCX_BASE_URL}${endpoint}`, {
+    method: 'GET',
+    headers: {
+      'X-AUTH-APIKEY': credentials.apiKey,
+      'X-AUTH-SIGNATURE': signature,
+    },
   });
 
   if (!response.ok) {
@@ -557,7 +591,7 @@ export async function getFuturesWallets(
 ): Promise<FuturesWallet[]> {
   const credentials = prepareCredentials(encryptedApiKey, encryptedApiSecret);
 
-  const wallets = await makeAuthenticatedRequest<FuturesWallet[]>(
+  const wallets = await makeAuthenticatedGetRequest<FuturesWallet[]>(
     '/exchange/v1/derivatives/futures/wallets',
     credentials
   );

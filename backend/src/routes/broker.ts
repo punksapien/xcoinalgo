@@ -201,7 +201,7 @@ router.get('/futures-balance', authenticate, async (req: AuthenticatedRequest, r
     } catch (walletError: any) {
       // Handle 404 or API errors gracefully - return empty balance
       console.warn('CoinDCX futures wallet API error:', walletError.message);
-      
+
       res.json({
         totalAvailable: 0,
         usdtAvailable: 0,

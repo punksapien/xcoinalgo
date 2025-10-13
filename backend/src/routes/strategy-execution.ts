@@ -143,9 +143,9 @@ router.post('/:id/subscribe', authenticate, async (req: AuthenticatedRequest, re
           brokerCredential.apiKey,
           brokerCredential.apiSecret
         );
-        
+
         const w = wallets.find(w => (w as any).currency_short_name === margin);
-        
+
         // Calculate available balance: balance - (locked_balance + cross_order_margin + cross_user_margin)
         const calculateAvailable = (wallet: any): number => {
           const balance = Number(wallet.balance || 0);
@@ -154,9 +154,9 @@ router.post('/:id/subscribe', authenticate, async (req: AuthenticatedRequest, re
           const crossUser = Number(wallet.cross_user_margin || 0);
           return balance - (locked + crossOrder + crossUser);
         };
-        
+
         const available = w ? calculateAvailable(w) : 0;
-        
+
         if (!isFinite(available) || available < Number(capital)) {
           return res.status(400).json({
             error: `Insufficient ${margin} futures wallet balance. Required: $${capital} USDT, Available: $${available.toFixed(2)} USDT. Please deposit ${margin} to your CoinDCX futures wallet.`
