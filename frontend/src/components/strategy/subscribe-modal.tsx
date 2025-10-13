@@ -94,17 +94,28 @@ export function SubscribeModal({
   };
 
   const fetchUserBalance = async () => {
-    if (!token) return;
+    if (!token) {
+      console.log('❌ No token, skipping balance fetch');
+      return;
+    }
 
+    console.log('🔄 Fetching futures balance...');
     try {
       setLoadingBalance(true);
       // Fetch futures balance (USDT or INR wallet) - all strategies use futures
       const balanceData = await StrategyExecutionAPI.getFuturesBalance(token);
+      console.log('✅ Balance API response:', balanceData);
+      console.log('💰 Total available:', balanceData.totalAvailable);
+      console.log('💵 Currency:', balanceData.currency);
+      
       setAvailableBalance(balanceData.totalAvailable);
       // Store currency for display (₹ for INR, $ for USDT)
       setBalanceCurrency(balanceData.currency as 'INR' | 'USDT');
+      
+      console.log('✅ State updated - balance:', balanceData.totalAvailable, 'currency:', balanceData.currency);
     } catch (err) {
-      console.error('Failed to fetch futures balance:', err);
+      console.error('❌ Failed to fetch futures balance:', err);
+      console.error('Error details:', JSON.stringify(err, null, 2));
       // Don't show error toast for balance fetch failure, just log it
       setAvailableBalance(null);
     } finally {
