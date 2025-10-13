@@ -547,4 +547,106 @@ router.get('/:id/stats', authenticate, async (req: AuthenticatedRequest, res, ne
   }
 });
 
+/**
+ * GET /api/strategies/subscription/:id/verify-live
+ * Verify if subscription is actually live on CoinDCX
+ */
+router.get('/subscription/:id/verify-live', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const { id: subscriptionId } = req.params;
+    const userId = req.userId!;
+
+    // Get subscription details
+    const subscription = await prisma.strategySubscription.findFirst({
+      where: {
+        id: subscriptionId,
+        userId
+      },
+      include: {
+        strategy: {
+          select: {
+            name: true,
+            executionConfig: true
+          }
+        },
+        brokerCredential: {
+          select: {
+            apiKey: true,
+            apiSecret: true
+          }
+        }
+      }
+    });
+
+    if (!subscription) {
+      return res.status(404).json({
+        error: 'Subscription not found'
+      });
+    }
+
+    if (!subscription.brokerCredential) {
+      return res.status(400).json({
+        error: 'No broker credentials found for this subscription'
+      });
+    }
+
+    // Get execution config to determine trading pair
+    const executionConfig = subscription.strategy?.executionConfig as any;
+    const tradingPair = executionConfig?.symbol || executionConfig?.pair || 'UNKNOWN';
+
+    // Check for open orders on CoinDCX
+    try {
+      const timestamp = Date.now();
+      const body = {
+        timestamp,
+        status: 'open',
+        side: 'buy,sell',
+        page: '1',
+        size: '100',
+        margin_currency_short_name: ['INR', 'USDT']
+      };
+
+      const orders = await CoinDCXClient.listFuturesOrders(
+        subscription.brokerCredential.apiKey,
+        subscription.brokerCredential.apiSecret,
+        body
+      );
+
+      // Filter orders for this specific trading pair
+      const strategyOrders = orders.filter((order: any) => 
+        order.pair === tradingPair && order.status === 'open'
+      );
+
+      res.json({
+        subscriptionId,
+        strategyName: subscription.strategy?.name,
+        tradingPair,
+        isLiveOnCoinDCX: strategyOrders.length > 0,
+        openOrdersCount: strategyOrders.length,
+        totalOpenOrders: orders.length,
+        orders: strategyOrders.map((order: any) => ({
+          id: order.id,
+          pair: order.pair,
+          side: order.side,
+          orderType: order.order_type,
+          price: order.price,
+          quantity: order.total_quantity,
+          remaining: order.remaining_quantity,
+          leverage: order.leverage,
+          createdAt: order.created_at
+        }))
+      });
+    } catch (coindcxError: any) {
+      return res.status(500).json({
+        error: 'Failed to verify with CoinDCX',
+        details: coindcxError.message,
+        subscriptionId,
+        strategyName: subscription.strategy?.name
+      });
+    }
+  } catch (error) {
+    next(error);
+  }
+});
+
 export { router as strategyExecutionRoutes };

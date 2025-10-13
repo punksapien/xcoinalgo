@@ -736,6 +736,35 @@ export async function listFuturesPositions(
 }
 
 /**
+ * List futures orders
+ */
+export async function listFuturesOrders(
+  encryptedApiKey: string,
+  encryptedApiSecret: string,
+  params: {
+    timestamp: number;
+    status: string;
+    side: string;
+    page: string;
+    size: string;
+    margin_currency_short_name: string[];
+  }
+): Promise<any[]> {
+  const credentials = prepareCredentials(encryptedApiKey, encryptedApiSecret);
+
+  logger.info(`Fetching futures orders with status: ${params.status}`);
+
+  const orders = await makeAuthenticatedRequest<any[]>(
+    '/exchange/v1/derivatives/futures/orders',
+    credentials,
+    params
+  );
+
+  logger.info(`Fetched ${orders.length} futures orders`);
+  return orders;
+}
+
+/**
  * Exit a futures position by position ID
  */
 export async function exitFuturesPosition(

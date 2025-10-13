@@ -224,7 +224,7 @@ export default function SubscriptionDetailPage() {
                       <DollarSign className="h-4 w-4" />
                       <span className="text-sm">Capital</span>
                     </div>
-                    <p className="text-2xl font-bold">${subscription.capital.toLocaleString()}</p>
+                    <p className="text-2xl font-bold">${(subscription.capital || 0).toLocaleString()}</p>
                   </div>
 
                   <div className="bg-secondary/20 rounded-lg p-4">
@@ -232,9 +232,9 @@ export default function SubscriptionDetailPage() {
                       <Activity className="h-4 w-4" />
                       <span className="text-sm">Risk Per Trade</span>
                     </div>
-                    <p className="text-2xl font-bold">{(subscription.riskPerTrade * 100).toFixed(1)}%</p>
+                    <p className="text-2xl font-bold">{((subscription.riskPerTrade || 0) * 100).toFixed(1)}%</p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      ${(subscription.capital * subscription.riskPerTrade).toFixed(2)} per trade
+                      ${((subscription.capital || 0) * (subscription.riskPerTrade || 0)).toFixed(2)} per trade
                     </p>
                   </div>
 
@@ -259,9 +259,9 @@ export default function SubscriptionDetailPage() {
                       <Shield className="h-4 w-4" />
                       <span className="text-sm">Max Daily Loss</span>
                     </div>
-                    <p className="text-2xl font-bold">{(subscription.maxDailyLoss * 100).toFixed(0)}%</p>
+                    <p className="text-2xl font-bold">{((subscription.maxDailyLoss || 0) * 100).toFixed(0)}%</p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      ${(subscription.capital * subscription.maxDailyLoss).toFixed(2)} max loss
+                      ${((subscription.capital || 0) * (subscription.maxDailyLoss || 0)).toFixed(2)} max loss
                     </p>
                   </div>
 
