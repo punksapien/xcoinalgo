@@ -32,11 +32,11 @@ logger = logging.getLogger(__name__)
 def run_livetrader_backtest(strategy_code: str, config: dict) -> dict:
     """
     Dynamically execute LiveTrader strategy's backtest() method
-    
+
     Args:
         strategy_code: The uploaded strategy code containing LiveTrader class
         config: Configuration with backtest parameters
-        
+
     Returns:
         dict: Backtest metrics (winRate, roi, maxDrawdown, profitFactor, totalTrades)
     """
@@ -61,21 +61,21 @@ def run_livetrader_backtest(strategy_code: str, config: dict) -> dict:
             'sys': sys,
             'os': os
         }
-        
+
         # Execute the strategy code
         logger.info("Executing LiveTrader strategy code...")
         exec(strategy_code, exec_scope)
-        
+
         # Verify LiveTrader class exists
         if 'LiveTrader' not in exec_scope:
             raise ValueError("Strategy code must define a 'LiveTrader' class")
-        
+
         LiveTraderClass = exec_scope['LiveTrader']
-        
+
         # Verify backtest method exists
         if not hasattr(LiveTraderClass, 'backtest'):
             raise ValueError("LiveTrader class must implement a 'backtest()' method")
-        
+
         # Prepare settings for backtest
         settings = {
             'symbol': config.get('symbol', 'B-BTC_USDT'),
@@ -86,24 +86,24 @@ def run_livetrader_backtest(strategy_code: str, config: dict) -> dict:
             'risk_per_trade': config.get('risk_per_trade', 0.02),
             **config.get('strategy_params', {})
         }
-        
+
         # Instantiate the LiveTrader
         logger.info(f"Instantiating LiveTrader with settings: {settings}")
         trader = LiveTraderClass(settings)
-        
+
         # Run backtest
         logger.info("Running backtest...")
         backtest_results = trader.backtest()
-        
+
         if not backtest_results or not isinstance(backtest_results, dict):
             raise ValueError(f"backtest() must return a dict, got {type(backtest_results)}")
-        
+
         # Validate required metrics
         required_metrics = ['win_rate', 'total_pnl_pct', 'max_drawdown_pct', 'profit_factor', 'total_trades']
         missing = [m for m in required_metrics if m not in backtest_results]
         if missing:
             raise ValueError(f"Backtest results missing required metrics: {missing}")
-        
+
         # Return standardized metrics
         metrics = {
             'winRate': float(backtest_results['win_rate']),
@@ -113,10 +113,10 @@ def run_livetrader_backtest(strategy_code: str, config: dict) -> dict:
             'totalTrades': int(backtest_results['total_trades']),
             'success': True
         }
-        
+
         logger.info(f"Backtest completed successfully: {metrics}")
         return metrics
-        
+
     except Exception as e:
         logger.error(f"Backtest failed: {str(e)}", exc_info=True)
         return {
@@ -132,14 +132,14 @@ if __name__ == '__main__':
         input_data = json.loads(sys.stdin.read())
         strategy_code = input_data['strategy_code']
         config = input_data['config']
-        
+
         # Run backtest
         result = run_livetrader_backtest(strategy_code, config)
-        
+
         # Output result as JSON
         print(json.dumps(result))
         sys.exit(0 if result.get('success') else 1)
-        
+
     except Exception as e:
         logger.error(f"Fatal error: {str(e)}", exc_info=True)
         print(json.dumps({

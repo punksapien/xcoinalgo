@@ -13,6 +13,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { spawn } from 'child_process';
+import { uvEnvManager } from '../services/python-env';
 
 const logger = new Logger('StrategyUpload');
 const router = Router();
@@ -53,15 +54,31 @@ function calculateMarginFromConfig(config: any): { marginRequired: number | null
 }
 
 /**
- * Execute LiveTrader backtest using Python executor
+ * Execute LiveTrader backtest using Python executor with isolated uv environment
  */
 async function executeLiveTraderBacktest(
   strategyCode: string,
+  requirementsTxt: string,
   config: any
 ): Promise<any> {
   return new Promise((resolve, reject) => {
+    // Create/get isolated Python environment with uv
+    logger.info('Setting up isolated Python environment for backtest...');
+    const env = uvEnvManager.ensureEnv(requirementsTxt);
+    
+    if (!fs.existsSync(env.pythonPath)) {
+      logger.error(`Python path not found: ${env.pythonPath}`);
+      return reject(new Error('Failed to create Python environment for backtest'));
+    }
+    
+    if (env.created) {
+      logger.info(`Created new Python environment: ${env.pythonPath}`);
+    } else {
+      logger.info(`Using cached Python environment: ${env.pythonPath}`);
+    }
+
     const pythonScript = path.join(__dirname, '../../python/livetrader_backtest_executor.py');
-    const pythonProcess = spawn('python3', [pythonScript], {
+    const pythonProcess = spawn(env.pythonPath, [pythonScript], {
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
@@ -923,14 +940,21 @@ router.post('/cli-upload', authenticate, async (req: AuthenticatedRequest, res, 
     if (parsedConfig.strategyType === 'livetrader') {
       logger.info(`LiveTrader strategy detected - running backtest via LiveTrader.backtest() method`);
       try {
-        // Execute LiveTrader backtest
-        const backtestResult = await executeLiveTraderBacktest(strategyCode, {
-          symbol: parsedConfig.executionConfig?.symbol || parsedConfig.pair || parsedConfig.pairs?.[0],
-          leverage: parsedConfig.riskProfile?.defaultLeverage || 10,
-          capital: parsedConfig.riskProfile?.defaultCapital || 10000,
-          risk_per_trade: parsedConfig.riskProfile?.defaultRiskPerTrade || 0.02,
-          strategy_params: parsedConfig.executionConfig || {}
-        });
+        // Get requirements.txt content (required for uv environment)
+        const requirementsTxt = requirements || 'pandas>=2.0.0\nnumpy>=1.24.0\npandas-ta>=0.3.14b\nrequests>=2.31.0';
+        
+        // Execute LiveTrader backtest in isolated uv environment
+        const backtestResult = await executeLiveTraderBacktest(
+          strategyCode, 
+          requirementsTxt,
+          {
+            symbol: parsedConfig.executionConfig?.symbol || parsedConfig.pair || parsedConfig.pairs?.[0],
+            leverage: parsedConfig.riskProfile?.defaultLeverage || 10,
+            capital: parsedConfig.riskProfile?.defaultCapital || 10000,
+            risk_per_trade: parsedConfig.riskProfile?.defaultRiskPerTrade || 0.02,
+            strategy_params: parsedConfig.executionConfig || {}
+          }
+        );
 
         if (!backtestResult.success) {
           throw new Error(backtestResult.error || 'Backtest failed');

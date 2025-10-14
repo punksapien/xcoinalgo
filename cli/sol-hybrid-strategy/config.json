@@ -1,14 +1,18 @@
 {
   "name": "Sol Hybrid Strategy",
   "version": "1.0.0",
-  "author": "Developer",
-  "description": "A trading strategy",
+  "author": "xcoinalgo",
+  "description": "SOL Hybrid Momentum Strategy with Multi-Timeframe Analysis",
+  "detailedDescription": "Advanced SOL strategy combining RSI, MACD, Bollinger Bands, and volume analysis for high-probability entries.",
   "code": "SOL_HYBRID_STRATEGY_V1",
+  "tags": ["momentum", "mean-reversion", "hybrid"],
 
   "tradingType": "futures",
-  "pair": "B-BTC_USDT",
-  "timeframe": "15m",
-  "resolution": "15",
+  "pair": "B-SOL_USDT",
+  "pairs": ["B-SOL_USDT"],
+  "timeframe": "5m",
+  "timeframes": ["5"],
+  "resolution": "5",
 
   "strategyType": "livetrader",
 
@@ -31,8 +35,8 @@
     },
     {
       "name": "risk_per_trade",
-      "type": "float",
-      "default": 0.05,
+      "type": "number",
+      "default": 0.02,
       "min": 0.01,
       "max": 0.1,
       "description": "Risk per trade (percentage of capital)"
@@ -49,12 +53,22 @@
 
   "riskProfile": {
     "recommendedCapital": 10000,
+    "defaultCapital": 10000,
+    "defaultRiskPerTrade": 0.02,
+    "defaultLeverage": 10,
     "maxDailyLoss": 0.1,
-    "maxPositions": 1
+    "maxPositions": 1,
+    "maxPositionSize": 0.8
+  },
+
+  "executionConfig": {
+    "symbol": "B-SOL_USDT",
+    "resolution": "5",
+    "lookback": 200
   },
 
   "backtest": {
-    "initialCapital": 100000,
+    "initialCapital": 10000,
     "commission": 0.0005,
     "slippage": 0.0001
   },

@@ -503,54 +503,144 @@ class LiveTrader:
         for subscriber in self.subscribers:
             self.place_order_for_subscriber(subscriber, signal, entry_price, stop_loss, take_profit)
 
-    def backtest(self, historical_data: pd.DataFrame, config: Dict[str, Any]) -> Dict[str, Any]:
+    def backtest(self) -> Dict[str, Any]:
         """
-        Backtest strategy on historical data.
+        Backtest strategy using the last 1 year of historical data.
 
-        Required for xcoin CLI compatibility.
-
-        Args:
-            historical_data: DataFrame with OHLCV data
-            config: Backtest configuration
+        Required for platform deployment.
 
         Returns:
-            Backtest result in xcoin-compatible format:
+            dict with standardized backtest metrics:
             {
-                'trades': [...],
-                'metrics': {...},
-                'equity_curve': [...]
+                'total_trades': int,
+                'win_rate': float (0-100),
+                'total_pnl_pct': float,
+                'max_drawdown_pct': float,
+                'profit_factor': float
             }
         """
-        # TODO: Implement backtesting logic
-        # This should simulate your strategy on historical data and return results
+        logging.info("Running backtest on 1 year of historical data...")
 
-        logging.info("Running backtest...")
+        # Fetch 1 year of historical data
+        end_time = int(datetime.now().timestamp() * 1000)
+        start_time = end_time - (365 * 24 * 60 * 60 * 1000)  # 1 year ago
+
+        df = self.client.get_candles(
+            market=self.settings['pair'],
+            interval=self.settings['resolution'],
+            start_time=start_time,
+            end_time=end_time,
+            limit=10000
+        )
+
+        if df.empty or len(df) < 200:
+            logging.warning(f"Insufficient backtest data: {len(df)} candles")
+            return {
+                'total_trades': 0,
+                'win_rate': 0.0,
+                'total_pnl_pct': 0.0,
+                'max_drawdown_pct': 0.0,
+                'profit_factor': 0.0
+            }
 
         # Generate signals
-        df_with_signals = self.generate_signals(historical_data.copy())
+        df_with_signals = self.generate_signals(df.copy())
 
-        # Simulate trades (simplified example)
+        # Simulate trades
+        capital = self.settings.get('capital', 10000)
+        equity = capital
+        peak_equity = capital
+        max_drawdown = 0
+
         trades = []
-        equity_curve = []
-        capital = config.get('initial_capital', 100000)
+        position = None
 
-        # ... (implement your backtesting logic here)
+        for i in range(len(df_with_signals)):
+            row = df_with_signals.iloc[i]
+
+            # Entry logic
+            if position is None:
+                if row['signal'] == 1:  # Long
+                    position = {
+                        'side': 'long',
+                        'entry_price': row['close'],
+                        'entry_time': row['time'],
+                        'quantity': (equity * self.settings.get('risk_per_trade', 0.02)) / row['close']
+                    }
+                elif row['signal'] == -1:  # Short
+                    position = {
+                        'side': 'short',
+                        'entry_price': row['close'],
+                        'entry_time': row['time'],
+                        'quantity': (equity * self.settings.get('risk_per_trade', 0.02)) / row['close']
+                    }
+
+            # Exit logic
+            elif position is not None:
+                exit_trade = False
+                exit_price = None
+
+                if position['side'] == 'long' and row['signal'] == -1:
+                    exit_trade = True
+                    exit_price = row['close']
+                elif position['side'] == 'short' and row['signal'] == 1:
+                    exit_trade = True
+                    exit_price = row['close']
+
+                if exit_trade:
+                    # Calculate PnL
+                    if position['side'] == 'long':
+                        pnl = (exit_price - position['entry_price']) * position['quantity']
+                    else:
+                        pnl = (position['entry_price'] - exit_price) * position['quantity']
+
+                    pnl_pct = (pnl / equity) * 100
+                    equity += pnl
+
+                    trades.append({
+                        'pnl': pnl,
+                        'pnl_pct': pnl_pct,
+                        'entry_price': position['entry_price'],
+                        'exit_price': exit_price
+                    })
+
+                    # Update max drawdown
+                    if equity > peak_equity:
+                        peak_equity = equity
+                    drawdown = ((peak_equity - equity) / peak_equity) * 100
+                    if drawdown > max_drawdown:
+                        max_drawdown = drawdown
+
+                    position = None
+
+        # Calculate metrics
+        if len(trades) == 0:
+            return {
+                'total_trades': 0,
+                'win_rate': 0.0,
+                'total_pnl_pct': 0.0,
+                'max_drawdown_pct': 0.0,
+                'profit_factor': 0.0
+            }
+
+        winning_trades = [t for t in trades if t['pnl'] > 0]
+        losing_trades = [t for t in trades if t['pnl'] <= 0]
+
+        win_rate = (len(winning_trades) / len(trades)) * 100
+        total_pnl_pct = ((equity - capital) / capital) * 100
+
+        gross_profit = sum([t['pnl'] for t in winning_trades]) if winning_trades else 0
+        gross_loss = abs(sum([t['pnl'] for t in losing_trades])) if losing_trades else 0
+        profit_factor = gross_profit / gross_loss if gross_loss > 0 else gross_profit
+
+        logging.info(f"Backtest complete: {len(trades)} trades, {win_rate:.1f}% win rate, {total_pnl_pct:.2f}% ROI")
 
         return {
-            'trades': trades,
-            'metrics': {
-                'total_trades': len(trades),
-                'winning_trades': 0,
-                'losing_trades': 0,
-                'win_rate': 0,
-                'total_pnl': 0,
-                'total_pnl_pct': 0,
-                'max_drawdown': 0,
-                'max_drawdown_pct': 0,
-                'sharpe_ratio': 0,
-                'profit_factor': 0
-            },
-            'equity_curve': equity_curve
+            'total_trades': len(trades),
+            'win_rate': win_rate,
+            'total_pnl_pct': total_pnl_pct,
+            'max_drawdown_pct': max_drawdown,
+            'profit_factor': profit_factor
         }
 
     def run(self):
