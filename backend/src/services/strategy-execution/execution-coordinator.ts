@@ -140,7 +140,6 @@ class ExecutionCoordinator {
       // Check strategy type and get strategy code
       const strategy = await prisma.strategy.findUnique({
         where: { id: strategyId },
-        select: { strategyType: true, code: true },
         include: {
           versions: {
             orderBy: { createdAt: 'desc' },
