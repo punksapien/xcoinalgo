@@ -1,25 +1,38 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { useAuth } from '@/lib/auth';
-import { StrategyExecutionAPI } from '@/lib/api/strategy-execution-api';
-import { SubscribeModal } from '@/components/strategy/subscribe-modal';
-import { showErrorToast, showSuccessToast } from '@/lib/toast-utils';
-import { getUserFriendlyError } from '@/lib/error-messages';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { useAuth } from '@/lib/auth';
+import { showErrorToast, showSuccessToast } from '@/lib/toast-utils';
+import {
+  Plus,
   Search,
-  FileText,
-  Users,
+  Trash2,
+  Power,
+  PowerOff,
+  Edit,
+  Eye,
+  Loader2,
+  FileCode,
+  Calendar,
   TrendingUp,
-  Bot,
-  Zap,
-  Target,
-  Clock
+  AlertCircle,
+  CheckCircle2
 } from "lucide-react";
 
 interface Strategy {
@@ -34,52 +47,37 @@ interface Strategy {
   instrument: string;
   createdAt: string;
   updatedAt: string;
-  subscriberCount: number;
-  deploymentCount: number;
   winRate?: number;
   roi?: number;
-  riskReward?: number;
   maxDrawdown?: number;
-  marginRequired?: number;
-  marginCurrency?: string;
-  features?: {
-    timeframes: string[];
-    leverage: number;
-  };
-  executionConfig?: {
-    symbol: string;
-    resolution: string;
-  };
+  totalTrades?: number;
+  deploymentCount: number;
 }
 
-interface UserSubscription {
-  strategyId: string;
-  isActive: boolean;
-  isPaused: boolean;
-}
-
-export default function StrategiesPage() {
+export default function StrategyManagementPage() {
+  const router = useRouter();
   const { token } = useAuth();
+
   const [strategies, setStrategies] = useState<Strategy[]>([]);
-  const [userSubscriptions, setUserSubscriptions] = useState<Map<string, UserSubscription>>(new Map());
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
-  const [subscribeModalOpen, setSubscribeModalOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedStrategy, setSelectedStrategy] = useState<Strategy | null>(null);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   useEffect(() => {
     fetchStrategies();
-    if (token) {
-      fetchUserSubscriptions();
-    }
-  }, [searchTerm, statusFilter, token]);
+  }, [statusFilter, token]);
 
   const fetchStrategies = async () => {
     try {
+      setLoading(true);
       const params = new URLSearchParams();
-      if (searchTerm) params.append('search', searchTerm);
-      if (statusFilter !== 'all') params.append('status', statusFilter);
+      params.append('all', 'true'); // Get both active and inactive
+      if (statusFilter !== 'all') {
+        params.append('status', statusFilter);
+      }
 
       const response = await fetch(`/api/strategy-upload/strategies?${params}`, {
         headers: token ? {
@@ -95,54 +93,92 @@ export default function StrategiesPage() {
       setStrategies(data.strategies || []);
     } catch (error) {
       console.error('Failed to fetch strategies:', error);
-      const friendlyError = getUserFriendlyError(error as Error);
-      showErrorToast(friendlyError.title, friendlyError.message);
+      showErrorToast('Error', 'Failed to load strategies');
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchUserSubscriptions = async () => {
+  const handleDelete = async (strategyId: string) => {
     if (!token) return;
 
+    setActionLoading(strategyId);
     try {
-      const response = await StrategyExecutionAPI.getUserSubscriptions(token);
-      const subsMap = new Map<string, UserSubscription>();
-
-      response.subscriptions.forEach(sub => {
-        subsMap.set(sub.strategyId, {
-          strategyId: sub.strategyId,
-          isActive: sub.isActive,
-          isPaused: sub.isPaused,
-        });
+      const response = await fetch(`/api/strategy-upload/${strategyId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
       });
 
-      setUserSubscriptions(subsMap);
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to delete strategy');
+      }
+
+      showSuccessToast('Deleted', 'Strategy deleted successfully');
+      setDeleteDialogOpen(false);
+      setSelectedStrategy(null);
+      fetchStrategies();
     } catch (error) {
-      console.error('Failed to fetch user subscriptions:', error);
-      const friendlyError = getUserFriendlyError(error as Error);
-      showErrorToast(friendlyError.title, friendlyError.message);
+      console.error('Delete failed:', error);
+      showErrorToast(
+        'Delete Failed',
+        error instanceof Error ? error.message : 'Failed to delete strategy'
+      );
+    } finally {
+      setActionLoading(null);
     }
   };
 
-  const handleSubscribe = (strategy: Strategy) => {
-    setSelectedStrategy(strategy);
-    setSubscribeModalOpen(true);
+  const handleToggleActive = async (strategy: Strategy) => {
+    if (!token) return;
+
+    setActionLoading(strategy.id);
+    const endpoint = strategy.isActive ? 'deactivate' : 'activate';
+
+    try {
+      const response = await fetch(`/api/strategy-upload/${strategy.id}/${endpoint}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || `Failed to ${endpoint} strategy`);
+      }
+
+      showSuccessToast(
+        strategy.isActive ? 'Deactivated' : 'Activated',
+        data.message || `Strategy ${strategy.isActive ? 'deactivated' : 'activated'} successfully`
+      );
+      fetchStrategies();
+    } catch (error) {
+      console.error('Toggle active failed:', error);
+      showErrorToast(
+        'Action Failed',
+        error instanceof Error ? error.message : 'Failed to update strategy status'
+      );
+    } finally {
+      setActionLoading(null);
+    }
   };
 
-  const handleSubscribeSuccess = () => {
-    showSuccessToast('Successfully Subscribed', 'You can now manage your subscription from the Subscriptions page');
-    fetchUserSubscriptions();
-    fetchStrategies();
+  const confirmDelete = (strategy: Strategy) => {
+    setSelectedStrategy(strategy);
+    setDeleteDialogOpen(true);
   };
 
   const filteredStrategies = strategies.filter(strategy => {
-    const tagsString = typeof strategy.tags === 'string' ? strategy.tags : '';
     const matchesSearch = searchTerm === '' ||
       strategy.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (strategy.description && strategy.description.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      strategy.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
       strategy.author.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      tagsString.toLowerCase().includes(searchTerm.toLowerCase());
+      (strategy.description && strategy.description.toLowerCase().includes(searchTerm.toLowerCase()));
 
     const matchesStatus = statusFilter === 'all' ||
       (statusFilter === 'active' && strategy.isActive) ||
@@ -151,8 +187,12 @@ export default function StrategiesPage() {
     return matchesSearch && matchesStatus;
   });
 
-  const getUserSubscriptionStatus = (strategyId: string) => {
-    return userSubscriptions.get(strategyId);
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
   };
 
   const formatPercentage = (value?: number) => {
@@ -160,29 +200,11 @@ export default function StrategiesPage() {
     return `${value.toFixed(1)}%`;
   };
 
-  const formatCurrency = (value?: number, currency: string = 'INR') => {
-    if (value == null) return 'N/A';
-    const symbol = currency === 'USDT' ? '$' : '₹';
-    return `${symbol}${value.toLocaleString()}`;
-  };
-
-  const getStrategyTypeIcon = (tags: string) => {
-    const tagLower = tags.toLowerCase();
-    if (tagLower.includes('scalping') || tagLower.includes('high-frequency')) {
-      return <Zap className="h-4 w-4 text-yellow-500" />;
-    } else if (tagLower.includes('swing') || tagLower.includes('trend')) {
-      return <TrendingUp className="h-4 w-4 text-green-500" />;
-    } else if (tagLower.includes('arbitrage')) {
-      return <Target className="h-4 w-4 text-blue-500" />;
-    }
-    return <Bot className="h-4 w-4 text-primary" />;
-  };
-
   if (loading) {
     return (
       <div className="container mx-auto p-6">
         <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
       </div>
     );
@@ -191,24 +213,87 @@ export default function StrategiesPage() {
   return (
     <div className="container mx-auto p-6">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-3xl font-bold mb-2 dark:text-white">Available Strategies</h1>
-          <p className="text-gray-600 dark:text-gray-400">
-            Browse and subscribe to trading strategies from our quant team
+          <h1 className="text-3xl font-bold mb-2">Strategy Management</h1>
+          <p className="text-muted-foreground">
+            Manage your uploaded strategies - view, edit, activate, or delete
           </p>
         </div>
+        <Link href="/strategies/upload">
+          <Button className="w-full sm:w-auto">
+            <Plus className="h-4 w-4 mr-2" />
+            Upload New Strategy
+          </Button>
+        </Link>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Total Strategies</p>
+                <p className="text-2xl font-bold">{strategies.length}</p>
+              </div>
+              <FileCode className="h-8 w-8 text-blue-500" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Active</p>
+                <p className="text-2xl font-bold text-green-500">
+                  {strategies.filter(s => s.isActive).length}
+                </p>
+              </div>
+              <CheckCircle2 className="h-8 w-8 text-green-500" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Inactive</p>
+                <p className="text-2xl font-bold text-yellow-500">
+                  {strategies.filter(s => !s.isActive).length}
+                </p>
+              </div>
+              <AlertCircle className="h-8 w-8 text-yellow-500" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Deployed</p>
+                <p className="text-2xl font-bold text-blue-500">
+                  {strategies.reduce((sum, s) => sum + (s.deploymentCount || 0), 0)}
+                </p>
+              </div>
+              <TrendingUp className="h-8 w-8 text-blue-500" />
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-4 mb-6">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 h-4 w-4" />
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
           <Input
             placeholder="Search strategies..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10 dark:bg-gray-800 dark:border-gray-700 dark:text-white dark:placeholder-gray-500"
+            className="pl-10"
           />
         </div>
         <div className="flex gap-2">
@@ -225,185 +310,191 @@ export default function StrategiesPage() {
         </div>
       </div>
 
-      {/* Strategy Grid */}
-      {filteredStrategies.length === 0 ? (
-        <Card className="text-center py-12 dark:bg-gray-800 dark:border-gray-700">
-          <CardContent>
-            <FileText className="h-12 w-12 text-gray-400 dark:text-gray-500 mx-auto mb-4" />
-            <h3 className="text-lg font-medium mb-2 dark:text-white">No strategies found</h3>
-            <p className="text-gray-600 dark:text-gray-400 mb-4">
-              {strategies.length === 0
-                ? "No strategies are currently available. Our quant team is working on adding new strategies. Check back soon!"
-                : "No strategies match your current filters"
-              }
-            </p>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredStrategies.map((strategy) => (
-            <Card key={strategy.id} className="hover:shadow-lg transition-shadow dark:bg-gray-800 dark:border-gray-700">
-              <CardHeader className="pb-3">
-                <div className="flex justify-between items-start">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      {getStrategyTypeIcon(strategy.tags)}
-                      <CardTitle className="text-lg text-foreground leading-tight">{strategy.name}</CardTitle>
-                    </div>
-                    <p className="text-sm text-muted-foreground font-mono">{strategy.code}</p>
-                  </div>
-                  <Badge variant="outline" className="text-xs border-primary/30 text-primary">
-                    {strategy.instrument}
-                  </Badge>
-                </div>
-                <p className="text-sm text-muted-foreground line-clamp-2 mt-2">
-                  {strategy.description}
-                </p>
-              </CardHeader>
-
-              <CardContent className="space-y-4">
-                {/* Author */}
-                <div className="flex items-center space-x-2">
-                  <Users className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm text-foreground">{strategy.author}</span>
-                </div>
-
-                {/* Key Metrics */}
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">Win Rate</p>
-                    <p className="font-semibold text-primary">
-                      {formatPercentage(strategy.winRate)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">ROI</p>
-                    <p className="font-semibold text-accent">
-                      {formatPercentage(strategy.roi)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Risk/Reward</p>
-                    <p className="font-semibold text-foreground">{strategy.riskReward?.toFixed(1) || 'N/A'}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Max Drawdown</p>
-                    <p className="font-semibold text-destructive">
-                      {formatPercentage(strategy.maxDrawdown)}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Additional Features */}
-                {strategy.features && (
-                  <div className="border-t border-border/50 pt-3">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Clock className="h-3 w-3 text-muted-foreground" />
-                      <span className="text-xs text-muted-foreground">Timeframes:</span>
-                      <span className="text-xs text-foreground">{strategy.features.timeframes.join(', ')}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Target className="h-3 w-3 text-muted-foreground" />
-                      <span className="text-xs text-muted-foreground">Leverage:</span>
-                      <span className="text-xs text-foreground">{strategy.features.leverage}x</span>
-                    </div>
-                  </div>
-                )}
-
-                {/* Margin Required */}
-                <div className="border-t border-border/50 pt-3">
-                  <p className="text-xs text-muted-foreground">Min Margin</p>
-                  <p className="font-semibold text-foreground">{formatCurrency(strategy.marginRequired, strategy.marginCurrency)}</p>
-                </div>
-
-                {/* Tags */}
-                <div className="flex flex-wrap gap-1">
-                  {strategy.tags && strategy.tags.trim() ? (
-                    <>
-                      {strategy.tags.split(',').map(tag => tag.trim()).filter(tag => tag).slice(0, 3).map((tag, index) => (
-                        <Badge key={index} variant="secondary" className="text-xs hover:bg-primary/10 transition-colors">
-                          {tag}
+      {/* Strategies Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle>All Strategies</CardTitle>
+          <CardDescription>
+            {filteredStrategies.length} {filteredStrategies.length === 1 ? 'strategy' : 'strategies'} found
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {filteredStrategies.length === 0 ? (
+            <div className="text-center py-12">
+              <FileCode className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-medium mb-2">No strategies found</h3>
+              <p className="text-muted-foreground mb-4">
+                {strategies.length === 0
+                  ? "Upload your first strategy to get started"
+                  : "No strategies match your current filters"
+                }
+              </p>
+              {strategies.length === 0 && (
+                <Link href="/strategies/upload">
+                  <Button>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Upload Strategy
+                  </Button>
+                </Link>
+              )}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left py-3 px-4 font-medium">Strategy</th>
+                    <th className="text-left py-3 px-4 font-medium">Status</th>
+                    <th className="text-left py-3 px-4 font-medium">Performance</th>
+                    <th className="text-left py-3 px-4 font-medium">Deployments</th>
+                    <th className="text-left py-3 px-4 font-medium">Updated</th>
+                    <th className="text-right py-3 px-4 font-medium">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredStrategies.map((strategy) => (
+                    <tr key={strategy.id} className="border-b hover:bg-secondary/20">
+                      <td className="py-4 px-4">
+                        <div>
+                          <p className="font-medium">{strategy.name}</p>
+                          <p className="text-sm text-muted-foreground">{strategy.code}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <Badge variant="outline" className="text-xs">
+                              v{strategy.version}
+                            </Badge>
+                            <Badge variant="secondary" className="text-xs">
+                              {strategy.instrument}
+                            </Badge>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-4 px-4">
+                        <Badge
+                          variant={strategy.isActive ? "default" : "secondary"}
+                          className={strategy.isActive ? "bg-green-500" : ""}
+                        >
+                          {strategy.isActive ? 'Active' : 'Inactive'}
                         </Badge>
-                      ))}
-                      {strategy.tags.split(',').length > 3 && (
-                        <Badge variant="secondary" className="text-xs hover:bg-primary/10 transition-colors">
-                          +{strategy.tags.split(',').length - 3}
-                        </Badge>
-                      )}
-                    </>
-                  ) : (
-                    <Badge variant="secondary" className="text-xs">
-                      No tags
-                    </Badge>
-                  )}
+                      </td>
+                      <td className="py-4 px-4">
+                        <div className="space-y-1 text-sm">
+                          <div className="flex items-center gap-2">
+                            <span className="text-muted-foreground">Win Rate:</span>
+                            <span className="font-medium text-green-500">
+                              {formatPercentage(strategy.winRate)}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-muted-foreground">ROI:</span>
+                            <span className="font-medium text-green-500">
+                              {formatPercentage(strategy.roi)}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-4 px-4">
+                        <div className="flex items-center gap-1">
+                          <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                          <span className="font-medium">{strategy.deploymentCount || 0}</span>
+                        </div>
+                      </td>
+                      <td className="py-4 px-4">
+                        <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                          <Calendar className="h-3 w-3" />
+                          <span>{formatDate(strategy.updatedAt)}</span>
+                        </div>
+                      </td>
+                      <td className="py-4 px-4">
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => router.push(`/dashboard/strategy/${strategy.id}`)}
+                            title="View Details"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleToggleActive(strategy)}
+                            disabled={actionLoading === strategy.id}
+                            title={strategy.isActive ? 'Deactivate' : 'Activate'}
+                          >
+                            {actionLoading === strategy.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : strategy.isActive ? (
+                              <PowerOff className="h-4 w-4 text-yellow-500" />
+                            ) : (
+                              <Power className="h-4 w-4 text-green-500" />
+                            )}
+                          </Button>
+
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => confirmDelete(strategy)}
+                            disabled={actionLoading === strategy.id || strategy.deploymentCount > 0}
+                            title={
+                              strategy.deploymentCount > 0
+                                ? 'Cannot delete - has active deployments'
+                                : 'Delete Strategy'
+                            }
+                          >
+                            <Trash2 className="h-4 w-4 text-red-500" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete <strong>{selectedStrategy?.name}</strong>.
+              This action cannot be undone.
+              {selectedStrategy?.deploymentCount && selectedStrategy.deploymentCount > 0 && (
+                <div className="mt-3 p-3 bg-red-50 dark:bg-red-900/10 rounded-lg border border-red-200 dark:border-red-800">
+                  <p className="text-red-700 dark:text-red-400 font-medium">
+                    ⚠️ This strategy has {selectedStrategy.deploymentCount} active deployment(s).
+                    Please stop all deployments before deleting.
+                  </p>
                 </div>
-
-                {/* Deployment Count */}
-                <div className="flex items-center justify-between text-sm">
-                  <span className="flex items-center space-x-1 text-muted-foreground">
-                    <TrendingUp className="h-3 w-3" />
-                    <span>{strategy.deploymentCount || 0} active</span>
-                  </span>
-                </div>
-
-                {/* Subscription Status */}
-                {getUserSubscriptionStatus(strategy.id) && (
-                  <div className="p-3 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-medium text-blue-700 dark:text-blue-300">Your Subscription</span>
-                      <Badge
-                        className={getUserSubscriptionStatus(strategy.id)?.isPaused ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}
-                        variant="secondary"
-                      >
-                        {getUserSubscriptionStatus(strategy.id)?.isPaused ? 'Paused' : 'Active'}
-                      </Badge>
-                    </div>
-                  </div>
-                )}
-
-                {/* Action Buttons */}
-                <div className="flex space-x-2 pt-2">
-                  <Link href={`/dashboard/strategy/${strategy.id}`} className="flex-1">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="w-full hover:bg-primary/5 hover:border-primary/50 transition-all"
-                    >
-                      View Details
-                    </Button>
-                  </Link>
-                  {getUserSubscriptionStatus(strategy.id) ? (
-                    <Link href="/dashboard/subscriptions" className="flex-1">
-                      <Button variant="outline" size="sm" className="w-full">
-                        Manage
-                      </Button>
-                    </Link>
-                  ) : (
-                    <Button
-                      size="sm"
-                      className="flex-1 bg-primary hover:bg-primary/90 transition-all hover:scale-105"
-                      onClick={() => handleSubscribe(strategy)}
-                    >
-                      Subscribe
-                    </Button>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      {/* Subscribe Modal */}
-      {selectedStrategy && (
-        <SubscribeModal
-          open={subscribeModalOpen}
-          onOpenChange={setSubscribeModalOpen}
-          strategyId={selectedStrategy.id}
-          strategyName={selectedStrategy.name}
-          onSuccess={handleSubscribeSuccess}
-        />
-      )}
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => selectedStrategy && handleDelete(selectedStrategy.id)}
+              disabled={actionLoading !== null}
+              className="bg-red-500 hover:bg-red-600"
+            >
+              {actionLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
