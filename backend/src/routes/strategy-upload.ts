@@ -953,12 +953,7 @@ router.post('/cli-upload', authenticate, async (req: AuthenticatedRequest, res, 
           strategyCode,
           requirementsTxt,
           {
-            pair: pair,
-            resolution: resolution,
-            symbol: pair, // for backwards compatibility
-            leverage: parsedConfig.riskProfile?.defaultLeverage || parsedConfig.riskProfile?.leverage || 10,
-            capital: parsedConfig.riskProfile?.defaultCapital || parsedConfig.riskProfile?.recommendedCapital || 10000,
-            risk_per_trade: parsedConfig.riskProfile?.defaultRiskPerTrade || 0.02,
+            ...parsedConfig,  // ✅ Pass ALL user config including indicator parameters
             api_key: 'BACKTEST_MODE',
             api_secret: 'BACKTEST_MODE'
           }
@@ -1384,6 +1379,84 @@ function incrementVersion(currentVersion: string): string {
   return `${parts[0]}.${parts[1]}.${patch}`;
 }
 
+/**
+ * Extract STRATEGY_CONFIG dictionary from Python strategy code
+ *
+ * Looks for a STRATEGY_CONFIG = {...} block and parses the key-value pairs.
+ * This allows strategies to define default parameters directly in the Python file.
+ *
+ * @param strategyCode - The Python strategy code to parse
+ * @returns Object with extraction status, config data, and param names
+ */
+function extractStrategyConfig(strategyCode: string): {
+  success: boolean;
+  config: any;
+  extractedParams: string[];
+  error?: string;
+} {
+  try {
+    // Match STRATEGY_CONFIG = { ... } block
+    const configRegex = /STRATEGY_CONFIG\s*=\s*\{([^}]+)\}/s;
+    const match = strategyCode.match(configRegex);
+
+    if (!match) {
+      return {
+        success: false,
+        config: {},
+        extractedParams: [],
+        error: 'STRATEGY_CONFIG not found in Python file'
+      };
+    }
+
+    const configBlock = match[1];
+    const extractedConfig: any = {};
+    const extractedParams: string[] = [];
+
+    // Parse each line: "key": value or 'key': value
+    const lineRegex = /["']([^"']+)["']\s*:\s*([^,\n]+)/g;
+    let lineMatch;
+
+    while ((lineMatch = lineRegex.exec(configBlock)) !== null) {
+      const key = lineMatch[1];
+      let value = lineMatch[2].trim();
+
+      // Parse value type
+      if (value === 'True') {
+        extractedConfig[key] = true;
+      } else if (value === 'False') {
+        extractedConfig[key] = false;
+      } else if (value === 'None') {
+        extractedConfig[key] = null;
+      } else if (!isNaN(Number(value))) {
+        extractedConfig[key] = Number(value);
+      } else if (value.startsWith('"') || value.startsWith("'")) {
+        extractedConfig[key] = value.slice(1, -1); // Remove quotes
+      } else {
+        // Keep as string if can't parse
+        extractedConfig[key] = value;
+      }
+
+      extractedParams.push(key);
+    }
+
+    logger.info(`✅ Extracted ${extractedParams.length} parameters from STRATEGY_CONFIG`);
+
+    return {
+      success: true,
+      config: extractedConfig,
+      extractedParams,
+    };
+  } catch (error) {
+    logger.error('Failed to extract STRATEGY_CONFIG:', error);
+    return {
+      success: false,
+      config: {},
+      extractedParams: [],
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
 // ============================================================================
 // SIMPLE UPLOAD ENDPOINT - For quant team's complete strategy files
 // ============================================================================
@@ -1509,9 +1582,21 @@ router.post('/upload-simple', authenticate, upload.fields([
       });
     }
 
+    // ✅ NEW: Extract STRATEGY_CONFIG from Python file
+    logger.info('Extracting STRATEGY_CONFIG from Python file...');
+    const configExtraction = extractStrategyConfig(strategyCode);
+
+    // Merge extracted config with user-provided config (user overrides defaults)
+    const mergedConfig = {
+      ...configExtraction.config,  // Defaults from STRATEGY_CONFIG
+      ...config,                    // User overrides from form
+    };
+
+    logger.info(`Config merge: extracted=${configExtraction.extractedParams.length} params, user=${Object.keys(config).length}, merged=${Object.keys(mergedConfig).length}`);
+
     // Extract strategy name from config or filename
-    const strategyName = config.name || strategyFile.originalname.replace('.py', '');
-    const strategyCode_db = config.code || generateStrategyCode(strategyName);
+    const strategyName = mergedConfig.name || config.name || strategyFile.originalname.replace('.py', '');
+    const strategyCode_db = mergedConfig.code || config.code || generateStrategyCode(strategyName);
 
     // Check if strategy already exists
     const existingStrategy = await prisma.strategy.findFirst({
@@ -1609,12 +1694,7 @@ router.post('/upload-simple', authenticate, upload.fields([
           strategyCode,
           requirementsTxt,
           {
-            pair: pair,
-            resolution: resolution,
-            symbol: pair,
-            leverage: config.leverage || 10,
-            capital: config.initial_capital || 10000,
-            risk_per_trade: config.risk_per_trade || 0.02,
+            ...config,  // ✅ Pass ALL user config including indicator parameters
             api_key: 'BACKTEST_MODE',
             api_secret: 'BACKTEST_MODE'
           }
@@ -1666,6 +1746,17 @@ router.post('/upload-simple', authenticate, upload.fields([
         liveTrader: hasLiveTrader,
         backtester: hasBacktester,
         generateSignals: hasGenerateSignals
+      },
+      configExtraction: {
+        success: configExtraction.success,
+        extractedParams: configExtraction.extractedParams,
+        paramCount: configExtraction.extractedParams.length,
+        message: configExtraction.success
+          ? `Successfully extracted ${configExtraction.extractedParams.length} parameters from STRATEGY_CONFIG`
+          : configExtraction.error || 'Failed to extract config',
+        warning: !configExtraction.success
+          ? 'Strategy will use hardcoded defaults. Consider adding STRATEGY_CONFIG = {...} to your Python file.'
+          : undefined
       },
       backtest: backtestMetrics,
       backtestError,
