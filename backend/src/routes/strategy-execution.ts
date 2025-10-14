@@ -512,7 +512,7 @@ router.get('/subscriptions/:id/stats', authenticate, async (req: AuthenticatedRe
 
 /**
  * GET /api/strategies/subscriptions
- * Get user's subscriptions
+ * Get user's subscriptions with trading results
  */
 router.get('/subscriptions', authenticate, async (req: AuthenticatedRequest, res, next) => {
   try {
@@ -520,8 +520,45 @@ router.get('/subscriptions', authenticate, async (req: AuthenticatedRequest, res
 
     const subscriptions = await subscriptionService.getUserSubscriptions(userId);
 
+    // Fetch trading results for each subscription
+    const subscriptionsWithStats = await Promise.all(
+      subscriptions.map(async (sub) => {
+        // Get all trades for this subscription
+        const trades = await prisma.trade.findMany({
+          where: { subscriptionId: sub.id },
+          select: {
+            pnl: true,
+            status: true,
+            createdAt: true,
+          }
+        });
+
+        const totalTrades = trades.length;
+        const openPositions = trades.filter(t => t.status === 'OPEN').length;
+        const closedTrades = trades.filter(t => t.status === 'CLOSED');
+
+        // Calculate P&L (only from closed trades)
+        const totalPnl = closedTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+
+        // Calculate win rate
+        const winningTrades = closedTrades.filter(t => (t.pnl || 0) > 0).length;
+        const winRate = closedTrades.length > 0 ? (winningTrades / closedTrades.length) * 100 : 0;
+
+        return {
+          ...sub,
+          liveStats: {
+            totalTrades,
+            openPositions,
+            totalPnl,
+            winRate,
+            closedTrades: closedTrades.length,
+          }
+        };
+      })
+    );
+
     res.json({
-      subscriptions
+      subscriptions: subscriptionsWithStats
     });
   } catch (error) {
     next(error);

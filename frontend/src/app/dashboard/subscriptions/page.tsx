@@ -259,29 +259,41 @@ export default function SubscriptionsPage() {
                     </div>
                   </div>
 
-                  {/* Performance */}
-                  <div className="bg-blue-50 dark:bg-blue-950/20 rounded-lg p-3">
-                    <div className="grid grid-cols-3 gap-2 text-sm">
-                      <div>
-                        <p className="text-xs text-muted-foreground">Total Trades</p>
-                        <p className="font-semibold">{subscription.totalTrades}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Win Rate</p>
-                        <p className="font-semibold text-green-600">
-                          {subscription.totalTrades > 0
-                            ? ((subscription.winningTrades / subscription.totalTrades) * 100).toFixed(1)
-                            : '0'}%
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Total P&L</p>
-                        <p className={`font-semibold ${subscription.totalPnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          ${subscription.totalPnl.toFixed(2)}
-                        </p>
+                  {/* Performance - Live Trading Results */}
+                  {(subscription as any).liveStats ? (
+                    <div className="bg-blue-50 dark:bg-blue-950/20 rounded-lg p-3 border border-blue-200 dark:border-blue-800">
+                      <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-sm">
+                        <div>
+                          <p className="text-xs text-muted-foreground">Total P&L</p>
+                          <p className={`font-bold ${(subscription as any).liveStats.totalPnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            ${(subscription as any).liveStats.totalPnl.toFixed(2)}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Total Trades</p>
+                          <p className="font-semibold">{(subscription as any).liveStats.totalTrades}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Win Rate</p>
+                          <p className="font-semibold text-green-600">
+                            {(subscription as any).liveStats.winRate.toFixed(1)}%
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Open Positions</p>
+                          <p className="font-semibold text-blue-600">{(subscription as any).liveStats.openPositions}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Closed Trades</p>
+                          <p className="font-semibold">{(subscription as any).liveStats.closedTrades}</p>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="bg-muted/50 rounded-lg p-3 text-center text-xs text-muted-foreground">
+                      No trading data yet
+                    </div>
+                  )}
 
                   {/* Metadata */}
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -366,7 +378,7 @@ export default function SubscriptionsPage() {
                   <Activity className="h-5 w-5 text-blue-500" />
                   <div>
                     <div className="text-2xl font-bold">
-                      {subscriptions.reduce((sum, s) => sum + s.totalTrades, 0)}
+                      {subscriptions.reduce((sum, s) => sum + ((s as any).liveStats?.totalTrades || 0), 0)}
                     </div>
                     <div className="text-sm text-gray-600">Total Trades</div>
                   </div>
@@ -379,8 +391,8 @@ export default function SubscriptionsPage() {
                 <div className="flex items-center gap-2">
                   <DollarSign className="h-5 w-5 text-purple-500" />
                   <div>
-                    <div className={`text-2xl font-bold ${subscriptions.reduce((sum, s) => sum + s.totalPnl, 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      ${subscriptions.reduce((sum, s) => sum + s.totalPnl, 0).toFixed(2)}
+                    <div className={`text-2xl font-bold ${subscriptions.reduce((sum, s) => sum + ((s as any).liveStats?.totalPnl || 0), 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      ${subscriptions.reduce((sum, s) => sum + ((s as any).liveStats?.totalPnl || 0), 0).toFixed(2)}
                     </div>
                     <div className="text-sm text-gray-600">Total P&L</div>
                   </div>

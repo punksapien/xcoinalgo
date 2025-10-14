@@ -21,171 +21,112 @@ interface CoinDCXTicker {
   [key: string]: any;
 }
 
-// Get current active positions from running bots
+// Get current active positions from Trade table
 router.get('/current', authenticate, async (req: AuthenticatedRequest, res, next) => {
   try {
     const userId = req.userId!;
 
-    // Get user's broker credentials
-    const brokerCredential = await prisma.brokerCredential.findUnique({
+    // Get open positions from Trade table
+    const openTrades = await prisma.trade.findMany({
       where: {
-        userId_brokerName: {
-          userId,
-          brokerName: 'coindcx'
-        }
-      }
-    });
-
-    if (!brokerCredential || !brokerCredential.isActive) {
-      return res.json({
-        positions: [],
-        summary: {
-          totalPositions: 0,
-          totalUnrealizedPnl: 0,
-          totalMarginUsed: 0,
-          activeStrategies: 0,
+        subscription: {
+          userId
         },
-        message: 'No active broker connection. Please connect your CoinDCX account first.'
-      });
-    }
-
-    // Get active deployments
-    const activeDeployments = await prisma.botDeployment.findMany({
-      where: {
-        userId,
-        status: {
-          in: [BotStatus.ACTIVE, BotStatus.STARTING]
-        }
+        status: 'OPEN'
       },
       include: {
-        strategy: {
-          select: {
-            name: true,
-            code: true,
-            instrument: true,
-            author: true
-          }
-        }
-      }
-    });
-
-    // Fetch real CoinDCX account balances
-    try {
-      const balances = await CoinDCXClient.getBalances(
-        brokerCredential.apiKey,
-        brokerCredential.apiSecret
-      );
-
-      // Fetch active orders from CoinDCX
-      const activeOrders = await CoinDCXClient.getActiveOrders(
-        brokerCredential.apiKey,
-        brokerCredential.apiSecret
-      );
-
-      // Get recent trades to determine positions
-      const trades = await CoinDCXClient.getTradeHistory(
-        brokerCredential.apiKey,
-        brokerCredential.apiSecret,
-        {
-          limit: 100,
-        }
-      );
-
-      // Calculate positions from balances and trades
-      // Note: CoinDCX is a spot exchange, so "positions" are really just holdings
-      const positions = balances
-        .filter(balance => balance.balance > 0)
-        .map(balance => {
-          // Find deployment that uses this currency
-          const deployment = activeDeployments.find(d =>
-            d.strategy.instrument.includes(balance.currency.toUpperCase())
-          );
-
-          // Get current market price
-          const market = `${balance.currency.toUpperCase()}INR`;
-
-          return {
-            id: `pos_${balance.currency}_${userId}`,
-            deploymentId: deployment?.id || null,
-            strategyName: deployment?.strategy.name || 'Manual',
-            strategyCode: deployment?.strategy.code || 'manual',
-            instrument: market,
-            currency: balance.currency,
-            side: 'LONG', // Spot holdings are always long
-            size: balance.balance,
-            lockedSize: balance.locked_balance,
-            availableSize: balance.balance - balance.locked_balance,
-            // Note: Entry price would need to be tracked separately
-            // For now, we'll calculate from recent trades if available
-            entryPrice: null,
-            currentPrice: null, // Will be fetched separately per market
-            unrealizedPnl: 0,
-            unrealizedPnlPct: 0,
-            leverage: deployment?.leverage || 1,
-            marginUsed: balance.balance, // For spot, margin = position size
-            openTime: deployment?.startedAt || deployment?.deployedAt || new Date(),
-            lastUpdate: new Date(),
-            activeOrders: activeOrders.filter(order =>
-              order.market === market
-            ).length,
-          };
-        });
-
-      // Fetch current prices for all positions
-      const tickers = await CoinDCXClient.getAllTickers() as CoinDCXTicker[];
-      const tickerMap = new Map(tickers.map(t => [t.market, t]));
-
-      // Update positions with current prices
-      positions.forEach(pos => {
-        const ticker = tickerMap.get(pos.instrument);
-        if (ticker) {
-          pos.currentPrice = ticker.last_price;
-
-          // Calculate P&L if we have entry price from trades
-          const positionTrades = trades.filter(t =>
-            t.market === pos.instrument && t.side === 'buy'
-          );
-
-          if (positionTrades.length > 0) {
-            // Calculate average entry price
-            const totalQuantity = positionTrades.reduce((sum, t) => sum + t.quantity, 0);
-            const totalCost = positionTrades.reduce((sum, t) => sum + (t.quantity * t.price), 0);
-            pos.entryPrice = totalCost / totalQuantity;
-
-            // Calculate unrealized P&L
-            if (pos.currentPrice && pos.entryPrice) {
-              pos.unrealizedPnl = (pos.currentPrice - pos.entryPrice) * pos.size;
-              pos.unrealizedPnlPct = ((pos.currentPrice - pos.entryPrice) / pos.entryPrice) * 100;
+        subscription: {
+          include: {
+            strategy: {
+              select: {
+                id: true,
+                name: true,
+                code: true,
+              }
+            },
+            brokerCredential: {
+              select: {
+                apiKey: true,
+                apiSecret: true,
+              }
             }
           }
         }
-      });
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
 
-      res.json({
-        positions,
-        summary: {
-          totalPositions: positions.length,
-          totalUnrealizedPnl: positions.reduce((sum, pos) => sum + pos.unrealizedPnl, 0),
-          totalMarginUsed: positions.reduce((sum, pos) => sum + pos.marginUsed, 0),
-          activeStrategies: activeDeployments.length,
-          activeOrders: activeOrders.length,
-        }
-      });
-
-    } catch (apiError) {
-      logger.error('Failed to fetch real position data from CoinDCX:', apiError);
-      return res.status(500).json({
-        error: 'Failed to fetch positions from broker',
-        details: apiError instanceof Error ? apiError.message : 'Unknown error',
-        positions: [],
-        summary: {
-          totalPositions: 0,
-          totalUnrealizedPnl: 0,
-          totalMarginUsed: 0,
-          activeStrategies: 0,
-        }
-      });
+    // Fetch current prices from CoinDCX for unrealized P&L calculation
+    let tickers: CoinDCXTicker[] = [];
+    try {
+      tickers = await CoinDCXClient.getAllTickers() as CoinDCXTicker[];
+    } catch (error) {
+      logger.warn('Failed to fetch tickers for price update:', error);
     }
+    const tickerMap = new Map(tickers.map(t => [t.market, t]));
+
+    // Transform trades to position format
+    const positions = openTrades.map(trade => {
+      // Get current price for P&L calculation
+      const ticker = tickerMap.get(trade.symbol);
+      const currentPrice = ticker?.last_price || trade.entryPrice;
+
+      // Calculate unrealized P&L
+      let unrealizedPnl = 0;
+      let unrealizedPnlPct = 0;
+
+      if (trade.side === 'LONG') {
+        unrealizedPnl = (currentPrice - trade.entryPrice) * trade.quantity;
+        unrealizedPnlPct = ((currentPrice - trade.entryPrice) / trade.entryPrice) * 100;
+      } else {
+        unrealizedPnl = (trade.entryPrice - currentPrice) * trade.quantity;
+        unrealizedPnlPct = ((trade.entryPrice - currentPrice) / trade.entryPrice) * 100;
+      }
+
+      return {
+        id: trade.id,
+        deploymentId: trade.subscriptionId,
+        strategyName: trade.subscription.strategy?.name || 'Unknown',
+        strategyCode: trade.subscription.strategy?.code || 'unknown',
+        instrument: trade.symbol,
+        side: trade.side,
+        size: trade.quantity,
+        entryPrice: trade.entryPrice,
+        currentPrice,
+        unrealizedPnl,
+        unrealizedPnlPct,
+        leverage: trade.leverage || 1,
+        marginUsed: (trade.quantity * trade.entryPrice) / (trade.leverage || 1),
+        openTime: trade.createdAt,
+        lastUpdate: new Date(),
+        // Futures specific fields
+        tradingType: trade.tradingType,
+        positionId: trade.positionId,
+        liquidationPrice: trade.liquidationPrice,
+        // Risk management
+        stopLoss: trade.stopLoss,
+        takeProfit: trade.takeProfit,
+      };
+    });
+
+    // Calculate summary
+    const totalUnrealizedPnl = positions.reduce((sum, pos) => sum + pos.unrealizedPnl, 0);
+    const totalMarginUsed = positions.reduce((sum, pos) => sum + pos.marginUsed, 0);
+
+    // Get count of unique active strategies
+    const uniqueStrategies = new Set(positions.map(p => p.strategyCode));
+
+    res.json({
+      positions,
+      summary: {
+        totalPositions: positions.length,
+        totalUnrealizedPnl,
+        totalMarginUsed,
+        activeStrategies: uniqueStrategies.size,
+      }
+    });
 
   } catch (error) {
     logger.error('Failed to get current positions:', error);
@@ -193,127 +134,118 @@ router.get('/current', authenticate, async (req: AuthenticatedRequest, res, next
   }
 });
 
-// Get order history and pending orders
+// Get order history from Trade table
 router.get('/orders', authenticate, async (req: AuthenticatedRequest, res, next) => {
   try {
     const userId = req.userId!;
-    const { page = 1, limit = 20, status = 'all', market } = req.query;
+    const { page = 1, limit = 50, status = 'all', symbol } = req.query;
 
-    // Get user's broker credentials
-    const brokerCredential = await prisma.brokerCredential.findUnique({
-      where: {
-        userId_brokerName: {
-          userId,
-          brokerName: 'coindcx'
+    // Build where clause
+    const whereClause: any = {
+      subscription: {
+        userId
+      }
+    };
+
+    // Filter by status if specified
+    if (status !== 'all') {
+      whereClause.status = String(status).toUpperCase();
+    }
+
+    // Filter by symbol if specified
+    if (symbol) {
+      whereClause.symbol = String(symbol);
+    }
+
+    // Get total count
+    const totalCount = await prisma.trade.count({ where: whereClause });
+
+    // Get trades with pagination
+    const trades = await prisma.trade.findMany({
+      where: whereClause,
+      include: {
+        subscription: {
+          include: {
+            strategy: {
+              select: {
+                id: true,
+                name: true,
+                code: true,
+              }
+            }
+          }
         }
+      },
+      orderBy: {
+        createdAt: 'desc'
+      },
+      skip: (Number(page) - 1) * Number(limit),
+      take: Number(limit),
+    });
+
+    // Transform to order format
+    const orders = trades.map(trade => ({
+      id: trade.id,
+      deploymentId: trade.subscriptionId,
+      strategyName: trade.subscription.strategy?.name || 'Unknown',
+      strategyCode: trade.subscription.strategy?.code || 'unknown',
+      instrument: trade.symbol,
+      type: trade.orderType.toUpperCase(),
+      side: trade.side.toUpperCase(),
+      amount: trade.quantity,
+      price: trade.entryPrice,
+      filled: trade.filledQuantity || trade.quantity,
+      status: trade.status,
+      createdAt: trade.createdAt,
+      updatedAt: trade.updatedAt,
+      fees: trade.fees,
+      // Exit details if closed
+      exitPrice: trade.exitPrice,
+      exitedAt: trade.exitedAt,
+      exitReason: trade.exitReason,
+      // P&L if closed
+      pnl: trade.pnl,
+      pnlPercentage: trade.pnlPercentage,
+      // Futures specific
+      tradingType: trade.tradingType,
+      leverage: trade.leverage,
+      positionId: trade.positionId,
+      liquidationPrice: trade.liquidationPrice,
+    }));
+
+    // Calculate summary
+    const allTradesForSummary = await prisma.trade.findMany({
+      where: {
+        subscription: {
+          userId
+        }
+      },
+      select: {
+        status: true,
+        quantity: true,
+        fees: true,
+        pnl: true,
       }
     });
 
-    if (!brokerCredential || !brokerCredential.isActive) {
-      return res.json({
-        orders: [],
-        pagination: {
-          page: Number(page),
-          limit: Number(limit),
-          total: 0,
-          totalPages: 0
-        },
-        summary: {
-          totalOrders: 0,
-          filledOrders: 0,
-          pendingOrders: 0,
-          totalVolume: 0,
-          totalFees: 0,
-        },
-        message: 'No active broker connection'
-      });
-    }
+    const summary = {
+      totalOrders: allTradesForSummary.length,
+      filledOrders: allTradesForSummary.filter(t => t.status === 'CLOSED').length,
+      pendingOrders: allTradesForSummary.filter(t => t.status === 'OPEN').length,
+      totalVolume: allTradesForSummary.reduce((sum, t) => sum + t.quantity, 0),
+      totalFees: allTradesForSummary.reduce((sum, t) => sum + t.fees, 0),
+    };
 
-    try {
-      // Fetch real orders from CoinDCX
-      const [activeOrders, orderHistory] = await Promise.all([
-        CoinDCXClient.getActiveOrders(
-          brokerCredential.apiKey,
-          brokerCredential.apiSecret,
-          market as string | undefined
-        ),
-        CoinDCXClient.getOrderHistory(
-          brokerCredential.apiKey,
-          brokerCredential.apiSecret,
-          {
-            market: market as string | undefined,
-            limit: 100,
-          }
-        )
-      ]);
-
-      // Combine active and historical orders
-      const allOrders = [...activeOrders, ...orderHistory].map(order => ({
-        id: order.id,
-        market: order.market,
-        type: order.order_type === 'market_order' ? 'MARKET' :
-              order.order_type === 'limit_order' ? 'LIMIT' : 'STOP_LIMIT',
-        side: order.side.toUpperCase() as 'BUY' | 'SELL',
-        amount: order.total_quantity,
-        price: order.price_per_unit || order.avg_price,
-        filled: order.total_quantity - order.remaining_quantity,
-        remaining: order.remaining_quantity,
-        status: order.status.toUpperCase(),
-        fees: order.fee_amount || 0,
-        createdAt: new Date(order.created_at),
-        updatedAt: new Date(order.updated_at),
-      }));
-
-      // Filter by status if specified
-      const filteredOrders = status === 'all'
-        ? allOrders
-        : allOrders.filter(order => order.status.toLowerCase() === String(status).toLowerCase());
-
-      // Sort by creation time (most recent first)
-      filteredOrders.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-
-      // Paginate
-      const skip = (Number(page) - 1) * Number(limit);
-      const paginatedOrders = filteredOrders.slice(skip, skip + Number(limit));
-
-      res.json({
-        orders: paginatedOrders,
-        pagination: {
-          page: Number(page),
-          limit: Number(limit),
-          total: filteredOrders.length,
-          totalPages: Math.ceil(filteredOrders.length / Number(limit))
-        },
-        summary: {
-          totalOrders: filteredOrders.length,
-          filledOrders: filteredOrders.filter(o => o.status === 'FILLED').length,
-          pendingOrders: filteredOrders.filter(o => o.status === 'OPEN' || o.status === 'INIT').length,
-          totalVolume: filteredOrders.reduce((sum, order) => sum + order.filled, 0),
-          totalFees: filteredOrders.reduce((sum, order) => sum + order.fees, 0),
-        }
-      });
-
-    } catch (apiError) {
-      logger.error('Failed to fetch orders from CoinDCX:', apiError);
-      return res.status(500).json({
-        error: 'Failed to fetch orders from broker',
-        details: apiError instanceof Error ? apiError.message : 'Unknown error',
-        orders: [],
-        pagination: {
-          page: Number(page),
-          limit: Number(limit),
-          total: 0,
-          totalPages: 0
-        },
-        summary: {
-          totalOrders: 0,
-          filledOrders: 0,
-          pendingOrders: 0,
-          totalVolume: 0,
-          totalFees: 0,
-        }
-      });
-    }
+    res.json({
+      orders,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total: totalCount,
+        totalPages: Math.ceil(totalCount / Number(limit))
+      },
+      summary
+    });
 
   } catch (error) {
     logger.error('Failed to get order history:', error);
@@ -321,209 +253,168 @@ router.get('/orders', authenticate, async (req: AuthenticatedRequest, res, next)
   }
 });
 
-// Get P&L summary for all positions
+// Get P&L summary from Trade table
 router.get('/pnl', authenticate, async (req: AuthenticatedRequest, res, next) => {
   try {
     const userId = req.userId!;
-    const { period = '7d' } = req.query;
+    const { period = '30d' } = req.query;
 
-    // Get user's broker credentials
-    const brokerCredential = await prisma.brokerCredential.findUnique({
+    // Calculate date range
+    const periodStr = Array.isArray(period) ? String(period[0] || '30d') : String(period || '30d');
+    const days = parseInt(String(periodStr).replace('d', '')) || 30;
+    const fromDate = new Date();
+    fromDate.setDate(fromDate.getDate() - days);
+
+    // Get all trades for this user in the period
+    const allTrades = await prisma.trade.findMany({
       where: {
-        userId_brokerName: {
-          userId,
-          brokerName: 'coindcx'
+        subscription: {
+          userId
+        },
+        createdAt: {
+          gte: fromDate
         }
+      },
+      include: {
+        subscription: {
+          include: {
+            strategy: {
+              select: {
+                id: true,
+                name: true,
+                code: true,
+              }
+            }
+          }
+        }
+      },
+      orderBy: {
+        createdAt: 'asc'
       }
     });
 
-    if (!brokerCredential || !brokerCredential.isActive) {
-      return res.json({
-        summary: {
-          totalRealizedPnl: 0,
-          totalUnrealizedPnl: 0,
-          totalPnl: 0,
-          totalTrades: 0,
-          winRate: 0,
-          activeStrategies: 0,
-        },
-        dailyPnl: [],
-        strategyPerformance: [],
-        message: 'No active broker connection'
-      });
-    }
+    // Get open trades for unrealized P&L
+    const openTrades = allTrades.filter(t => t.status === 'OPEN');
+    const closedTrades = allTrades.filter(t => t.status === 'CLOSED');
 
+    // Calculate realized P&L from closed trades
+    const totalRealizedPnl = closedTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+
+    // Calculate unrealized P&L from open trades
+    // Fetch current prices for open positions
+    let tickers: CoinDCXTicker[] = [];
     try {
-      // Fetch real trade history from CoinDCX
-      const periodStr = Array.isArray(period) ? String(period[0] || '7d') : String(period || '7d');
-      const days = parseInt(String(periodStr).replace('d', '')) || 7;
-      const fromTimestamp = Date.now() - (days * 24 * 60 * 60 * 1000);
-
-      const trades = await CoinDCXClient.getTradeHistory(
-        brokerCredential.apiKey,
-        brokerCredential.apiSecret,
-        {
-          from_timestamp: fromTimestamp,
-          limit: 1000,
-        }
-      );
-
-      // Calculate realized P&L from completed trades
-      // Group by pairs of buy/sell trades
-      const tradesByMarket = new Map<string, typeof trades>();
-      trades.forEach(trade => {
-        if (!tradesByMarket.has(trade.market)) {
-          tradesByMarket.set(trade.market, []);
-        }
-        tradesByMarket.get(trade.market)!.push(trade);
-      });
-
-      let totalRealizedPnl = 0;
-      let totalTrades = 0;
-      let winningTrades = 0;
-      const dailyPnlMap = new Map<string, number>();
-
-      // Calculate P&L for each market
-      tradesByMarket.forEach((marketTrades, market) => {
-        const sortedTrades = marketTrades.sort((a, b) => a.timestamp - b.timestamp);
-
-        let position = 0;
-        let avgEntry = 0;
-        let totalCost = 0;
-
-        sortedTrades.forEach(trade => {
-          const tradeDate = new Date(trade.timestamp).toISOString().split('T')[0];
-
-          if (trade.side === 'buy') {
-            // Accumulate position
-            totalCost += trade.quantity * trade.price;
-            position += trade.quantity;
-            if (position > 0) {
-              avgEntry = totalCost / position;
-            }
-          } else if (trade.side === 'sell' && position > 0) {
-            // Close position (partial or full)
-            const exitQty = Math.min(trade.quantity, position);
-            const pnl = (trade.price - avgEntry) * exitQty - trade.fee_amount;
-
-            totalRealizedPnl += pnl;
-            totalTrades++;
-            if (pnl > 0) winningTrades++;
-
-            // Add to daily P&L
-            dailyPnlMap.set(
-              tradeDate,
-              (dailyPnlMap.get(tradeDate) || 0) + pnl
-            );
-
-            // Update position
-            position -= exitQty;
-            if (position <= 0) {
-              position = 0;
-              avgEntry = 0;
-              totalCost = 0;
-            }
-          }
-        });
-      });
-
-      // Calculate unrealized P&L from current positions
-      const balances = await CoinDCXClient.getBalances(
-        brokerCredential.apiKey,
-        brokerCredential.apiSecret
-      );
-
-      const tickers = await CoinDCXClient.getAllTickers() as CoinDCXTicker[];
-      const tickerMap = new Map(tickers.map(t => [t.market, t]));
-
-      let totalUnrealizedPnl = 0;
-
-      balances.filter(b => b.balance > 0).forEach(balance => {
-        const market = `${balance.currency.toUpperCase()}INR`;
-        const ticker = tickerMap.get(market);
-
-        if (ticker) {
-          // Find trades for this currency to calculate avg entry
-          const currencyTrades = trades.filter(t =>
-            t.market === market && t.side === 'buy'
-          );
-
-          if (currencyTrades.length > 0) {
-            const totalQty = currencyTrades.reduce((sum, t) => sum + t.quantity, 0);
-            const totalCost = currencyTrades.reduce((sum, t) => sum + (t.quantity * t.price), 0);
-            const avgEntry = totalCost / totalQty;
-
-            const unrealizedPnl = (ticker.last_price - avgEntry) * balance.balance;
-            totalUnrealizedPnl += unrealizedPnl;
-          }
-        }
-      });
-
-      // Generate daily P&L array
-      const dailyPnl = Array.from({ length: days }, (_, i) => {
-        const date = new Date();
-        date.setDate(date.getDate() - (days - 1 - i));
-        const dateStr = date.toISOString().split('T')[0];
-
-        return {
-          date: dateStr,
-          pnl: dailyPnlMap.get(dateStr) || 0,
-          cumulativePnl: Array.from(dailyPnlMap.entries())
-            .filter(([d]) => d <= dateStr)
-            .reduce((sum, [, pnl]) => sum + pnl, 0),
-        };
-      });
-
-      // Get strategy performance (from deployments)
-      const deployments = await prisma.botDeployment.findMany({
-        where: { userId },
-        include: {
-          strategy: true
-        }
-      });
-
-      const strategyPerformance = deployments.map(deployment => ({
-        strategyId: deployment.strategyId,
-        strategyName: deployment.strategy.name,
-        strategyCode: deployment.strategy.code,
-        realizedPnl: 0, // Would need to track per-strategy
-        trades: 0,
-        winRate: 0,
-        isActive: deployment.status === BotStatus.ACTIVE,
-      }));
-
-      res.json({
-        summary: {
-          totalRealizedPnl,
-          totalUnrealizedPnl,
-          totalPnl: totalRealizedPnl + totalUnrealizedPnl,
-          totalTrades,
-          winRate: totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0,
-          activeStrategies: deployments.filter(d => d.status === BotStatus.ACTIVE).length,
-          averageWin: winningTrades > 0 ? totalRealizedPnl / totalTrades : 0,
-          profitFactor: totalRealizedPnl / Math.abs(Math.min(totalRealizedPnl, 0)) || 0,
-        },
-        dailyPnl,
-        strategyPerformance,
-      });
-
-    } catch (apiError) {
-      logger.error('Failed to fetch P&L from CoinDCX:', apiError);
-      return res.status(500).json({
-        error: 'Failed to fetch P&L from broker',
-        details: apiError instanceof Error ? apiError.message : 'Unknown error',
-        summary: {
-          totalRealizedPnl: 0,
-          totalUnrealizedPnl: 0,
-          totalPnl: 0,
-          totalTrades: 0,
-          winRate: 0,
-          activeStrategies: 0,
-        },
-        dailyPnl: [],
-        strategyPerformance: [],
-      });
+      tickers = await CoinDCXClient.getAllTickers() as CoinDCXTicker[];
+    } catch (error) {
+      logger.warn('Failed to fetch tickers:', error);
     }
+    const tickerMap = new Map(tickers.map(t => [t.market, t]));
+
+    let totalUnrealizedPnl = 0;
+    openTrades.forEach(trade => {
+      const ticker = tickerMap.get(trade.symbol);
+      const currentPrice = ticker?.last_price || trade.entryPrice;
+
+      if (trade.side === 'LONG') {
+        totalUnrealizedPnl += (currentPrice - trade.entryPrice) * trade.quantity;
+      } else {
+        totalUnrealizedPnl += (trade.entryPrice - currentPrice) * trade.quantity;
+      }
+    });
+
+    // Calculate win rate
+    const winningTrades = closedTrades.filter(t => (t.pnl || 0) > 0).length;
+    const winRate = closedTrades.length > 0 ? (winningTrades / closedTrades.length) * 100 : 0;
+
+    // Generate daily P&L
+    const dailyPnlMap = new Map<string, number>();
+    closedTrades.forEach(trade => {
+      if (trade.exitedAt) {
+        const dateStr = trade.exitedAt.toISOString().split('T')[0];
+        dailyPnlMap.set(dateStr, (dailyPnlMap.get(dateStr) || 0) + (trade.pnl || 0));
+      }
+    });
+
+    const dailyPnl = Array.from({ length: days }, (_, i) => {
+      const date = new Date();
+      date.setDate(date.getDate() - (days - 1 - i));
+      const dateStr = date.toISOString().split('T')[0];
+
+      return {
+        date: dateStr,
+        pnl: dailyPnlMap.get(dateStr) || 0,
+        cumulativePnl: Array.from(dailyPnlMap.entries())
+          .filter(([d]) => d <= dateStr)
+          .reduce((sum, [, pnl]) => sum + pnl, 0),
+      };
+    });
+
+    // Calculate strategy performance
+    const strategyMap = new Map<string, {
+      id: string;
+      name: string;
+      code: string;
+      trades: number;
+      realizedPnl: number;
+      winningTrades: number;
+      isActive: boolean;
+    }>();
+
+    closedTrades.forEach(trade => {
+      const strategyId = trade.subscription.strategy?.id;
+      if (!strategyId) return;
+
+      if (!strategyMap.has(strategyId)) {
+        strategyMap.set(strategyId, {
+          id: strategyId,
+          name: trade.subscription.strategy?.name || 'Unknown',
+          code: trade.subscription.strategy?.code || 'unknown',
+          trades: 0,
+          realizedPnl: 0,
+          winningTrades: 0,
+          isActive: trade.subscription.isActive && !trade.subscription.isPaused,
+        });
+      }
+
+      const stratData = strategyMap.get(strategyId)!;
+      stratData.trades++;
+      stratData.realizedPnl += trade.pnl || 0;
+      if ((trade.pnl || 0) > 0) stratData.winningTrades++;
+    });
+
+    const strategyPerformance = Array.from(strategyMap.values()).map(strat => ({
+      strategyId: strat.id,
+      strategyName: strat.name,
+      strategyCode: strat.code,
+      realizedPnl: strat.realizedPnl,
+      trades: strat.trades,
+      winRate: strat.trades > 0 ? (strat.winningTrades / strat.trades) * 100 : 0,
+      isActive: strat.isActive,
+    }));
+
+    // Get active subscriptions count
+    const activeSubscriptions = await prisma.strategySubscription.count({
+      where: {
+        userId,
+        isActive: true,
+        isPaused: false,
+      }
+    });
+
+    res.json({
+      summary: {
+        totalRealizedPnl,
+        totalUnrealizedPnl,
+        totalPnl: totalRealizedPnl + totalUnrealizedPnl,
+        totalTrades: allTrades.length,
+        winRate,
+        activeStrategies: activeSubscriptions,
+        averageWin: winningTrades > 0 ? totalRealizedPnl / closedTrades.length : 0,
+        profitFactor: totalRealizedPnl > 0 ? totalRealizedPnl / Math.abs(Math.min(totalRealizedPnl, 0)) : 0,
+      },
+      dailyPnl,
+      strategyPerformance,
+    });
 
   } catch (error) {
     logger.error('Failed to get P&L data:', error);
