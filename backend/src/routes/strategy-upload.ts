@@ -944,15 +944,21 @@ router.post('/cli-upload', authenticate, async (req: AuthenticatedRequest, res, 
         const requirementsTxt = requirements || 'pandas>=2.0.0\nnumpy>=1.24.0\npandas-ta>=0.3.14b\nrequests>=2.31.0';
         
         // Execute LiveTrader backtest in isolated uv environment
+        const pair = parsedConfig.executionConfig?.symbol || parsedConfig.pair || parsedConfig.pairs?.[0];
+        const resolution = parsedConfig.resolution || parsedConfig.timeframes?.[0] || '5';
+        
         const backtestResult = await executeLiveTraderBacktest(
           strategyCode, 
           requirementsTxt,
           {
-            symbol: parsedConfig.executionConfig?.symbol || parsedConfig.pair || parsedConfig.pairs?.[0],
+            pair: pair,
+            resolution: resolution,
+            symbol: pair, // for backwards compatibility
             leverage: parsedConfig.riskProfile?.defaultLeverage || 10,
             capital: parsedConfig.riskProfile?.defaultCapital || 10000,
             risk_per_trade: parsedConfig.riskProfile?.defaultRiskPerTrade || 0.02,
-            strategy_params: parsedConfig.executionConfig || {}
+            api_key: 'BACKTEST_MODE',
+            api_secret: 'BACKTEST_MODE'
           }
         );
 
