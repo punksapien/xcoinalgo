@@ -220,7 +220,7 @@ export default function StrategyManagementPage() {
             Manage your uploaded strategies - view, edit, activate, or delete
           </p>
         </div>
-        <Link href="/dashboard/strategies/upload">
+        <Link href="/strategies/upload">
           <Button className="w-full sm:w-auto">
             <Plus className="h-4 w-4 mr-2" />
             Upload New Strategy
@@ -330,7 +330,7 @@ export default function StrategyManagementPage() {
                 }
               </p>
               {strategies.length === 0 && (
-                <Link href="/dashboard/strategies/upload">
+                <Link href="/strategies/upload">
                   <Button>
                     <Plus className="h-4 w-4 mr-2" />
                     Upload Strategy
