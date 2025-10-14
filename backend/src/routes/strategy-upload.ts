@@ -65,12 +65,12 @@ async function executeLiveTraderBacktest(
     // Create/get isolated Python environment with uv
     logger.info('Setting up isolated Python environment for backtest...');
     const env = uvEnvManager.ensureEnv(requirementsTxt);
-    
+
     if (!fs.existsSync(env.pythonPath)) {
       logger.error(`Python path not found: ${env.pythonPath}`);
       return reject(new Error('Failed to create Python environment for backtest'));
     }
-    
+
     if (env.created) {
       logger.info(`Created new Python environment: ${env.pythonPath}`);
     } else {
@@ -942,15 +942,15 @@ router.post('/cli-upload', authenticate, async (req: AuthenticatedRequest, res, 
       try {
         // Get requirements.txt content (required for uv environment)
         const requirementsTxt = requirements || 'pandas>=2.0.0\nnumpy>=1.24.0\npandas-ta>=0.3.14b\nrequests>=2.31.0';
-        
+
         // Execute LiveTrader backtest in isolated uv environment
         const pair = parsedConfig.executionConfig?.symbol || parsedConfig.pair || parsedConfig.pairs?.[0];
         const resolution = parsedConfig.resolution || parsedConfig.timeframes?.[0] || '5';
-        
+
         logger.debug(`Backtest config - pair: ${pair}, resolution: ${resolution}, parsed: ${JSON.stringify(parsedConfig)}`);
-        
+
         const backtestResult = await executeLiveTraderBacktest(
-          strategyCode, 
+          strategyCode,
           requirementsTxt,
           {
             pair: pair,
@@ -1383,5 +1383,305 @@ function incrementVersion(currentVersion: string): string {
   const patch = parseInt(parts[2] || '0') + 1;
   return `${parts[0]}.${parts[1]}.${patch}`;
 }
+
+// ============================================================================
+// SIMPLE UPLOAD ENDPOINT - For quant team's complete strategy files
+// ============================================================================
+router.post('/upload-simple', authenticate, upload.single('strategyFile'), async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = req.userId!;
+    const file = req.file;
+    const configJson = req.body.config;
+
+    if (!file) {
+      return res.status(400).json({
+        error: 'No strategy file uploaded'
+      });
+    }
+
+    if (!configJson) {
+      return res.status(400).json({
+        error: 'Config JSON is required'
+      });
+    }
+
+    // Parse minimal config
+    let config;
+    try {
+      config = typeof configJson === 'string' ? JSON.parse(configJson) : configJson;
+    } catch (error) {
+      return res.status(400).json({
+        error: 'Invalid config JSON'
+      });
+    }
+
+    // Read strategy code
+    const strategyCode = fs.readFileSync(file.path, 'utf8');
+    fs.unlinkSync(file.path); // Clean up
+
+    logger.info(`Simple upload: ${file.originalname} by user ${userId}`);
+
+    // Auto-detect strategy components
+    const hasLiveTrader = strategyCode.includes('class LiveTrader');
+    const hasBacktester = strategyCode.includes('class Backtester');
+    const hasGenerateSignals = strategyCode.includes('def generate_signals_from_strategy');
+
+    // Save strategy to organized directory structure
+    const saveStrategyToFile = (strategyId: string, strategyName: string, code: string) => {
+      try {
+        // Create strategies directory structure: strategies/{strategyId}/
+        const strategiesDir = path.join(__dirname, '../../strategies');
+        const strategyDir = path.join(strategiesDir, strategyId);
+
+        if (!fs.existsSync(strategiesDir)) {
+          fs.mkdirSync(strategiesDir, { recursive: true });
+        }
+
+        if (!fs.existsSync(strategyDir)) {
+          fs.mkdirSync(strategyDir, { recursive: true });
+        }
+
+        // Save strategy file
+        const filename = `${strategyName.replace(/[^a-zA-Z0-9]/g, '_')}.py`;
+        const filepath = path.join(strategyDir, filename);
+        fs.writeFileSync(filepath, code, 'utf8');
+
+        // Create logs directory for this strategy
+        const logsDir = path.join(strategyDir, 'logs');
+        if (!fs.existsSync(logsDir)) {
+          fs.mkdirSync(logsDir, { recursive: true });
+        }
+
+        logger.info(`Strategy saved to: ${filepath}`);
+        return filepath;
+      } catch (error) {
+        logger.error('Failed to save strategy file:', error);
+        return null;
+      }
+    };
+
+    if (!hasLiveTrader) {
+      return res.status(400).json({
+        error: 'Strategy must contain LiveTrader class',
+        hint: 'Expected: class LiveTrader with check_for_new_signal method'
+      });
+    }
+
+    if (!hasGenerateSignals) {
+      return res.status(400).json({
+        error: 'Strategy must contain generate_signals_from_strategy function',
+        hint: 'Expected: def generate_signals_from_strategy(df, params)'
+      });
+    }
+
+    // Extract strategy name from config or filename
+    const strategyName = config.name || file.originalname.replace('.py', '');
+    const strategyCode_db = config.code || generateStrategyCode(strategyName);
+
+    // Check if strategy already exists
+    const existingStrategy = await prisma.strategy.findFirst({
+      where: { code: strategyCode_db }
+    });
+
+    let strategy;
+
+    if (existingStrategy) {
+      // Update existing
+      const newVersion = incrementVersion(existingStrategy.version);
+
+      strategy = await prisma.strategy.update({
+        where: { id: existingStrategy.id },
+        data: {
+          version: newVersion,
+          updatedAt: new Date(),
+          versions: {
+            create: {
+              version: newVersion,
+              strategyCode,
+              configData: config,
+              requirements: config.requirements || null,
+              isValidated: true
+            }
+          }
+        },
+        include: {
+          versions: {
+            orderBy: { createdAt: 'desc' },
+            take: 1
+          }
+        }
+      });
+
+      logger.info(`Strategy updated: ${strategy.id} (v${newVersion})`);
+
+      // Save updated version to file
+      saveStrategyToFile(strategy.id, strategyName, strategyCode);
+    } else {
+      // Create new
+      strategy = await prisma.strategy.create({
+        data: {
+          name: strategyName,
+          code: strategyCode_db,
+          description: config.description || '',
+          detailedDescription: config.detailedDescription || '',
+          author: config.author || 'Unknown',
+          version: '1.0.0',
+          instrument: config.pair || 'B-BTC_USDT',
+          tags: Array.isArray(config.tags) ? config.tags.join(',') : '',
+          strategyType: 'multi_tenant', // Mark as multi-tenant compatible
+          isActive: false, // Will be activated after backtest
+          isApproved: false,
+          isMarketplace: false,
+          supportedPairs: config.supportedPairs ? JSON.stringify(config.supportedPairs) : null,
+          timeframes: config.timeframes ? JSON.stringify(config.timeframes) : null,
+          versions: {
+            create: {
+              version: '1.0.0',
+              strategyCode,
+              configData: config,
+              requirements: config.requirements || null,
+              isValidated: true
+            }
+          }
+        },
+        include: {
+          versions: {
+            orderBy: { createdAt: 'desc' },
+            take: 1
+          }
+        }
+      });
+
+      logger.info(`New strategy created: ${strategy.id}`);
+
+      // Save new strategy to file
+      saveStrategyToFile(strategy.id, strategyName, strategyCode);
+    }
+
+    // Auto-run backtest if Backtester class exists
+    let backtestMetrics = null;
+    let backtestError = null;
+
+    if (hasBacktester) {
+      logger.info('Backtester class detected - running auto-backtest...');
+
+      try {
+        // Spawn Python process to run Backtester.run()
+        const pythonPath = 'python3'; // TODO: Use uv environment
+        const result = await new Promise<any>((resolve, reject) => {
+          const pythonProcess = spawn(pythonPath, ['-c', `
+import json
+import sys
+from io import StringIO
+
+# Execute strategy code
+${strategyCode}
+
+# Run backtest
+settings = ${JSON.stringify({
+            ...config,
+            initial_capital: 10000,
+            pair: config.pair || 'B-BTC_USDT',
+            resolution: config.resolution || '5'
+          })}
+
+backtester = Backtester(settings=settings)
+trades_history = backtester.run()
+
+# Calculate metrics
+if trades_history:
+    import pandas as pd
+    trades_df = pd.DataFrame(trades_history)
+    metrics = calculate_metrics(trades_df, settings['initial_capital'])
+    print(json.dumps({
+        'success': True,
+        'metrics': metrics,
+        'trades_count': len(trades_history)
+    }))
+else:
+    print(json.dumps({'success': False, 'error': 'No trades'}))
+`]);
+
+          let stdout = '';
+          let stderr = '';
+
+          pythonProcess.stdout.on('data', (data) => { stdout += data.toString(); });
+          pythonProcess.stderr.on('data', (data) => { stderr += data.toString(); });
+
+          pythonProcess.on('close', (code) => {
+            if (code !== 0) {
+              reject(new Error(`Backtest failed: ${stderr}`));
+            } else {
+              try {
+                resolve(JSON.parse(stdout));
+              } catch (e) {
+                reject(new Error('Failed to parse backtest output'));
+              }
+            }
+          });
+
+          setTimeout(() => {
+            pythonProcess.kill();
+            reject(new Error('Backtest timeout'));
+          }, 300000); // 5 min timeout
+        });
+
+        if (result.success && result.metrics) {
+          // Update strategy with backtest metrics
+          await prisma.strategy.update({
+            where: { id: strategy.id },
+            data: {
+              winRate: result.metrics.winRate || result.metrics.win_rate || 0,
+              roi: result.metrics.roi || result.metrics.total_return_pct || 0,
+              maxDrawdown: result.metrics.maxDrawdown || result.metrics.max_drawdown_pct || 0,
+              sharpeRatio: result.metrics.sharpeRatio || result.metrics.sharpe_ratio || 0,
+              profitFactor: result.metrics.profitFactor || result.metrics.profit_factor || 0,
+              totalTrades: result.trades_count || 0,
+              isActive: true,
+              isApproved: true,
+              isMarketplace: true
+            }
+          });
+
+          backtestMetrics = result.metrics;
+          logger.info(`Backtest complete: ${result.trades_count} trades`);
+        }
+      } catch (err) {
+        backtestError = err instanceof Error ? err.message : String(err);
+        logger.error('Backtest failed:', backtestError);
+      }
+    }
+
+    res.json({
+      success: true,
+      strategy: {
+        id: strategy.id,
+        name: strategy.name,
+        code: strategy.code,
+        version: strategy.version,
+        isNew: !existingStrategy
+      },
+      detected: {
+        liveTrader: hasLiveTrader,
+        backtester: hasBacktester,
+        generateSignals: hasGenerateSignals
+      },
+      backtest: backtestMetrics,
+      backtestError,
+      message: backtestMetrics
+        ? 'Strategy uploaded and backtested successfully'
+        : 'Strategy uploaded (backtest pending or failed)'
+    });
+
+  } catch (error) {
+    logger.error('Simple upload failed:', error);
+
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+
+    next(error);
+  }
+});
 
 export { router as strategyUploadRoutes };

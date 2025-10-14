@@ -270,8 +270,18 @@ class BatchBacktestRunner:
             return None
 
     def _get_custom_backtest(self, exec_scope: Dict):
-        """Check if strategy has custom backtest() method"""
+        """Check if strategy has custom backtest() method or Backtester class"""
         try:
+            # Look for Backtester class with run() method (quant team's pattern)
+            if 'Backtester' in exec_scope:
+                backtester_class = exec_scope['Backtester']
+                if hasattr(backtester_class, 'run') and callable(getattr(backtester_class, 'run')):
+                    logger.info("Found Backtester class with run() method")
+                    # Return a wrapper that calls Backtester.run()
+                    def wrapper(df, config):
+                        return backtester_class.run(df, config)
+                    return wrapper
+
             # Look for strategy instance with backtest method
             if 'strategy' in exec_scope:
                 strategy_instance = exec_scope['strategy']
