@@ -1490,7 +1490,7 @@ router.post('/upload-simple', authenticate, upload.fields([
     }
 
     // Extract strategy name from config or filename
-    const strategyName = config.name || file.originalname.replace('.py', '');
+    const strategyName = config.name || strategyFile.originalname.replace('.py', '');
     const strategyCode_db = config.code || generateStrategyCode(strategyName);
 
     // Check if strategy already exists
