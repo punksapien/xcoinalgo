@@ -76,16 +76,9 @@ def run_livetrader_backtest(strategy_code: str, config: dict) -> dict:
         if not hasattr(LiveTraderClass, 'backtest'):
             raise ValueError("LiveTrader class must implement a 'backtest()' method")
 
-        # Prepare settings for backtest
-        settings = {
-            'symbol': config.get('symbol', 'B-BTC_USDT'),
-            'api_key': 'BACKTEST_MODE',  # Dummy key for backtest
-            'api_secret': 'BACKTEST_MODE',
-            'leverage': config.get('leverage', 10),
-            'capital': config.get('capital', 10000),
-            'risk_per_trade': config.get('risk_per_trade', 0.02),
-            **config.get('strategy_params', {})
-        }
+        # Use the entire config as settings for LiveTrader
+        # The config already has all necessary fields (pair, resolution, symbol, etc.)
+        settings = config
 
         # Instantiate the LiveTrader
         logger.info(f"Instantiating LiveTrader with settings: {settings}")
