@@ -23,6 +23,14 @@ const REQUIREMENTS_FILE = path.join(process.cwd(), 'backend', 'python', 'strateg
 // Required Python version
 const REQUIRED_PYTHON_VERSION = '3.12.12';
 
+// UV binary path - try common locations
+const UV_PATHS = [
+  process.env.UV_PATH,
+  '/home/ubuntu/.local/bin/uv',
+  path.join(process.env.HOME || '', '.local', 'bin', 'uv'),
+  'uv', // fallback to PATH
+].filter(Boolean);
+
 export interface EnvironmentInfo {
   strategyId: string;
   environmentPath: string;
@@ -33,9 +41,29 @@ export interface EnvironmentInfo {
 
 export class StrategyEnvironmentManager {
   private environmentCache: Map<string, EnvironmentInfo> = new Map();
+  private uvPath: string | null = null;
 
   constructor() {
     this.initializeBaseDirectory();
+    this.findUvBinary();
+  }
+
+  /**
+   * Find the uv binary in common locations
+   */
+  private async findUvBinary(): Promise<void> {
+    for (const uvPath of UV_PATHS) {
+      try {
+        const { stdout } = await exec(`${uvPath} --version`);
+        logger.info(`Found uv at: ${uvPath} (${stdout.trim()})`);
+        this.uvPath = uvPath as string;
+        return;
+      } catch (error) {
+        // Try next path
+        continue;
+      }
+    }
+    logger.warn('uv binary not found in common locations. Environment creation will fail.');
   }
 
   /**
@@ -70,13 +98,17 @@ export class StrategyEnvironmentManager {
    * Check if uv is installed
    */
   async checkUvInstalled(): Promise<boolean> {
-    try {
-      await exec('uv --version');
-      return true;
-    } catch (error) {
-      logger.error('uv is not installed. Install it with: curl -LsSf https://astral.sh/uv/install.sh | sh');
-      return false;
+    if (!this.uvPath) {
+      // Try to find it again
+      await this.findUvBinary();
     }
+
+    if (this.uvPath) {
+      return true;
+    }
+
+    logger.error('uv is not installed. Install it with: curl -LsSf https://astral.sh/uv/install.sh | sh');
+    return false;
   }
 
   /**
@@ -293,7 +325,10 @@ export class StrategyEnvironmentManager {
    */
   private runCommand(command: string, args: string[], cwd: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      const process = spawn(command, args, { cwd });
+      // Use the found uv path if command is 'uv'
+      const actualCommand = command === 'uv' && this.uvPath ? this.uvPath : command;
+
+      const process = spawn(actualCommand, args, { cwd });
 
       let stderr = '';
 

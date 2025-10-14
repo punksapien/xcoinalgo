@@ -1,11 +1,12 @@
-# Python 3.12.12 required for pandas_ta compatibility
+# Python 3.12.12 required
 # Base requirements for all trading strategies
+# Versions will be resolved automatically by uv
 
 # Core dependencies
 requests>=2.31.0
-pandas==2.2.2
+pandas>=2.0.0
 pandas-ta>=0.3.14b
-numpy==1.26.4
+numpy>=1.24.0
 
 # Optional but commonly used
 python-dateutil>=2.8.2
