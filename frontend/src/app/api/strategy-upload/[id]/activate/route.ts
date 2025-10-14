@@ -4,16 +4,17 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:300
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const authHeader = request.headers.get('authorization');
 
     if (!authHeader) {
       return NextResponse.json({ error: 'Authorization header required' }, { status: 401 });
     }
 
-    const response = await fetch(`${BACKEND_URL}/api/strategy-upload/${params.id}/activate`, {
+    const response = await fetch(`${BACKEND_URL}/api/strategy-upload/${id}/activate`, {
       method: 'PATCH',
       headers: {
         'Authorization': authHeader,
