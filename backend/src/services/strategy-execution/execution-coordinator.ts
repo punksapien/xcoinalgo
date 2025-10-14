@@ -193,11 +193,27 @@ class ExecutionCoordinator {
       if (isLiveTrader) {
         console.log('✨ Detected LiveTrader format - executing with multi-tenant support')
 
+        // Filter out subscribers who already have OPEN positions
+        const { filtered: eligibleSubscribers, skipped: skippedCount } =
+          await this.filterSubscribersWithoutOpenPositions(subscribers, symbol)
+
+        logger.info(`Filtered subscribers: ${eligibleSubscribers.length} eligible, ${skippedCount} skipped (existing positions)`)
+
+        if (eligibleSubscribers.length === 0) {
+          console.log('No eligible subscribers after filtering - all have open positions')
+          return {
+            success: true,
+            subscribersProcessed: 0,
+            tradesGenerated: 0,
+            executionTime: Date.now() - startTime,
+          }
+        }
+
         // Execute LiveTrader format (Python handles all order placement)
         pythonResult = await this.executeLiveTraderStrategy(
           strategyId,
           strategySettings,
-          subscribers,
+          eligibleSubscribers,  // Pass filtered list
           strategyCode
         )
 
@@ -664,6 +680,36 @@ class ExecutionCoordinator {
   }
 
   /**
+   * Filter out subscribers who already have OPEN positions
+   */
+  private async filterSubscribersWithoutOpenPositions(
+    subscribers: any[],
+    symbol: string
+  ): Promise<{ filtered: any[], skipped: number }> {
+    const filtered = []
+    let skipped = 0
+
+    for (const subscriber of subscribers) {
+      const existingPosition = await prisma.trade.findFirst({
+        where: {
+          subscriptionId: subscriber.id,
+          symbol: symbol,
+          status: 'OPEN'
+        }
+      })
+
+      if (existingPosition) {
+        logger.info(`Subscriber ${subscriber.userId} already has OPEN position for ${symbol} - skipping`)
+        skipped++
+      } else {
+        filtered.push(subscriber)
+      }
+    }
+
+    return { filtered, skipped }
+  }
+
+  /**
    * Process signal for individual subscriber
    */
   private async processSignalForSubscriber(
@@ -690,6 +736,20 @@ class ExecutionCoordinator {
 
     // Skip HOLD signals
     if (signal.signal === 'HOLD') {
+      return false
+    }
+
+    // Check for existing OPEN position
+    const existingPosition = await prisma.trade.findFirst({
+      where: {
+        subscriptionId: subscription.id,
+        symbol: strategySettings.symbol,
+        status: 'OPEN'
+      }
+    })
+
+    if (existingPosition) {
+      logger.info(`Subscriber ${subscription.id} already has OPEN position - skipping`)
       return false
     }
 
@@ -754,6 +814,11 @@ class ExecutionCoordinator {
           orderId: orderResult.orderId,
           metadata: {
             ...signal.metadata,
+            // Store entry signal and strategy context for exit logic
+            entrySignal: signal.signal,  // Store the signal that opened this trade
+            strategyId: subscription.strategyId,
+            hold_period_hrs: strategySettings.hold_period_hrs || 24,
+            // Order tracking
             orderId: orderResult.orderId,
             positionId: orderResult.positionId,
             orderStatus: orderResult.orderStatus,

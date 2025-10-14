@@ -396,6 +396,7 @@ router.get('/strategies', authenticate, async (req: AuthenticatedRequest, res, n
           author: true,
           version: true,
           isActive: true,
+          isMarketplace: true,
           tags: true,
           instrument: true,
           createdAt: true,
@@ -1772,6 +1773,121 @@ router.post('/upload-simple', authenticate, upload.fields([
       fs.unlinkSync(req.file.path);
     }
 
+    next(error);
+  }
+});
+
+// Get strategy logs
+router.get('/:id/logs', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = req.userId!;
+    const strategyId = req.params.id;
+    const { limit = 50 } = req.query;  // Default to last 50 logs
+
+    // Check if strategy exists
+    const strategy = await prisma.strategy.findUnique({
+      where: { id: strategyId }
+    });
+
+    if (!strategy) {
+      return res.status(404).json({
+        error: 'Strategy not found'
+      });
+    }
+
+    // Find the strategy directory
+    const strategiesDir = path.join(__dirname, '../../strategies');
+    const strategyDir = path.join(strategiesDir, strategyId);
+    const logsDir = path.join(strategyDir, 'logs');
+
+    if (!fs.existsSync(logsDir)) {
+      return res.json({
+        success: true,
+        logs: [],
+        message: 'No logs found for this strategy (not yet executed)'
+      });
+    }
+
+    // Get all log files sorted by modification time (most recent first)
+    const logFiles = fs.readdirSync(logsDir)
+      .filter(file => file.startsWith('trading_') && file.endsWith('.log'))
+      .map(file => ({
+        name: file,
+        path: path.join(logsDir, file),
+        mtime: fs.statSync(path.join(logsDir, file)).mtime
+      }))
+      .sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
+
+    // Get the most recent log file
+    if (logFiles.length === 0) {
+      return res.json({
+        success: true,
+        logs: [],
+        message: 'No log files found'
+      });
+    }
+
+    const latestLogFile = logFiles[0];
+    const logContent = fs.readFileSync(latestLogFile.path, 'utf8');
+    const logLines = logContent.split('\n')
+      .filter(line => line.trim().length > 0)
+      .slice(-Number(limit));  // Get last N lines
+
+    // Parse log lines into structured format
+    const parsedLogs = logLines.map(line => {
+      // Format: 2025-10-14 13:45:00 - INFO - Message here
+      const match = line.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) - (\w+) - (.+)$/);
+      if (match) {
+        return {
+          timestamp: match[1],
+          level: match[2],
+          message: match[3]
+        };
+      }
+      return { timestamp: '', level: 'INFO', message: line };
+    });
+
+    // Also get error CSV if it exists
+    const errorCsvPath = path.join(logsDir, 'error_log.csv');
+    let errors = [];
+
+    if (fs.existsSync(errorCsvPath)) {
+      const errorContent = fs.readFileSync(errorCsvPath, 'utf8');
+      const errorLines = errorContent.split('\n')
+        .slice(1)  // Skip header
+        .filter(line => line.trim().length > 0)
+        .slice(-Number(limit));  // Get last N errors
+
+      errors = errorLines.map(line => {
+        const parts = line.split(',');
+        return {
+          timestamp: parts[0] || '',
+          level: parts[1] || 'ERROR',
+          message: parts[2] || '',
+          function: parts[3] || '',
+          line: parts[4] || ''
+        };
+      });
+    }
+
+    res.json({
+      success: true,
+      logs: parsedLogs,
+      errors,
+      metadata: {
+        totalLogFiles: logFiles.length,
+        latestLogFile: latestLogFile.name,
+        latestLogTime: latestLogFile.mtime,
+        logFilesAvailable: logFiles.map(f => ({
+          name: f.name,
+          timestamp: f.mtime,
+          size: fs.statSync(f.path).size
+        }))
+      }
+    });
+
+  } catch (error) {
+    logger.error('Failed to retrieve strategy logs:', error);
     next(error);
   }
 });

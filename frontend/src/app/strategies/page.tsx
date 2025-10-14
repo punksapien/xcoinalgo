@@ -43,6 +43,7 @@ interface Strategy {
   author: string;
   version: string;
   isActive: boolean;
+  isMarketplace: boolean;
   tags: string;
   instrument: string;
   createdAt: string;
@@ -52,6 +53,8 @@ interface Strategy {
   maxDrawdown?: number;
   totalTrades?: number;
   deploymentCount: number;
+  backtestStatus?: 'PROCESSING' | 'DONE' | 'FAILED';
+  backtestError?: string;
 }
 
 export default function StrategyManagementPage() {
@@ -69,6 +72,24 @@ export default function StrategyManagementPage() {
   useEffect(() => {
     fetchStrategies();
   }, [statusFilter, token]);
+
+  // Poll for strategies with PROCESSING status
+  useEffect(() => {
+    const hasProcessingStrategies = strategies.some(s =>
+      !s.isActive && !s.isMarketplace && (s.winRate == null || s.winRate === undefined)
+    );
+
+    if (!hasProcessingStrategies) {
+      return;
+    }
+
+    // Poll every 5 seconds if there are processing strategies
+    const intervalId = setInterval(() => {
+      fetchStrategies();
+    }, 5000);
+
+    return () => clearInterval(intervalId);
+  }, [strategies]);
 
   const fetchStrategies = async () => {
     try {
@@ -198,6 +219,40 @@ export default function StrategyManagementPage() {
   const formatPercentage = (value?: number) => {
     if (value == null) return 'N/A';
     return `${value.toFixed(1)}%`;
+  };
+
+  const getBacktestStatusBadge = (strategy: Strategy) => {
+    // Strategy is backtesting if it's inactive and not in marketplace and has no metrics
+    const isBacktesting = !strategy.isActive && !strategy.isMarketplace && (strategy.winRate == null || strategy.winRate === undefined);
+
+    if (isBacktesting) {
+      return (
+        <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+          Backtesting...
+        </Badge>
+      );
+    }
+
+    // Check if backtest failed
+    if (!strategy.isMarketplace && strategy.winRate === undefined) {
+      return (
+        <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
+          <AlertCircle className="h-3 w-3 mr-1" />
+          Backtest Failed
+        </Badge>
+      );
+    }
+
+    // Normal status badge
+    return (
+      <Badge
+        variant={strategy.isActive ? "default" : "secondary"}
+        className={strategy.isActive ? "bg-green-500" : ""}
+      >
+        {strategy.isActive ? 'Active' : 'Inactive'}
+      </Badge>
+    );
   };
 
   if (loading) {
@@ -369,12 +424,7 @@ export default function StrategyManagementPage() {
                         </div>
                       </td>
                       <td className="py-4 px-4">
-                        <Badge
-                          variant={strategy.isActive ? "default" : "secondary"}
-                          className={strategy.isActive ? "bg-green-500" : ""}
-                        >
-                          {strategy.isActive ? 'Active' : 'Inactive'}
-                        </Badge>
+                        {getBacktestStatusBadge(strategy)}
                       </td>
                       <td className="py-4 px-4">
                         <div className="space-y-1 text-sm">

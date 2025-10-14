@@ -28,6 +28,7 @@ import numpy as np
 from decimal import Decimal, ROUND_DOWN
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone, timedelta
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 warnings.filterwarnings("ignore")
 
@@ -294,7 +295,15 @@ class CsvHandler(logging.FileHandler):
 
 
 def setup_logging():
-    """Setup logging configuration"""
+    """
+    Setup logging configuration with automatic strategy directory detection.
+
+    Logs are automatically written to the same directory where the strategy file lives:
+    - backend/strategies/{strategyId}/logs/trading_{timestamp}.log
+    - backend/strategies/{strategyId}/logs/error_log.csv
+
+    If running standalone (not in backend/strategies/), falls back to current directory.
+    """
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
     if logger.hasHandlers():
@@ -302,20 +311,54 @@ def setup_logging():
 
     formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 
-    # Console handler
+    # Auto-detect strategy directory by looking at the main module's file path
+    try:
+        # Get the directory where this strategy file is located
+        strategy_file_path = os.path.abspath(sys.modules['__main__'].__file__)
+        strategy_dir = os.path.dirname(strategy_file_path)
+
+        # Check if we're running from backend/strategies/{strategyId}/ structure
+        # If so, create logs/ subdirectory there
+        if 'strategies' in strategy_dir:
+            logs_dir = os.path.join(strategy_dir, 'logs')
+        else:
+            # Fallback: use current directory for standalone testing
+            logs_dir = 'logs'
+
+        # Create logs directory if it doesn't exist
+        os.makedirs(logs_dir, exist_ok=True)
+
+        # Timestamped log filename for each run
+        timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        log_filename = os.path.join(logs_dir, f'trading_{timestamp}.log')
+        csv_filename = os.path.join(logs_dir, 'error_log.csv')
+
+    except Exception as e:
+        # Fallback to current directory if detection fails
+        print(f"Warning: Could not detect strategy directory ({e}), using current directory")
+        logs_dir = 'logs'
+        os.makedirs(logs_dir, exist_ok=True)
+        timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        log_filename = os.path.join(logs_dir, f'trading_{timestamp}.log')
+        csv_filename = os.path.join(logs_dir, 'error_log.csv')
+
+    # Console handler (for real-time monitoring)
     ch = logging.StreamHandler(sys.stdout)
     ch.setFormatter(formatter)
     logger.addHandler(ch)
 
-    # File handler
-    fh = logging.FileHandler('trading_bot.log', mode='a')
+    # File handler (timestamped, for historical record)
+    fh = logging.FileHandler(log_filename, mode='a')
     fh.setFormatter(formatter)
     logger.addHandler(fh)
 
-    # CSV handler for errors
-    csv_h = CsvHandler('logs/error_log.csv')
+    # CSV handler for errors (cumulative across all runs)
+    csv_h = CsvHandler(csv_filename)
     csv_h.setLevel(logging.ERROR)
     logger.addHandler(csv_h)
+
+    logger.info(f"Logging initialized: {log_filename}")
+    logger.info(f"Error CSV: {csv_filename}")
 
 
 # ==============================================================================
@@ -418,6 +461,82 @@ class LiveTrader:
             return pd.DataFrame()
 
 
+    def _process_subscriber_order(
+        self,
+        subscriber: Dict[str, Any],
+        signal: str,
+        trade_type: str,
+        candle: pd.Series
+    ) -> Dict[str, Any]:
+        """
+        Process order placement for a single subscriber (thread-safe).
+
+        Args:
+            subscriber: Subscriber dict with user_id, api_key, api_secret, etc.
+            signal: 'buy' or 'sell'
+            trade_type: 'trend' or 'reversion'
+            candle: Latest candle data with signal info
+
+        Returns:
+            Dict with status ('success' or 'error'), user_id, and optional error message
+        """
+        user_id = subscriber.get('user_id', 'unknown')
+
+        try:
+            logging.info(f"Processing subscriber: {user_id}")
+
+            # Create API client for THIS subscriber
+            client = CoinDCXClient(
+                key=subscriber['api_key'],
+                secret=subscriber['api_secret']
+            )
+
+            # Get THIS subscriber's wallet balance
+            wallet = next(
+                (w for w in client.get_wallet_details()
+                 if w['currency_short_name'] == self.settings['margin_currency']),
+                None
+            )
+            if not wallet:
+                raise Exception(f"Wallet not found for {user_id}")
+
+            # Calculate position size based on THIS subscriber's capital and risk
+            balance = float(wallet['balance'])
+            capital = subscriber.get('capital', balance)
+            risk_per_trade = subscriber.get('risk_per_trade', 0.02)
+            leverage = subscriber.get('leverage', 10)
+
+            risk_amount = capital * risk_per_trade
+            notional_value = risk_amount * leverage
+            quantity = notional_value / candle['close']
+            adj_qty = (Decimal(str(quantity)) // self.qty_increment) * self.qty_increment
+
+            if adj_qty <= 0:
+                raise Exception(f"Calculated quantity is zero")
+
+            # Place order for THIS subscriber
+            logging.info(
+                f"Placing {signal.upper()} order for {user_id}: "
+                f"{adj_qty} units @ {leverage}x leverage"
+            )
+
+            client.create_order(
+                pair=self.settings['pair'],
+                side=signal,
+                order_type="market_order",
+                total_quantity=float(adj_qty),
+                leverage=leverage,
+                margin_currency_short_name=self.settings['margin_currency']
+            )
+
+            logging.info(f"✅ Order placed successfully for {user_id}")
+            return {'status': 'success', 'user_id': user_id}
+
+        except Exception as e:
+            logging.error(f"❌ Failed to place order for {user_id}: {e}", exc_info=True)
+            return {'status': 'error', 'user_id': user_id, 'error': str(e)}
+
+
     def check_for_new_signal(self, df: pd.DataFrame):
         """
         Check for new trading signals and place orders for ALL subscribers.
@@ -458,73 +577,41 @@ class LiveTrader:
             logging.info("No trading signal detected. Skipping.")
             return
 
-        # Signal detected! Place orders for all subscribers
+        # Signal detected! Place orders for all subscribers (CONCURRENTLY)
         logging.info(
             f"🎯 {signal.upper()} ({trade_type}) signal detected at {candle['close']:.4f}"
         )
         logging.info(f"Processing orders for {len(self.subscribers)} subscribers...")
+        logging.info("Using ThreadPoolExecutor for concurrent order placement...")
 
         successful_orders = 0
         failed_orders = 0
 
-        for subscriber in self.subscribers:
-            try:
-                user_id = subscriber.get('user_id', 'unknown')
-                logging.info(f"\n{'='*60}")
-                logging.info(f"Processing subscriber: {user_id}")
+        # Use ThreadPoolExecutor for concurrent order placement
+        # Max 10 workers to avoid overwhelming the exchange API
+        max_workers = min(10, len(self.subscribers))
 
-                # Create API client for THIS subscriber
-                client = CoinDCXClient(
-                    key=subscriber['api_key'],
-                    secret=subscriber['api_secret']
-                )
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all subscriber orders to the thread pool
+            future_to_subscriber = {
+                executor.submit(
+                    self._process_subscriber_order,
+                    subscriber,
+                    signal,
+                    trade_type,
+                    candle
+                ): subscriber
+                for subscriber in self.subscribers
+            }
 
-                # Get THIS subscriber's wallet balance
-                wallet = next(
-                    (w for w in client.get_wallet_details()
-                     if w['currency_short_name'] == self.settings['margin_currency']),
-                    None
-                )
-                if not wallet:
-                    raise Exception(f"Wallet not found for {user_id}")
+            # Collect results as they complete
+            for future in as_completed(future_to_subscriber):
+                result = future.result()
 
-                # Calculate position size based on THIS subscriber's capital and risk
-                balance = float(wallet['balance'])
-                capital = subscriber.get('capital', balance)  # Use specified capital or wallet balance
-                risk_per_trade = subscriber.get('risk_per_trade', 0.02)
-                leverage = subscriber.get('leverage', 10)
-
-                risk_amount = capital * risk_per_trade
-                notional_value = risk_amount * leverage
-                quantity = notional_value / candle['close']
-                adj_qty = (Decimal(str(quantity)) // self.qty_increment) * self.qty_increment
-
-                if adj_qty <= 0:
-                    logging.warning(f"Calculated quantity is zero for {user_id}. Skipping.")
+                if result['status'] == 'success':
+                    successful_orders += 1
+                else:
                     failed_orders += 1
-                    continue
-
-                # Place order for THIS subscriber
-                logging.info(
-                    f"Placing {signal.upper()} order for {user_id}: "
-                    f"{adj_qty} units @ {leverage}x leverage"
-                )
-
-                client.create_order(
-                    pair=self.settings['pair'],
-                    side=signal,
-                    order_type="market_order",
-                    total_quantity=float(adj_qty),
-                    leverage=leverage,
-                    margin_currency_short_name=self.settings['margin_currency']
-                )
-
-                logging.info(f"✅ Order placed successfully for {user_id}")
-                successful_orders += 1
-
-            except Exception as e:
-                logging.error(f"❌ Failed to place order for {user_id}: {e}", exc_info=True)
-                failed_orders += 1
 
         # Summary
         logging.info(f"\n{'='*60}")

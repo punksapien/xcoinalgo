@@ -103,8 +103,152 @@ class OrderManager {
           apiSecret
         );
       }
+
+      // Check time-based exit
+      const timeExitTriggered = await this.checkTimeBasedExit(trade)
+      if (timeExitTriggered) return
+
+      // Check opposite signal exit
+      const oppositeSignalTriggered = await this.checkOppositeSignalExit(trade)
+      if (oppositeSignalTriggered) return
     } catch (error) {
       logger.error(`Failed to monitor trade ${tradeId}:`, error);
+    }
+  }
+
+  /**
+   * Check if trade should be closed due to time limit
+   */
+  private async checkTimeBasedExit(trade: any): Promise<boolean> {
+    const hoursOpen = (Date.now() - trade.createdAt.getTime()) / 3600000
+
+    // Get hold period from trade metadata (stored at entry time)
+    const metadata = trade.metadata as any
+    const holdPeriod = metadata?.hold_period_hrs || 24
+
+    if (hoursOpen >= holdPeriod) {
+      logger.info(`Trade ${trade.id} hit time exit (${hoursOpen.toFixed(1)}h >= ${holdPeriod}h)`)
+      await this.closeTradeManually(trade, 'time_exit')
+      return true
+    }
+
+    return false
+  }
+
+  /**
+   * Check if trade should be closed due to opposite signal
+   * Uses signal stored in trade metadata to avoid race conditions
+   */
+  private async checkOppositeSignalExit(trade: any): Promise<boolean> {
+    try {
+      const metadata = trade.metadata as any
+
+      // Get the signal that opened this trade
+      const entrySignal = metadata?.entrySignal
+      if (!entrySignal) {
+        logger.warn(`Trade ${trade.id} missing entrySignal in metadata`)
+        return false
+      }
+
+      // Get latest execution for this strategy
+      const latestExecution = await prisma.strategyExecution.findFirst({
+        where: {
+          strategyId: metadata?.strategyId || trade.subscription.strategyId,
+          status: 'SUCCESS',
+          executedAt: {
+            gt: trade.createdAt  // Only signals AFTER trade was opened
+          }
+        },
+        orderBy: { executedAt: 'desc' },
+        take: 1
+      })
+
+      if (!latestExecution || !latestExecution.signalType) {
+        return false  // No new signal since trade opened
+      }
+
+      const latestSignal = latestExecution.signalType
+
+      // Check if new signal is opposite to entry signal
+      const isOppositeSignal =
+        (entrySignal === 'LONG' && latestSignal === 'SHORT') ||
+        (entrySignal === 'SHORT' && latestSignal === 'LONG')
+
+      if (isOppositeSignal) {
+        logger.info(
+          `Trade ${trade.id} closing on opposite signal ` +
+          `(entry: ${entrySignal}, latest: ${latestSignal})`
+        )
+        await this.closeTradeManually(trade, 'opposite_signal')
+        return true
+      }
+
+      return false
+    } catch (error) {
+      logger.error('Failed to check opposite signal exit:', error)
+      return false
+    }
+  }
+
+  /**
+   * Close trade manually with market order
+   */
+  private async closeTradeManually(
+    trade: any,
+    exitReason: string
+  ): Promise<void> {
+    try {
+      const { apiKey, apiSecret } = trade.subscription.brokerCredential
+
+      if (!apiKey || !apiSecret) {
+        logger.error(`Missing credentials for trade ${trade.id}`)
+        return
+      }
+
+      // Place closing market order
+      logger.info(`Closing trade ${trade.id} manually (${exitReason})`)
+
+      const closeOrder = await CoinDCXClient.placeMarketOrder(
+        apiKey,
+        apiSecret,
+        {
+          market: CoinDCXClient.normalizeMarket(trade.symbol),
+          side: trade.side === 'LONG' ? 'sell' : 'buy',
+          total_quantity: trade.quantity,
+          client_order_id: `xcoin_close_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+        }
+      )
+
+      // Cancel any pending SL/TP orders
+      await this.cancelTradeOrders(trade.id, apiKey, apiSecret)
+
+      // Calculate P&L
+      const exitPrice = closeOrder.avg_price || trade.entryPrice
+      const pnl = this.calculatePnl(trade.side, trade.entryPrice, exitPrice, trade.quantity)
+
+      // Update trade record
+      await prisma.trade.update({
+        where: { id: trade.id },
+        data: {
+          status: 'CLOSED',
+          exitPrice,
+          exitedAt: new Date(),
+          exitReason,
+          pnl,
+          pnlPct: (pnl / (trade.entryPrice * trade.quantity)) * 100,
+          metadata: {
+            ...(trade.metadata as any),
+            exitType: 'MANUAL',
+            exitReason,
+            closeOrderId: closeOrder.id
+          }
+        }
+      })
+
+      logger.info(`Trade ${trade.id} closed: P&L ${pnl.toFixed(2)} (${exitReason})`)
+    } catch (error) {
+      logger.error(`Failed to close trade ${trade.id} manually:`, error)
+      throw error
     }
   }
 
