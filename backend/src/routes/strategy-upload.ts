@@ -151,11 +151,11 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage,
   fileFilter: (req, file, cb) => {
-    // Only allow Python files
-    if (file.mimetype === 'text/x-python' || file.originalname.endsWith('.py')) {
+    // Allow Python files and requirements.txt
+    if (file.mimetype === 'text/x-python' || file.originalname.endsWith('.py') || file.originalname === 'requirements.txt' || file.mimetype === 'text/plain') {
       cb(null, true);
     } else {
-      cb(new Error('Only Python (.py) files are allowed'));
+      cb(new Error('Only Python (.py) and requirements.txt files are allowed'));
     }
   },
   limits: {
@@ -1387,13 +1387,16 @@ function incrementVersion(currentVersion: string): string {
 // ============================================================================
 // SIMPLE UPLOAD ENDPOINT - For quant team's complete strategy files
 // ============================================================================
-router.post('/upload-simple', authenticate, upload.single('strategyFile'), async (req: AuthenticatedRequest, res, next) => {
+router.post('/upload-simple', authenticate, upload.fields([
+  { name: 'strategyFile', maxCount: 1 },
+  { name: 'requirementsFile', maxCount: 1 }
+]), async (req: AuthenticatedRequest, res, next) => {
   try {
     const userId = req.userId!;
-    const file = req.file;
+    const files = req.files as { [fieldname: string]: Express.Multer.File[] };
     const configJson = req.body.config;
 
-    if (!file) {
+    if (!files || !files.strategyFile || files.strategyFile.length === 0) {
       return res.status(400).json({
         error: 'No strategy file uploaded'
       });
@@ -1416,10 +1419,22 @@ router.post('/upload-simple', authenticate, upload.single('strategyFile'), async
     }
 
     // Read strategy code
-    const strategyCode = fs.readFileSync(file.path, 'utf8');
-    fs.unlinkSync(file.path); // Clean up
+    const strategyFile = files.strategyFile[0];
+    const strategyCode = fs.readFileSync(strategyFile.path, 'utf8');
+    fs.unlinkSync(strategyFile.path); // Clean up
 
-    logger.info(`Simple upload: ${file.originalname} by user ${userId}`);
+    // Read requirements.txt if provided
+    let requirementsTxt = 'pandas>=2.0.0\nnumpy>=1.24.0\npandas-ta>=0.3.14b\nrequests>=2.31.0'; // Default
+    if (files.requirementsFile && files.requirementsFile.length > 0) {
+      const reqFile = files.requirementsFile[0];
+      requirementsTxt = fs.readFileSync(reqFile.path, 'utf8');
+      fs.unlinkSync(reqFile.path); // Clean up
+      logger.info(`Using custom requirements.txt with ${requirementsTxt.split('\n').length} packages`);
+    } else {
+      logger.info('No requirements.txt provided, using defaults');
+    }
+
+    logger.info(`Simple upload: ${strategyFile.originalname} by user ${userId}`);
 
     // Auto-detect strategy components
     const hasLiveTrader = strategyCode.includes('class LiveTrader');
@@ -1563,88 +1578,54 @@ router.post('/upload-simple', authenticate, upload.single('strategyFile'), async
     let backtestError = null;
 
     if (hasBacktester) {
-      logger.info('Backtester class detected - running auto-backtest...');
+      logger.info('Backtester class detected - running auto-backtest with uv environment...');
 
       try {
-        // Spawn Python process to run Backtester.run()
-        const pythonPath = 'python3'; // TODO: Use uv environment
-        const result = await new Promise<any>((resolve, reject) => {
-          const pythonProcess = spawn(pythonPath, ['-c', `
-import json
-import sys
-from io import StringIO
+        // Use executeLiveTraderBacktest which handles uv environment setup
+        const pair = config.pair || 'B-BTC_USDT';
+        const resolution = config.resolution || '5';
 
-# Execute strategy code
-${strategyCode}
+        const backtestResult = await executeLiveTraderBacktest(
+          strategyCode,
+          requirementsTxt,
+          {
+            pair: pair,
+            resolution: resolution,
+            symbol: pair,
+            leverage: config.leverage || 10,
+            capital: config.initial_capital || 10000,
+            risk_per_trade: config.risk_per_trade || 0.02,
+            api_key: 'BACKTEST_MODE',
+            api_secret: 'BACKTEST_MODE'
+          }
+        );
 
-# Run backtest
-settings = ${JSON.stringify({
-            ...config,
-            initial_capital: 10000,
-            pair: config.pair || 'B-BTC_USDT',
-            resolution: config.resolution || '5'
-          })}
-
-backtester = Backtester(settings=settings)
-trades_history = backtester.run()
-
-# Calculate metrics
-if trades_history:
-    import pandas as pd
-    trades_df = pd.DataFrame(trades_history)
-    metrics = calculate_metrics(trades_df, settings['initial_capital'])
-    print(json.dumps({
-        'success': True,
-        'metrics': metrics,
-        'trades_count': len(trades_history)
-    }))
-else:
-    print(json.dumps({'success': False, 'error': 'No trades'}))
-`]);
-
-          let stdout = '';
-          let stderr = '';
-
-          pythonProcess.stdout.on('data', (data) => { stdout += data.toString(); });
-          pythonProcess.stderr.on('data', (data) => { stderr += data.toString(); });
-
-          pythonProcess.on('close', (code) => {
-            if (code !== 0) {
-              reject(new Error(`Backtest failed: ${stderr}`));
-            } else {
-              try {
-                resolve(JSON.parse(stdout));
-              } catch (e) {
-                reject(new Error('Failed to parse backtest output'));
-              }
-            }
-          });
-
-          setTimeout(() => {
-            pythonProcess.kill();
-            reject(new Error('Backtest timeout'));
-          }, 300000); // 5 min timeout
-        });
-
-        if (result.success && result.metrics) {
+        if (backtestResult.success) {
           // Update strategy with backtest metrics
           await prisma.strategy.update({
             where: { id: strategy.id },
             data: {
-              winRate: result.metrics.winRate || result.metrics.win_rate || 0,
-              roi: result.metrics.roi || result.metrics.total_return_pct || 0,
-              maxDrawdown: result.metrics.maxDrawdown || result.metrics.max_drawdown_pct || 0,
-              sharpeRatio: result.metrics.sharpeRatio || result.metrics.sharpe_ratio || 0,
-              profitFactor: result.metrics.profitFactor || result.metrics.profit_factor || 0,
-              totalTrades: result.trades_count || 0,
+              winRate: backtestResult.winRate || 0,
+              roi: backtestResult.roi || 0,
+              maxDrawdown: backtestResult.maxDrawdown || 0,
+              profitFactor: backtestResult.profitFactor || 0,
+              totalTrades: backtestResult.totalTrades || 0,
               isActive: true,
               isApproved: true,
               isMarketplace: true
             }
           });
 
-          backtestMetrics = result.metrics;
-          logger.info(`Backtest complete: ${result.trades_count} trades`);
+          backtestMetrics = {
+            winRate: backtestResult.winRate,
+            roi: backtestResult.roi,
+            maxDrawdown: backtestResult.maxDrawdown,
+            profitFactor: backtestResult.profitFactor,
+            totalTrades: backtestResult.totalTrades
+          };
+          logger.info(`Backtest complete with uv: ${backtestResult.totalTrades} trades, Win Rate: ${backtestResult.winRate}%`);
+        } else {
+          throw new Error(backtestResult.error || 'Backtest failed');
         }
       } catch (err) {
         backtestError = err instanceof Error ? err.message : String(err);

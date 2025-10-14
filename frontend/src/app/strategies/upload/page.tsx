@@ -46,6 +46,7 @@ export default function StrategyUploadPage() {
   const { token } = useAuth();
 
   const [file, setFile] = useState<File | null>(null);
+  const [requirementsFile, setRequirementsFile] = useState<File | null>(null);
   const [config, setConfig] = useState({
     name: '',
     description: '',
@@ -153,6 +154,9 @@ export default function StrategyUploadPage() {
     try {
       const formData = new FormData();
       formData.append('strategyFile', file);
+      if (requirementsFile) {
+        formData.append('requirementsFile', requirementsFile);
+      }
       formData.append('config', JSON.stringify({
         name: config.name,
         description: config.description,
@@ -294,7 +298,7 @@ export default function StrategyUploadPage() {
         <CardContent>
           <div className="space-y-4">
             <div>
-              <Label htmlFor="file">Python Strategy File</Label>
+              <Label htmlFor="file">Python Strategy File *</Label>
               <div className="mt-2">
                 <Input
                   id="file"
@@ -312,6 +316,38 @@ export default function StrategyUploadPage() {
                   <span>({(file.size / 1024).toFixed(1)} KB)</span>
                 </div>
               )}
+            </div>
+
+            <div>
+              <Label htmlFor="requirements">requirements.txt (Optional)</Label>
+              <div className="mt-2">
+                <Input
+                  id="requirements"
+                  type="file"
+                  accept=".txt"
+                  onChange={(e) => {
+                    const selectedFile = e.target.files?.[0];
+                    if (selectedFile && selectedFile.name === 'requirements.txt') {
+                      setRequirementsFile(selectedFile);
+                    } else if (selectedFile) {
+                      showErrorToast('Invalid File', 'Please upload a file named requirements.txt');
+                      e.target.value = '';
+                    }
+                  }}
+                  disabled={uploading}
+                  className="cursor-pointer"
+                />
+              </div>
+              {requirementsFile && (
+                <div className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
+                  <FileCode className="h-4 w-4" />
+                  <span>{requirementsFile.name}</span>
+                  <span>({(requirementsFile.size / 1024).toFixed(1)} KB)</span>
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground mt-1">
+                List Python packages required by your strategy. If not provided, defaults will be used.
+              </p>
             </div>
 
             {/* Validation Status */}
@@ -527,6 +563,8 @@ export default function StrategyUploadPage() {
                 <li>• Must include <code className="bg-blue-100 dark:bg-blue-900/30 px-1 rounded">def generate_signals_from_strategy(df, params)</code></li>
                 <li>• Should include <code className="bg-blue-100 dark:bg-blue-900/30 px-1 rounded">class Backtester</code> with run() method for auto-backtesting</li>
                 <li>• Must be self-contained (include CoinDCXClient if needed)</li>
+                <li>• Upload <code className="bg-blue-100 dark:bg-blue-900/30 px-1 rounded">requirements.txt</code> to specify Python packages and version</li>
+                <li>• Strategies run in isolated uv environments for reproducibility</li>
                 <li>• Will be stored in <code className="bg-blue-100 dark:bg-blue-900/30 px-1 rounded">strategies/</code> directory</li>
               </ul>
             </div>

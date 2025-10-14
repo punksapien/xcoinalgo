@@ -39,3 +39,4 @@ echo ""
 echo "ℹ️  Note: uv is now installed in ~/.cargo/bin/"
 echo "ℹ️  Add 'export PATH=\"\$HOME/.cargo/bin:\$PATH\"' to your ~/.bashrc or ~/.profile for persistence"
 
+

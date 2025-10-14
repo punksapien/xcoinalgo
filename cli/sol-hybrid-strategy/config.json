@@ -7,7 +7,7 @@
 
   "tradingType": "futures",
   "pair": "B-SOL_USDT",
-  "timeframe": "5m",
+  "timeframe": "15m",
   "resolution": "5",
 
   "strategyType": "livetrader",

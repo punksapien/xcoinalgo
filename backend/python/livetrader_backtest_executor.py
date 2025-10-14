@@ -66,36 +66,65 @@ def run_livetrader_backtest(strategy_code: str, config: dict) -> dict:
         logger.info("Executing LiveTrader strategy code...")
         exec(strategy_code, exec_scope)
 
-        # Verify LiveTrader class exists
-        if 'LiveTrader' not in exec_scope:
-            raise ValueError("Strategy code must define a 'LiveTrader' class")
+        # Check for Backtester class first (preferred), then LiveTrader
+        if 'Backtester' in exec_scope:
+            logger.info("Backtester class found - using Backtester.run() method")
+            BacktesterClass = exec_scope['Backtester']
 
-        LiveTraderClass = exec_scope['LiveTrader']
+            # Instantiate the Backtester
+            logger.info(f"Instantiating Backtester with settings: {config}")
+            backtester = BacktesterClass(settings=config)
 
-        # Verify backtest method exists
-        if not hasattr(LiveTraderClass, 'backtest'):
-            raise ValueError("LiveTrader class must implement a 'backtest()' method")
+            # Run backtest - returns list of trades
+            logger.info("Running Backtester.run()...")
+            trades_history = backtester.run()
 
-        # Use the entire config as settings for LiveTrader
-        # The config already has all necessary fields (pair, resolution, symbol, etc.)
-        settings = config
+            if not trades_history:
+                raise ValueError("Backtester.run() returned no trades")
 
-        # Instantiate the LiveTrader
-        logger.info(f"Instantiating LiveTrader with settings: {settings}")
-        trader = LiveTraderClass(settings)
+            # Calculate metrics using the strategy's calculate_metrics function
+            if 'calculate_metrics' not in exec_scope:
+                raise ValueError("Strategy must define calculate_metrics function")
 
-        # Run backtest
-        logger.info("Running backtest...")
-        backtest_results = trader.backtest()
+            calculate_metrics_func = exec_scope['calculate_metrics']
+            trades_df = pd.DataFrame(trades_history)
+            backtest_results = calculate_metrics_func(trades_df, config.get('capital', 10000))
 
-        if not backtest_results or not isinstance(backtest_results, dict):
-            raise ValueError(f"backtest() must return a dict, got {type(backtest_results)}")
+            # Standardize metric names
+            backtest_results = {
+                'win_rate': backtest_results.get('Win Rate (%)', backtest_results.get('winRate', 0)),
+                'total_pnl_pct': backtest_results.get('Total Return (%)', backtest_results.get('roi', 0)),
+                'max_drawdown_pct': backtest_results.get('Max Drawdown (%)', backtest_results.get('maxDrawdown', 0)),
+                'profit_factor': backtest_results.get('Profit Factor', backtest_results.get('profitFactor', 0)),
+                'total_trades': backtest_results.get('Total Trades', backtest_results.get('totalTrades', len(trades_history)))
+            }
 
-        # Validate required metrics
-        required_metrics = ['win_rate', 'total_pnl_pct', 'max_drawdown_pct', 'profit_factor', 'total_trades']
-        missing = [m for m in required_metrics if m not in backtest_results]
-        if missing:
-            raise ValueError(f"Backtest results missing required metrics: {missing}")
+        elif 'LiveTrader' in exec_scope:
+            logger.info("LiveTrader class found - using LiveTrader.backtest() method")
+            LiveTraderClass = exec_scope['LiveTrader']
+
+            # Verify backtest method exists
+            if not hasattr(LiveTraderClass, 'backtest'):
+                raise ValueError("LiveTrader class must implement a 'backtest()' method")
+
+            # Instantiate the LiveTrader
+            logger.info(f"Instantiating LiveTrader with settings: {config}")
+            trader = LiveTraderClass(config)
+
+            # Run backtest
+            logger.info("Running LiveTrader.backtest()...")
+            backtest_results = trader.backtest()
+
+            if not backtest_results or not isinstance(backtest_results, dict):
+                raise ValueError(f"backtest() must return a dict, got {type(backtest_results)}")
+
+            # Validate required metrics
+            required_metrics = ['win_rate', 'total_pnl_pct', 'max_drawdown_pct', 'profit_factor', 'total_trades']
+            missing = [m for m in required_metrics if m not in backtest_results]
+            if missing:
+                raise ValueError(f"Backtest results missing required metrics: {missing}")
+        else:
+            raise ValueError("Strategy code must define either a 'Backtester' or 'LiveTrader' class")
 
         # Return standardized metrics
         metrics = {
@@ -125,9 +154,9 @@ if __name__ == '__main__':
         input_data = json.loads(sys.stdin.read())
         strategy_code = input_data['strategy_code']
         config = input_data['config']
-        
+
         logger.info(f"Received config: {json.dumps(config, indent=2)}")
-        
+
         # Run backtest
         result = run_livetrader_backtest(strategy_code, config)
 
