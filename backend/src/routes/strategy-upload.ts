@@ -853,20 +853,35 @@ router.post('/cli-upload', authenticate, async (req: AuthenticatedRequest, res, 
     // Auto-trigger backtest after successful upload
     let backtestMetrics = null;
     let backtestError: string | null = null;
-    try {
-      logger.info(`Auto-triggering backtest for strategy ${strategy.id}`);
+    
+    // LiveTrader strategies are self-contained and have their own backtest() method
+    // Activate them immediately since they handle their own validation
+    if (parsedConfig.strategyType === 'livetrader') {
+      logger.info(`LiveTrader strategy detected - activating immediately (has own backtest() method)`);
+      await prisma.strategy.update({
+        where: { id: strategy.id },
+        data: {
+          isActive: true,
+          isApproved: true,
+          isMarketplace: true,
+        },
+      });
+    } else {
+      // Old BaseStrategy format - run auto-backtest
+      try {
+        logger.info(`Auto-triggering backtest for strategy ${strategy.id}`);
 
-      // Import backtest engine
-      const { backtestEngine } = await import('../services/backtest-engine');
+        // Import backtest engine
+        const { backtestEngine } = await import('../services/backtest-engine');
 
-      // Get execution config from parsed config
-      const executionConfig = parsedConfig.executionConfig || {};
-      const symbol = executionConfig.symbol || parsedConfig.pair || parsedConfig.pairs?.[0];
-      const resolution = executionConfig.resolution || parsedConfig.timeframes?.[0] || '5';
+        // Get execution config from parsed config
+        const executionConfig = parsedConfig.executionConfig || {};
+        const symbol = executionConfig.symbol || parsedConfig.pair || parsedConfig.pairs?.[0];
+        const resolution = executionConfig.resolution || parsedConfig.timeframes?.[0] || '5';
 
-      if (!symbol) {
-        logger.warn(`Cannot run auto-backtest: no symbol found in config`);
-      } else {
+        if (!symbol) {
+          logger.warn(`Cannot run auto-backtest: no symbol found in config`);
+        } else {
         // Calculate backtest period (last 1 year)
         const endDate = new Date();
         const startDate = new Date();
@@ -918,11 +933,12 @@ router.post('/cli-upload', authenticate, async (req: AuthenticatedRequest, res, 
           `Win Rate ${backtestMetrics.winRate.toFixed(1)}%, ` +
           `ROI ${backtestMetrics.roi.toFixed(2)}%`);
       }
-    } catch (err) {
-      logger.error('Auto-backtest failed (non-fatal):', err);
-      backtestError = err instanceof Error ? err.message : String(err);
-      // Keep strategy hidden (isActive=false) so marketplace doesn't show N/A cards
-    }
+      } catch (err) {
+        logger.error('Auto-backtest failed (non-fatal):', err);
+        backtestError = err instanceof Error ? err.message : String(err);
+        // Keep strategy hidden (isActive=false) so marketplace doesn't show N/A cards
+      }
+    } // End else block for BaseStrategy auto-backtest
 
     res.json({
       success: true,
