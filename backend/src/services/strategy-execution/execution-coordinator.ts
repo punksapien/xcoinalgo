@@ -137,8 +137,52 @@ class ExecutionCoordinator {
 
       console.log(`Executing strategy for ${subscribers.length} active subscribers`)
 
-      // Execute Python strategy ONCE for all subscribers
-      const pythonResult = await this.executePythonStrategy(
+      // Check if this is a LiveTrader format strategy
+      const strategy = await prisma.strategy.findUnique({
+        where: { id: strategyId },
+        select: { strategyType: true, code: true }
+      })
+
+      const isLiveTrader = strategy?.strategyType === 'livetrader'
+
+      let pythonResult: PythonExecutionResult
+
+      if (isLiveTrader) {
+        console.log('✨ Detected LiveTrader format - executing with multi-tenant support')
+
+        // Execute LiveTrader format (Python handles all order placement)
+        pythonResult = await this.executeLiveTraderStrategy(
+          strategyId,
+          strategySettings,
+          subscribers,
+          strategy!.code || ''
+        )
+
+        // For LiveTrader format, Python already placed orders
+        // Just log the execution and return
+        const executionTime = Date.now() - startTime
+
+        await this.logExecution(strategyId, symbol, resolution, intervalKey, {
+          status: pythonResult.success ? 'SUCCESS' : 'FAILED',
+          subscribersCount: subscribers.length,
+          tradesGenerated: pythonResult.success ? subscribers.length : 0,
+          duration: executionTime,
+          workerId,
+          signalType: pythonResult.success ? 'LIVETRADER_MULTI_TENANT' : undefined,
+        })
+
+        return {
+          success: pythonResult.success,
+          subscribersProcessed: pythonResult.success ? subscribers.length : 0,
+          tradesGenerated: pythonResult.success ? subscribers.length : 0,
+          executionTime,
+          error: pythonResult.error
+        }
+      }
+
+      // Execute old format strategy (generate signal in Python, place orders in TypeScript)
+      console.log('Using legacy format - TypeScript places orders')
+      pythonResult = await this.executePythonStrategy(
         strategyId,
         strategySettings,
         scheduledTime
@@ -167,9 +211,22 @@ class ExecutionCoordinator {
 
       const signal = pythonResult.signal
 
-      console.log(
-        `Strategy returned signal: ${signal.signal} at price ${signal.price}`
-      )
+      // Log detailed signal information
+      console.log('\n' + '='.repeat(80))
+      console.log('📊 STRATEGY SIGNAL GENERATED')
+      console.log('='.repeat(80))
+      console.log(`Signal Type: ${signal.signal}`)
+      console.log(`Price: $${signal.price}`)
+      console.log(`Stop Loss: ${signal.stopLoss || 'N/A'}`)
+      console.log(`Take Profit: ${signal.takeProfit || 'N/A'}`)
+      if (signal.metadata) {
+        console.log('Metadata:')
+        console.log(JSON.stringify(signal.metadata, null, 2))
+      }
+      console.log('='.repeat(80) + '\n')
+
+      // Also log full signal object for debugging
+      logger.info('Full signal object:', JSON.stringify(signal, null, 2))
 
       // Fan-out signal to all subscribers
       let tradesGenerated = 0
@@ -341,6 +398,115 @@ class ExecutionCoordinator {
           error: 'Python execution timeout (30s)',
         })
       }, 30000)
+    })
+  }
+
+  /**
+   * Execute LiveTrader format strategy (multi-tenant, Python handles orders)
+   */
+  private async executeLiveTraderStrategy(
+    strategyId: string,
+    strategySettings: any,
+    subscribers: any[],
+    strategyCode: string
+  ): Promise<PythonExecutionResult> {
+    return new Promise((resolve) => {
+      const pythonScriptPath = path.join(
+        __dirname,
+        '../../../python/live_trader_executor.py'
+      )
+
+      // Prepare subscribers data (with API keys)
+      const subscribersData = subscribers.map(sub => ({
+        user_id: sub.userId,
+        api_key: sub.brokerCredential?.apiKey || '',
+        api_secret: sub.brokerCredential?.apiSecret || '',
+        capital: sub.capital || 10000,
+        risk_per_trade: sub.riskPerTrade || 0.05,
+        leverage: sub.leverage || 10
+      }))
+
+      // Prepare input for Python script
+      const input = JSON.stringify({
+        strategy_code: strategyCode,
+        settings: strategySettings,
+        subscribers: subscribersData
+      })
+
+      console.log(`Spawning LiveTrader executor: ${pythonScriptPath}`)
+      console.log(`Subscribers: ${subscribersData.length}`)
+
+      const pythonProcess = spawn('python3', [pythonScriptPath], {
+        env: { ...process.env },
+      })
+
+      let stdout = ''
+      let stderr = ''
+
+      pythonProcess.stdout.on('data', (data) => {
+        stdout += data.toString()
+      })
+
+      pythonProcess.stderr.on('data', (data) => {
+        const stderrStr = data.toString()
+        stderr += stderrStr
+        // Also log stderr in real-time for debugging
+        console.log('[Python stderr]:', stderrStr)
+      })
+
+      pythonProcess.on('close', (code) => {
+        if (code !== 0) {
+          console.error(`LiveTrader executor exited with code ${code}`)
+          console.error(`stderr: ${stderr}`)
+          resolve({
+            success: false,
+            signal: null,
+            error: `LiveTrader executor exited with code ${code}: ${stderr}`,
+          })
+          return
+        }
+
+        try {
+          const result = JSON.parse(stdout)
+
+          if (!result.success) {
+            console.error('LiveTrader execution failed:', result.error)
+            console.error('Logs:', result.logs)
+          } else {
+            console.log('✅ LiveTrader execution successful')
+            console.log(`Subscribers processed: ${result.subscribers_processed || subscribersData.length}`)
+          }
+
+          resolve({
+            success: result.success,
+            signal: null, // LiveTrader doesn't return signal (it already placed orders)
+            logs: result.logs || [],
+            error: result.error
+          })
+        } catch (error) {
+          console.error(`Failed to parse LiveTrader output:`, error)
+          console.error(`stdout: ${stdout}`)
+          resolve({
+            success: false,
+            signal: null,
+            error: `Failed to parse LiveTrader output: ${error}`,
+          })
+        }
+      })
+
+      // Send input to Python process
+      pythonProcess.stdin.write(input)
+      pythonProcess.stdin.end()
+
+      // Timeout after 60 seconds (longer for LiveTrader since it places orders)
+      setTimeout(() => {
+        pythonProcess.kill()
+        resolve({
+          success: false,
+          signal: null,
+          error: 'LiveTrader execution timeout (60s)',
+        })
+      }, 60000)
     })
   }
 

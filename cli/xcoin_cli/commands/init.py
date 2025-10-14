@@ -16,12 +16,14 @@ console = Console()
 
 @click.command()
 @click.argument('name', required=True)
-def init(name):
+@click.option('--livetrader', is_flag=True, help='Use LiveTrader class template (full control over API)')
+def init(name, livetrader):
     """
     Create a new strategy folder
 
     Usage:
-        xcoin init my-strategy
+        xcoin init my-strategy                  (simple function-based strategy)
+        xcoin init my-strategy --livetrader     (full LiveTrader class with CoinDCX client)
 
     creates:
       my-strategy/
@@ -31,7 +33,11 @@ def init(name):
       └── README.md         (docs)
     """
     console.print()
-    console.print("[bold cyan]🚀 creating strategy[/]")
+    if livetrader:
+        console.print("[bold cyan]🚀 creating LiveTrader strategy[/]")
+        console.print("[dim]  (Full CoinDCX API client + multi-tenant support)[/]")
+    else:
+        console.print("[bold cyan]🚀 creating strategy[/]")
     console.print()
 
     # sanitize folder name
@@ -54,7 +60,7 @@ def init(name):
         'default_timeframe': '15m',
         'default_resolution': '15',
         'default_trading_type': 'futures',
-        'strategy_type': 'trend-following',
+        'strategy_type': 'livetrader' if livetrader else 'trend-following',
         'creation_date': datetime.now().strftime('%Y-%m-%d'),
         'strategy_code': folder_name.upper().replace('-', '_') + '_V1',
         'strategy_class_name': ''.join(
@@ -73,13 +79,21 @@ def init(name):
         strat_dir.mkdir(parents=True, exist_ok=True)
         console.print(f"  [green]✓[/] {folder_name}/")
 
-        # create files from templates
-        files_to_make = {
-            'strategy.py': 'strategy_template.py',
-            'config.json': 'config_template.json',
-            'requirements.txt': 'requirements_template.txt',
-            'README.md': 'readme_template.md',
-        }
+        # Select templates based on strategy type
+        if livetrader:
+            files_to_make = {
+                'strategy.py': 'strategy_livetrader.py.template',
+                'config.json': 'config_livetrader.json.template',
+                'requirements.txt': 'requirements_livetrader.txt.template',
+                'README.md': 'readme_template.md',
+            }
+        else:
+            files_to_make = {
+                'strategy.py': 'strategy_template.py',
+                'config.json': 'config_template.json',
+                'requirements.txt': 'requirements_template.txt',
+                'README.md': 'readme_template.md',
+            }
 
         for output_fname, template_fname in files_to_make.items():
             try:

@@ -1155,36 +1155,54 @@ async function validateStrategyCode(code: string, config: any) {
     const errors: string[] = [];
     const warnings: string[] = [];
 
-    // Check if code contains required class
-    if (!code.includes('class ') || !code.includes('BaseStrategy')) {
-      errors.push('Strategy must contain a class that inherits from BaseStrategy');
-    }
+    // Check if this is LiveTrader format
+    const isLiveTrader = config.strategyType === 'livetrader' || code.includes('class LiveTrader');
 
-    // Check for required methods
-    if (!code.includes('def generate_signals')) {
-      errors.push('Strategy must implement generate_signals method');
-    }
+    if (isLiveTrader) {
+      // LiveTrader format validation
+      if (!code.includes('class LiveTrader')) {
+        errors.push('LiveTrader strategy must contain a LiveTrader class');
+      }
 
-    // Check for potential security issues
-    const dangerousPatterns = [
-      'import os',
-      'import subprocess',
-      'import sys',
-      'eval(',
-      'exec(',
-      '__import__',
-      'open(',
-      'file(',
-    ];
+      if (!code.includes('def check_for_new_signal')) {
+        errors.push('LiveTrader must implement check_for_new_signal method');
+      }
 
-    for (const pattern of dangerousPatterns) {
-      if (code.includes(pattern)) {
-        warnings.push(`Potentially dangerous pattern detected: ${pattern}`);
+      // LiveTrader is allowed to use os, sys, requests, etc. - it's fully self-contained
+      // No security warnings for LiveTrader format
+
+    } else {
+      // Old BaseStrategy format validation
+      if (!code.includes('class ') || !code.includes('BaseStrategy')) {
+        errors.push('Strategy must contain a class that inherits from BaseStrategy');
+      }
+
+      // Check for required methods
+      if (!code.includes('def generate_signals')) {
+        errors.push('Strategy must implement generate_signals method');
+      }
+
+      // Check for potential security issues (only for old format)
+      const dangerousPatterns = [
+        'import os',
+        'import subprocess',
+        'import sys',
+        'eval(',
+        'exec(',
+        '__import__',
+        'open(',
+        'file(',
+      ];
+
+      for (const pattern of dangerousPatterns) {
+        if (code.includes(pattern)) {
+          warnings.push(`Potentially dangerous pattern detected: ${pattern}`);
+        }
       }
     }
 
     // Validate configuration
-    const requiredConfigFields = ['name', 'code', 'author', 'pair'];
+    const requiredConfigFields = ['name', 'code', 'author'];
     for (const field of requiredConfigFields) {
       if (!config[field]) {
         errors.push(`Missing required configuration field: ${field}`);

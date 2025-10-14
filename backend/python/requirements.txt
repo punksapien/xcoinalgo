@@ -1,0 +1,5 @@
+# Python dependencies for backtest engine and strategy execution
+loguru>=0.7.0
+pandas>=2.0.0
+numpy>=1.24.0
+

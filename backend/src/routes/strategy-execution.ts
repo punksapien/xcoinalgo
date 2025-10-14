@@ -613,7 +613,7 @@ router.get('/subscription/:id/verify-live', authenticate, async (req: Authentica
       );
 
       // Filter orders for this specific trading pair
-      const strategyOrders = orders.filter((order: any) => 
+      const strategyOrders = orders.filter((order: any) =>
         order.pair === tradingPair && order.status === 'open'
       );
 

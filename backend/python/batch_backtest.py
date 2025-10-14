@@ -31,6 +31,59 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 import pandas as pd
 import numpy as np
+import os
+from pathlib import Path
+from loguru import logger
+
+
+def configure_logging():
+    """Configure loguru to log to file with rotation"""
+    # Get logs directory (relative to this file)
+    script_dir = Path(__file__).parent
+    logs_dir = script_dir.parent / 'logs'
+
+    # Create logs directory if it doesn't exist
+    logs_dir.mkdir(exist_ok=True)
+
+    # Remove default handler
+    logger.remove()
+
+    # Add file handler with rotation (10 MB max, keep 5 files)
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    log_file = logs_dir / f'backtest_{timestamp}.log'
+    signal_log_file = logs_dir / f'signals_{timestamp}.log'
+
+    # Main backtest log (everything)
+    logger.add(
+        log_file,
+        rotation="10 MB",
+        retention="5 files",
+        level="DEBUG",
+        format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {message}",
+        enqueue=True  # Thread-safe
+    )
+
+    # Signals-only log (only INFO level with signals)
+    logger.add(
+        signal_log_file,
+        rotation="10 MB",
+        retention="5 files",
+        level="INFO",
+        format="{time:YYYY-MM-DD HH:mm:ss} | {message}",
+        filter=lambda record: "Signal Generated" in record["message"] or "OPENED" in record["message"] or "CLOSED" in record["message"],
+        enqueue=True
+    )
+
+    # Also add stderr for immediate feedback
+    logger.add(
+        sys.stderr,
+        level="INFO",
+        format="{time:HH:mm:ss} | {level: <8} | {message}"
+    )
+
+    logger.info(f"Logging configured - Log file: {log_file}")
+    logger.info(f"Signals log file: {signal_log_file}")
+    return str(log_file)
 
 
 class BatchBacktestRunner:
@@ -67,27 +120,45 @@ class BatchBacktestRunner:
             strategy_config: Strategy parameters
         """
         try:
+            logger.info("="*80)
+            logger.info("BACKTEST STARTED")
+            logger.info(f"Symbol: {strategy_config.get('symbol', 'N/A')}")
+            logger.info(f"Resolution: {strategy_config.get('resolution', 'N/A')}")
+            logger.info(f"Historical data points: {len(historical_data)}")
+            logger.info(f"Initial capital: ${self.initial_capital:,.2f}")
+            logger.info(f"Risk per trade: {self.risk_per_trade*100}%")
+            logger.info(f"Leverage: {self.leverage}x")
+            logger.info(f"Commission: {self.commission*100}%")
+            logger.info("="*80)
+
             # Load strategy code and check for custom backtest method
+            logger.debug("Loading strategy code...")
             exec_scope = self._load_strategy_scope(strategy_code)
 
             if not exec_scope:
+                logger.error("Failed to load strategy code")
                 return self._error_result("Failed to load strategy code")
 
             # Check if strategy has custom backtest() method
+            logger.debug("Checking for custom backtest implementation...")
             custom_backtest = self._get_custom_backtest(exec_scope)
 
             if custom_backtest:
+                logger.info("✓ Custom backtest() method found - using custom implementation")
                 # Use custom backtest implementation
                 return self._run_custom_backtest(custom_backtest, historical_data, strategy_config)
 
             # Fall back to default backtest using generate_signal
+            logger.info("Using default backtest with generate_signal()")
             generate_signal = exec_scope.get('generate_signal') or exec_scope.get('generate_signals')
 
             if not generate_signal:
+                logger.error("Strategy must define generate_signal() function")
                 return self._error_result("Failed to load strategy generate_signal function")
 
             # Process candles with sliding window
             lookback = strategy_config.get('lookback_period', 200)
+            logger.info(f"Processing {len(historical_data)} candles with {lookback} lookback period...")
 
             for i in range(max(lookback, 50), len(historical_data)):
                 # Get historical window for strategy
@@ -105,10 +176,18 @@ class BatchBacktestRunner:
                     signal = generate_signal(candle_window, settings)
                 except Exception as e:
                     # Strategy error - skip this candle
+                    logger.debug(f"Strategy error at candle {i}: {str(e)}")
                     continue
 
                 if not signal:
                     continue
+
+                # Log the signal details
+                signal_type = signal.get('signal', 'UNKNOWN')
+                if signal_type != 'HOLD':
+                    logger.info(f"🎯 Signal Generated: {signal_type} | Price: ${signal.get('price', 0):,.2f} | SL: {signal.get('stopLoss', 'N/A')} | TP: {signal.get('takeProfit', 'N/A')}")
+                    if 'metadata' in signal:
+                        logger.debug(f"Signal metadata: {signal['metadata']}")
 
                 # Update strategy state from metadata
                 if 'metadata' in signal:
@@ -122,11 +201,24 @@ class BatchBacktestRunner:
 
             # Close any open position at end
             if self.current_position:
+                logger.info("Closing open position at end of backtest...")
                 last_candle = historical_data[-1]
                 self._close_position(last_candle, 'BACKTEST_END')
 
             # Calculate metrics
+            logger.info("Calculating performance metrics...")
             metrics = self._calculate_metrics()
+
+            logger.info("="*80)
+            logger.info("BACKTEST COMPLETED SUCCESSFULLY")
+            logger.info(f"Total Trades: {metrics['totalTrades']}")
+            logger.info(f"Win Rate: {metrics['winRate']:.2f}%")
+            logger.info(f"Total P&L: ${metrics['totalPnl']:,.2f} ({metrics['totalPnlPct']:.2f}%)")
+            logger.info(f"Max Drawdown: ${metrics['maxDrawdown']:,.2f} ({metrics['maxDrawdownPct']:.2f}%)")
+            logger.info(f"Sharpe Ratio: {metrics['sharpeRatio']:.2f}")
+            logger.info(f"Profit Factor: {metrics['profitFactor']:.2f}")
+            logger.info(f"Final Capital: ${metrics['finalCapital']:,.2f}")
+            logger.info("="*80)
 
             return {
                 'success': True,
@@ -136,6 +228,8 @@ class BatchBacktestRunner:
             }
 
         except Exception as e:
+            logger.error(f"Backtest failed with error: {str(e)}")
+            logger.error(traceback.format_exc())
             return self._error_result(f"Backtest failed: {str(e)}\n{traceback.format_exc()}")
 
     def _load_strategy_scope(self, strategy_code: str):
@@ -196,8 +290,11 @@ class BatchBacktestRunner:
     def _run_custom_backtest(self, custom_backtest, historical_data: List[Dict], strategy_config: Dict) -> Dict[str, Any]:
         """Run custom backtest implementation provided by strategy"""
         try:
+            logger.info("Executing custom backtest() implementation...")
+
             # Convert historical data to DataFrame
             df = pd.DataFrame(historical_data)
+            logger.debug(f"Converted {len(df)} candles to DataFrame")
 
             # Prepare config: merge backtest params with strategy params
             config = {
@@ -209,6 +306,7 @@ class BatchBacktestRunner:
             }
 
             # Call custom backtest
+            logger.debug("Calling custom backtest function...")
             result = custom_backtest(df, config)
 
             # Validate result format (strict validation)
@@ -384,6 +482,7 @@ class BatchBacktestRunner:
         quantity = self._calculate_position_size(entry_price, stop_loss)
 
         if quantity <= 0:
+            logger.warning(f"Invalid position size (quantity={quantity}), skipping trade")
             return
 
         self.current_position = {
@@ -394,6 +493,8 @@ class BatchBacktestRunner:
             'stop_loss': stop_loss,
             'take_profit': take_profit
         }
+
+        logger.info(f"📈 OPENED {side} position @ ${entry_price:,.2f} | Qty: {quantity:.4f} | SL: {stop_loss} | TP: {take_profit}")
 
     def _close_position(self, candle: Dict, reason: str):
         """Close current position"""
@@ -421,6 +522,8 @@ class BatchBacktestRunner:
         self.capital += net_pnl
 
         # Record trade
+        pnl_pct = (net_pnl / (entry_price * quantity)) * 100
+
         self.trades.append({
             'side': side,
             'entry_time': self.current_position['entry_time'],
@@ -429,10 +532,13 @@ class BatchBacktestRunner:
             'exit_price': exit_price,
             'quantity': quantity,
             'pnl': net_pnl,
-            'pnl_pct': (net_pnl / (entry_price * quantity)) * 100,
+            'pnl_pct': pnl_pct,
             'commission': total_commission,
             'reason': reason
         })
+
+        profit_emoji = "✅" if net_pnl > 0 else "❌"
+        logger.info(f"{profit_emoji} CLOSED {side} @ ${exit_price:,.2f} | P&L: ${net_pnl:,.2f} ({pnl_pct:+.2f}%) | Reason: {reason}")
 
         self.current_position = None
 
@@ -595,19 +701,28 @@ class BatchBacktestRunner:
 def main():
     """Main entry point"""
     try:
+        # Configure logging first
+        log_file = configure_logging()
+        logger.info(f"Backtest process started - PID: {os.getpid()}")
+
         # Read input from file if provided, otherwise from stdin
         if len(sys.argv) > 1:
             # File path provided as command line argument
+            logger.info(f"Reading input from file: {sys.argv[1]}")
             with open(sys.argv[1], 'r') as f:
                 input_data = json.load(f)
         else:
             # Read from stdin
+            logger.info("Reading input from stdin")
             input_data = json.loads(sys.stdin.read())
 
         # Extract parameters
         strategy_code = input_data['strategy_code']
         historical_data = input_data['historical_data']
         config = input_data['config']
+
+        logger.debug(f"Strategy code length: {len(strategy_code)} chars")
+        logger.debug(f"Config: {config}")
 
         # Create backtest runner
         runner = BatchBacktestRunner({
@@ -618,19 +733,28 @@ def main():
         })
 
         # Run backtest
+        logger.info("Starting backtest execution...")
         result = runner.run_backtest(strategy_code, historical_data, config)
 
+        # Add log file path to result
+        result['log_file'] = log_file
+
         # Output result
+        logger.info(f"Backtest finished - Success: {result['success']}")
         print(json.dumps(result))
         sys.exit(0 if result['success'] else 1)
 
     except Exception as e:
+        logger.error(f"FATAL ERROR: {str(e)}")
+        logger.error(traceback.format_exc())
+
         error_result = {
             'success': False,
             'error': f"Fatal error: {str(e)}",
             'trades': [],
             'metrics': {},
-            'traceback': traceback.format_exc()
+            'traceback': traceback.format_exc(),
+            'log_file': log_file if 'log_file' in locals() else None
         }
         # Log to stderr for debugging
         print(f"FATAL ERROR: {str(e)}", file=sys.stderr)

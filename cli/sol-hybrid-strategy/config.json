@@ -1,0 +1,157 @@
+{
+  "name": "SOL Hybrid Strategy",
+  "version": "1.0.0",
+  "author": "Trading Team",
+  "description": "Hybrid EMA + ADX + Stochastic RSI strategy for SOL futures",
+  "code": "SOL_HYBRID_V1",
+
+  "tradingType": "futures",
+  "pair": "B-SOL_USDT",
+  "timeframe": "5m",
+  "resolution": "5",
+
+  "strategyType": "livetrader",
+
+  "parameters": [
+    {
+      "name": "stoch_oversold",
+      "type": "float",
+      "default": 9.0,
+      "min": 5,
+      "max": 30,
+      "description": "Stochastic RSI oversold threshold"
+    },
+    {
+      "name": "stoch_overbought",
+      "type": "float",
+      "default": 80.0,
+      "min": 70,
+      "max": 95,
+      "description": "Stochastic RSI overbought threshold"
+    },
+    {
+      "name": "weighted_sum_threshold",
+      "type": "float",
+      "default": 2.0,
+      "min": 1.0,
+      "max": 4.0,
+      "description": "Minimum weighted score for signal"
+    },
+    {
+      "name": "adx_length",
+      "type": "integer",
+      "default": 12,
+      "min": 7,
+      "max": 25,
+      "description": "ADX calculation period"
+    },
+    {
+      "name": "adx_min",
+      "type": "float",
+      "default": 22.4,
+      "min": 15,
+      "max": 35,
+      "description": "Minimum ADX for trending condition"
+    },
+    {
+      "name": "atr_period",
+      "type": "integer",
+      "default": 14,
+      "min": 7,
+      "max": 30,
+      "description": "ATR calculation period"
+    },
+    {
+      "name": "sl_mult_long",
+      "type": "float",
+      "default": 1.03,
+      "min": 0.5,
+      "max": 3.0,
+      "description": "Stop loss ATR multiplier for long trades"
+    },
+    {
+      "name": "sl_mult_short",
+      "type": "float",
+      "default": 3.06,
+      "min": 0.5,
+      "max": 5.0,
+      "description": "Stop loss ATR multiplier for short trades"
+    },
+    {
+      "name": "tp_mult_long",
+      "type": "float",
+      "default": 2.35,
+      "min": 1.0,
+      "max": 5.0,
+      "description": "Take profit ATR multiplier for long trades"
+    },
+    {
+      "name": "tp_mult_short",
+      "type": "float",
+      "default": 6.0,
+      "min": 1.0,
+      "max": 10.0,
+      "description": "Take profit ATR multiplier for short trades"
+    },
+    {
+      "name": "long_tp_stoch",
+      "type": "float",
+      "default": 75.0,
+      "min": 60,
+      "max": 90,
+      "description": "Stochastic exit threshold for long positions"
+    },
+    {
+      "name": "short_tp_stoch",
+      "type": "float",
+      "default": 36.0,
+      "min": 10,
+      "max": 40,
+      "description": "Stochastic exit threshold for short positions"
+    },
+    {
+      "name": "risk_per_trade",
+      "type": "float",
+      "default": 0.05,
+      "min": 0.01,
+      "max": 0.1,
+      "description": "Risk per trade (percentage of capital)"
+    },
+    {
+      "name": "leverage",
+      "type": "integer",
+      "default": 15,
+      "min": 1,
+      "max": 25,
+      "description": "Leverage multiplier"
+    },
+    {
+      "name": "margin_currency_coversion_rate",
+      "type": "float",
+      "default": 93.0,
+      "min": 80,
+      "max": 100,
+      "description": "INR to USD conversion rate"
+    }
+  ],
+
+  "riskProfile": {
+    "recommendedCapital": 10000,
+    "maxDailyLoss": 0.1,
+    "maxPositions": 1
+  },
+
+  "backtest": {
+    "initialCapital": 100000,
+    "commission": 0.0005,
+    "slippage": 0.0001
+  },
+
+  "metadata": {
+    "createdAt": "2025-10-14",
+    "xcoinVersion": "0.1.0",
+    "format": "livetrader",
+    "marginCurrency": "INR"
+  }
+}
+

@@ -1,0 +1,68 @@
+{
+  "name": "{{strategy_name}}",
+  "version": "1.0.0",
+  "author": "{{author_name}}",
+  "description": "{{description}}",
+  "code": "{{strategy_code}}",
+
+  "tradingType": "{{default_trading_type}}",
+  "pair": "{{default_pair}}",
+  "timeframe": "{{default_timeframe}}",
+  "resolution": "{{default_resolution}}",
+
+  "strategyType": "livetrader",
+
+  "parameters": [
+    {
+      "name": "sma_fast_period",
+      "type": "integer",
+      "default": {{sma_fast_period}},
+      "min": 5,
+      "max": 50,
+      "description": "Fast EMA period"
+    },
+    {
+      "name": "sma_slow_period",
+      "type": "integer",
+      "default": {{sma_slow_period}},
+      "min": 20,
+      "max": 200,
+      "description": "Slow EMA period"
+    },
+    {
+      "name": "risk_per_trade",
+      "type": "float",
+      "default": 0.05,
+      "min": 0.01,
+      "max": 0.1,
+      "description": "Risk per trade (percentage of capital)"
+    },
+    {
+      "name": "leverage",
+      "type": "integer",
+      "default": 10,
+      "min": 1,
+      "max": 25,
+      "description": "Leverage multiplier"
+    }
+  ],
+
+  "riskProfile": {
+    "recommendedCapital": 10000,
+    "maxDailyLoss": 0.1,
+    "maxPositions": 1
+  },
+
+  "backtest": {
+    "initialCapital": 100000,
+    "commission": 0.0005,
+    "slippage": 0.0001
+  },
+
+  "metadata": {
+    "createdAt": "{{creation_date}}",
+    "xcoinVersion": "{{xcoin_version}}",
+    "format": "livetrader"
+  }
+}
+
