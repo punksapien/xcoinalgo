@@ -132,7 +132,9 @@ if __name__ == '__main__':
         input_data = json.loads(sys.stdin.read())
         strategy_code = input_data['strategy_code']
         config = input_data['config']
-
+        
+        logger.info(f"Received config: {json.dumps(config, indent=2)}")
+        
         # Run backtest
         result = run_livetrader_backtest(strategy_code, config)
 

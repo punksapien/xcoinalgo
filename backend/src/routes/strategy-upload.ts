@@ -947,6 +947,8 @@ router.post('/cli-upload', authenticate, async (req: AuthenticatedRequest, res, 
         const pair = parsedConfig.executionConfig?.symbol || parsedConfig.pair || parsedConfig.pairs?.[0];
         const resolution = parsedConfig.resolution || parsedConfig.timeframes?.[0] || '5';
         
+        logger.debug(`Backtest config - pair: ${pair}, resolution: ${resolution}, parsed: ${JSON.stringify(parsedConfig)}`);
+        
         const backtestResult = await executeLiveTraderBacktest(
           strategyCode, 
           requirementsTxt,
@@ -954,8 +956,8 @@ router.post('/cli-upload', authenticate, async (req: AuthenticatedRequest, res, 
             pair: pair,
             resolution: resolution,
             symbol: pair, // for backwards compatibility
-            leverage: parsedConfig.riskProfile?.defaultLeverage || 10,
-            capital: parsedConfig.riskProfile?.defaultCapital || 10000,
+            leverage: parsedConfig.riskProfile?.defaultLeverage || parsedConfig.riskProfile?.leverage || 10,
+            capital: parsedConfig.riskProfile?.defaultCapital || parsedConfig.riskProfile?.recommendedCapital || 10000,
             risk_per_trade: parsedConfig.riskProfile?.defaultRiskPerTrade || 0.02,
             api_key: 'BACKTEST_MODE',
             api_secret: 'BACKTEST_MODE'
