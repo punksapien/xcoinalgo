@@ -1489,6 +1489,26 @@ router.post('/upload-simple', authenticate, upload.fields([
       });
     }
 
+    // Check for hardcoded config.json (multi-tenant incompatibility)
+    if (strategyCode.includes("open('config.json'") || strategyCode.includes('open("config.json"')) {
+      return res.status(400).json({
+        error: 'Strategy reads from config.json - not compatible with multi-tenant execution',
+        hint: 'Use settings parameter instead: self.api_key = settings["api_key"]',
+        details: 'Multiple subscribers need their own API keys. Config file won\'t work.'
+      });
+    }
+
+    // Check for hardcoded API keys
+    const apiKeyMatch = strategyCode.match(/api_key\s*=\s*['"][^'"]+['"]/i);
+    const apiSecretMatch = strategyCode.match(/api_secret\s*=\s*['"][^'"]+['"]/i);
+    if (apiKeyMatch || apiSecretMatch) {
+      return res.status(400).json({
+        error: 'Strategy contains hardcoded API keys - not compatible with multi-tenant execution',
+        hint: 'Accept keys from settings parameter: self.api_key = settings["api_key"]',
+        details: 'Each subscriber must use their own API keys.'
+      });
+    }
+
     // Extract strategy name from config or filename
     const strategyName = config.name || strategyFile.originalname.replace('.py', '');
     const strategyCode_db = config.code || generateStrategyCode(strategyName);

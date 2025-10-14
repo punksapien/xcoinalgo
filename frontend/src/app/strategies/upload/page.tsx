@@ -121,6 +121,30 @@ export default function StrategyUploadPage() {
         warnings.push('No CoinDCXClient class found - make sure your strategy is self-contained');
       }
 
+      // Check for hardcoded config.json (multi-tenant issue)
+      if (code.includes("open('config.json'") || code.includes('open("config.json"')) {
+        errors.push(
+          'Strategy reads from config.json - this won\'t work for multiple subscribers. ' +
+          'Use settings parameter instead: self.api_key = settings[\'api_key\']'
+        );
+      }
+
+      // Check for hardcoded API keys
+      if (code.match(/api_key\s*=\s*['"][^'"]+['"]/i) || code.match(/api_secret\s*=\s*['"][^'"]+['"]/i)) {
+        errors.push(
+          'Strategy contains hardcoded API keys. For multi-tenant support, ' +
+          'accept keys from settings parameter: self.api_key = settings[\'api_key\']'
+        );
+      }
+
+      // Check if strategy uses settings parameter
+      if (detected.liveTrader && !code.includes('def __init__(self, settings') && !code.includes('def __init__(self,settings')) {
+        warnings.push(
+          'LiveTrader.__init__ should accept "settings" parameter for multi-tenant support. ' +
+          'Example: def __init__(self, settings: dict)'
+        );
+      }
+
       setValidation({
         isValid: errors.length === 0,
         errors,
