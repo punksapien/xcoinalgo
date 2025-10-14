@@ -324,40 +324,59 @@ class StrategyStructureValidator:
         required_method: MethodSignature,
         found_method: Dict
     ) -> List[ValidationError]:
-        """Validate method signature (parameter count and names)"""
+        """
+        Validate method signature (parameter count and names)
+
+        Strategy:
+        - MUST have AT LEAST the required parameters (can have MORE)
+        - CANNOT have FEWER parameters than required
+        - Allows additional optional params, defaults, *args, **kwargs
+        - Checks that required param names exist in order (first N params)
+        """
         errors = []
 
         required_params = required_method.params
         found_params = found_method['params']
 
-        # For validation, we check that the found method has AT LEAST the required params
-        # (allowing for **kwargs, default values, etc.)
-        # But we need to be flexible about parameter order and defaults
-
-        # Count required positional parameters (those without defaults in the signature)
-        # For simplicity, we just check if all required param names are present
-        # (in any order, since Python supports keyword arguments)
-
         # Special case: static methods don't have 'self'
         if found_method.get('is_static') and 'self' in required_params:
             required_params = [p for p in required_params if p != 'self']
 
-        # Check minimum parameter count
-        # Allow for *args, **kwargs by being lenient on count
-        min_required = len([p for p in required_params if p != 'self'])
-        found_positional = len([p for p in found_params if p not in ('args', 'kwargs')])
+        # Count actual parameters (excluding *args, **kwargs which are always allowed)
+        found_positional = [p for p in found_params if p not in ('args', 'kwargs')]
+        min_required = len(required_params)
 
-        # Very lenient check: just ensure the method exists with reasonable params
-        # Don't be too strict about exact matches since methods may have defaults or **kwargs
-        if found_positional < min_required - 2:  # Allow some flexibility
+        # Rule 1: Must have AT LEAST the required number of parameters
+        # (can have MORE for optional params, defaults, etc.)
+        if len(found_positional) < min_required:
             errors.append(ValidationError(
                 class_name=class_name,
                 method_name=required_method.name,
                 error_type="SIGNATURE_MISMATCH",
-                message=f"Method '{class_name}.{required_method.name}' has {found_positional} parameters, "
-                       f"expected at least {min_required - 2} (found: {', '.join(found_params)}, "
-                       f"expected: {', '.join(required_params)})"
+                message=f"Method '{class_name}.{required_method.name}' has {len(found_positional)} parameters, "
+                       f"but requires at least {min_required}. "
+                       f"Found: ({', '.join(found_params)}), "
+                       f"Required: ({', '.join(required_params)}). "
+                       f"You can have MORE parameters (optional, defaults, *args, **kwargs) but not FEWER."
             ))
+            return errors
+
+        # Rule 2: Check that the first N required parameters match by name and position
+        # This ensures the required params are in the correct order
+        for i, required_param in enumerate(required_params):
+            if i >= len(found_positional):
+                break  # Already checked count above
+
+            found_param = found_positional[i]
+            if found_param != required_param:
+                errors.append(ValidationError(
+                    class_name=class_name,
+                    method_name=required_method.name,
+                    error_type="SIGNATURE_MISMATCH",
+                    message=f"Method '{class_name}.{required_method.name}' parameter at position {i+1}: "
+                           f"expected '{required_param}', found '{found_param}'. "
+                           f"Required signature: ({', '.join(required_params)})"
+                ))
 
         return errors
 

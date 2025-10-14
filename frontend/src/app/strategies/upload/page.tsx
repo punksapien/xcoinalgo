@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from '@/lib/auth';
-import { showErrorToast, showSuccessToast } from '@/lib/toast-utils';
+import { showErrorToast, showSuccessToast, showInfoToast } from '@/lib/toast-utils';
+import { useBacktestProgress } from '@/hooks/useBacktestProgress';
+import { BacktestProgressBar } from '@/components/BacktestProgressBar';
 import {
   Upload,
   FileCode,
@@ -17,9 +19,7 @@ import {
   XCircle,
   Loader2,
   AlertCircle,
-  TrendingUp,
-  Target,
-  Clock
+  TrendingUp
 } from "lucide-react";
 
 interface ValidationResult {
@@ -74,6 +74,28 @@ export default function StrategyUploadPage() {
     backtest?: BacktestMetrics;
     message?: string;
   } | null>(null);
+  const [activeStrategyId, setActiveStrategyId] = useState<string | null>(null);
+  const [backtestRunning, setBacktestRunning] = useState(false);
+
+  // Use backtest progress hook
+  const { progress, isConnected, eta, disconnect } = useBacktestProgress({
+    strategyId: activeStrategyId,
+    onComplete: (finalProgress) => {
+      showSuccessToast(
+        'Backtest Complete!',
+        `${finalProgress.totalTrades} trades executed. Win Rate: ${finalProgress.metrics?.winRate?.toFixed(1)}%`
+      );
+
+      // Redirect to marketplace after a short delay
+      setTimeout(() => {
+        router.push('/strategies');
+      }, 2000);
+    },
+    onError: (error) => {
+      showErrorToast('Backtest Failed', error);
+      setBacktestRunning(false);
+    }
+  });
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -202,7 +224,7 @@ export default function StrategyUploadPage() {
         summary,
       });
 
-    } catch (error) {
+    } catch (_error) {
       showErrorToast('Validation Failed', 'Failed to read strategy file');
     } finally {
       setValidating(false);
@@ -224,8 +246,12 @@ export default function StrategyUploadPage() {
 
     setUploading(true);
     setUploadResult(null);
+    setBacktestRunning(false);
 
     try {
+      // Show uploading toast
+      showInfoToast('Uploading...', 'Uploading strategy file and creating environment');
+
       const formData = new FormData();
       formData.append('strategyFile', file);
       if (requirementsFile) {
@@ -254,24 +280,33 @@ export default function StrategyUploadPage() {
         throw new Error(data.error || 'Upload failed');
       }
 
-      setUploadResult({
-        success: true,
-        strategyId: data.strategy.id,
-        backtest: data.backtest,
-        message: data.message,
-      });
-
+      // Upload succeeded! Show success and start backtest tracking
       showSuccessToast(
-        'Strategy Uploaded!',
-        data.backtest
-          ? `Backtest complete: ${data.backtest.winRate.toFixed(1)}% win rate, ${data.backtest.totalTrades} trades`
-          : 'Strategy uploaded successfully'
+        'Upload Complete!',
+        data.message || 'Strategy uploaded successfully'
       );
 
-      // Reset form
-      setTimeout(() => {
-        router.push(`/dashboard/strategy/${data.strategy.id}`);
-      }, 2000);
+      // Check if backtest is running
+      const backtestStatus = data.backtest?.status;
+
+      if (backtestStatus === 'running' && data.strategy.id) {
+        // Start tracking backtest progress
+        setActiveStrategyId(data.strategy.id);
+        setBacktestRunning(true);
+        showInfoToast('Running Backtest...', 'Backtest is running in background. Please wait...');
+      } else {
+        // No backtest or already complete
+        setUploadResult({
+          success: true,
+          strategyId: data.strategy.id,
+          message: data.message,
+        });
+
+        // Redirect to strategies page
+        setTimeout(() => {
+          router.push('/strategies');
+        }, 2000);
+      }
 
     } catch (error) {
       console.error('Upload failed:', error);
@@ -297,8 +332,32 @@ export default function StrategyUploadPage() {
         </p>
       </div>
 
-      {/* Upload Result */}
-      {uploadResult && (
+      {/* Backtest Progress */}
+      {backtestRunning && progress && (
+        <Card className="border-blue-500 mb-6">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-blue-500" />
+              Running Backtest
+            </CardTitle>
+            <CardDescription>
+              Testing strategy performance on historical data...
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <BacktestProgressBar progress={progress} eta={eta} />
+            {isConnected && (
+              <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
+                <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse" />
+                <span>Live updates connected</span>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Upload Result (only show if not backtesting) */}
+      {uploadResult && !backtestRunning && (
         <Card className={uploadResult.success ? 'border-green-500 mb-6' : 'border-red-500 mb-6'}>
           <CardContent className="pt-6">
             <div className="flex items-start gap-3">
@@ -315,41 +374,12 @@ export default function StrategyUploadPage() {
                   {uploadResult.message}
                 </p>
 
-                {uploadResult.backtest && (
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
-                    <div className="bg-secondary/20 rounded-lg p-3">
-                      <p className="text-xs text-muted-foreground mb-1">Win Rate</p>
-                      <p className="text-lg font-semibold text-green-500">
-                        {uploadResult.backtest.winRate.toFixed(1)}%
-                      </p>
-                    </div>
-                    <div className="bg-secondary/20 rounded-lg p-3">
-                      <p className="text-xs text-muted-foreground mb-1">ROI</p>
-                      <p className="text-lg font-semibold text-green-500">
-                        {uploadResult.backtest.roi.toFixed(1)}%
-                      </p>
-                    </div>
-                    <div className="bg-secondary/20 rounded-lg p-3">
-                      <p className="text-xs text-muted-foreground mb-1">Max DD</p>
-                      <p className="text-lg font-semibold text-red-500">
-                        {uploadResult.backtest.maxDrawdown.toFixed(1)}%
-                      </p>
-                    </div>
-                    <div className="bg-secondary/20 rounded-lg p-3">
-                      <p className="text-xs text-muted-foreground mb-1">Trades</p>
-                      <p className="text-lg font-semibold">
-                        {uploadResult.backtest.totalTrades}
-                      </p>
-                    </div>
-                  </div>
-                )}
-
                 {uploadResult.success && uploadResult.strategyId && (
                   <Button
                     className="mt-4"
-                    onClick={() => router.push(`/dashboard/strategy/${uploadResult.strategyId}`)}
+                    onClick={() => router.push(`/strategies`)}
                   >
-                    View Strategy Details
+                    View in Marketplace
                   </Button>
                 )}
               </div>
@@ -379,7 +409,7 @@ export default function StrategyUploadPage() {
                   type="file"
                   accept=".py"
                   onChange={handleFileChange}
-                  disabled={uploading}
+                  disabled={uploading || backtestRunning}
                   className="cursor-pointer"
                 />
               </div>
@@ -408,7 +438,7 @@ export default function StrategyUploadPage() {
                       e.target.value = '';
                     }
                   }}
-                  disabled={uploading}
+                  disabled={uploading || backtestRunning}
                   className="cursor-pointer"
                 />
               </div>
@@ -575,7 +605,7 @@ export default function StrategyUploadPage() {
               value={config.name}
               onChange={(e) => setConfig({ ...config, name: e.target.value })}
               placeholder="e.g., SOL Momentum Strategy"
-              disabled={uploading}
+              disabled={uploading || backtestRunning}
             />
           </div>
 
@@ -587,7 +617,7 @@ export default function StrategyUploadPage() {
               onChange={(e) => setConfig({ ...config, description: e.target.value })}
               placeholder="Brief description of your strategy..."
               rows={3}
-              disabled={uploading}
+              disabled={uploading || backtestRunning}
             />
           </div>
 
@@ -599,7 +629,7 @@ export default function StrategyUploadPage() {
                 value={config.pair}
                 onChange={(e) => setConfig({ ...config, pair: e.target.value })}
                 placeholder="e.g., B-BTC_USDT"
-                disabled={uploading}
+                disabled={uploading || backtestRunning}
               />
               <p className="text-xs text-muted-foreground mt-1">
                 Format: B-SYMBOL_USDT for futures
@@ -613,7 +643,7 @@ export default function StrategyUploadPage() {
                 value={config.resolution}
                 onChange={(e) => setConfig({ ...config, resolution: e.target.value })}
                 placeholder="e.g., 5"
-                disabled={uploading}
+                disabled={uploading || backtestRunning}
               />
               <p className="text-xs text-muted-foreground mt-1">
                 Common: 1, 5, 15, 30, 60
@@ -628,7 +658,7 @@ export default function StrategyUploadPage() {
               value={config.author}
               onChange={(e) => setConfig({ ...config, author: e.target.value })}
               placeholder="Your name or team"
-              disabled={uploading}
+              disabled={uploading || backtestRunning}
             />
           </div>
 
@@ -639,7 +669,7 @@ export default function StrategyUploadPage() {
               value={config.tags}
               onChange={(e) => setConfig({ ...config, tags: e.target.value })}
               placeholder="e.g., momentum, scalping, high-frequency"
-              disabled={uploading}
+              disabled={uploading || backtestRunning}
             />
           </div>
         </CardContent>
@@ -649,21 +679,26 @@ export default function StrategyUploadPage() {
       <div className="flex justify-between items-center">
         <Button
           variant="outline"
-          onClick={() => router.push('/dashboard/strategies')}
-          disabled={uploading}
+          onClick={() => router.push('/strategies')}
+          disabled={uploading || backtestRunning}
         >
           Cancel
         </Button>
 
         <Button
           onClick={handleUpload}
-          disabled={!file || !validation?.isValid || uploading || !config.name.trim()}
+          disabled={!file || !validation?.isValid || uploading || backtestRunning || !config.name.trim()}
           className="min-w-[150px]"
         >
           {uploading ? (
             <>
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               Uploading...
+            </>
+          ) : backtestRunning ? (
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Backtesting...
             </>
           ) : (
             <>

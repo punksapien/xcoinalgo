@@ -70,7 +70,7 @@ export const useAuth = create<AuthState>()(
             token,
             isAuthenticated: true
           });
-        } catch (error) {
+        } catch (_error) {
           set({
             user: null,
             token: null,

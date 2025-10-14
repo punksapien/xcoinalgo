@@ -13,6 +13,7 @@ import { webhookRoutes } from './routes/webhooks';
 import { positionsRoutes } from './routes/positions';
 import { strategyExecutionRoutes } from './routes/strategy-execution';
 import { backtestRoutes } from './routes/backtest';
+import { backtestProgressRoutes } from './routes/backtest-progress';
 import { settingsRoutes } from './routes/settings';
 import { marketplaceRoutes } from './routes/marketplace';
 import { marketDataRoutes } from './routes/market-data';
@@ -101,6 +102,7 @@ app.use('/api/bot', botRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/positions', positionsRoutes);
 app.use('/api/strategies', strategyExecutionRoutes);
+app.use('/api/strategies', backtestProgressRoutes); // SSE progress streaming
 app.use('/api/backtest', backtestRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/logs', logsRoutes);

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,7 +25,6 @@ import {
   Trash2,
   Power,
   PowerOff,
-  Edit,
   Eye,
   Loader2,
   FileCode,
@@ -69,29 +68,7 @@ export default function StrategyManagementPage() {
   const [selectedStrategy, setSelectedStrategy] = useState<Strategy | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchStrategies();
-  }, [statusFilter, token]);
-
-  // Poll for strategies with PROCESSING status
-  useEffect(() => {
-    const hasProcessingStrategies = strategies.some(s =>
-      !s.isActive && !s.isMarketplace && (s.winRate == null || s.winRate === undefined)
-    );
-
-    if (!hasProcessingStrategies) {
-      return;
-    }
-
-    // Poll every 5 seconds if there are processing strategies
-    const intervalId = setInterval(() => {
-      fetchStrategies();
-    }, 5000);
-
-    return () => clearInterval(intervalId);
-  }, [strategies]);
-
-  const fetchStrategies = async () => {
+  const fetchStrategies = useCallback(async () => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
@@ -118,7 +95,29 @@ export default function StrategyManagementPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [statusFilter, token]);
+
+  useEffect(() => {
+    fetchStrategies();
+  }, [fetchStrategies]);
+
+  // Poll for strategies with PROCESSING status
+  useEffect(() => {
+    const hasProcessingStrategies = strategies.some(s =>
+      !s.isActive && !s.isMarketplace && (s.winRate == null || s.winRate === undefined)
+    );
+
+    if (!hasProcessingStrategies) {
+      return;
+    }
+
+    // Poll every 5 seconds if there are processing strategies
+    const intervalId = setInterval(() => {
+      fetchStrategies();
+    }, 5000);
+
+    return () => clearInterval(intervalId);
+  }, [strategies, fetchStrategies]);
 
   const handleDelete = async (strategyId: string) => {
     if (!token) return;

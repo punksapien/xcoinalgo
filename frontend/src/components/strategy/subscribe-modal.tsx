@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -55,15 +55,7 @@ export function SubscribeModal({
   const [tpAtrMultiplier, setTpAtrMultiplier] = useState('2.5');
   const [selectedCredentialId, setSelectedCredentialId] = useState<string>('');
 
-  // Fetch broker credentials and balance
-  useEffect(() => {
-    if (open && token) {
-      fetchBrokerCredentials();
-      fetchUserBalance();
-    }
-  }, [open, token]);
-
-  const fetchBrokerCredentials = async () => {
+  const fetchBrokerCredentials = useCallback(async () => {
     if (!token) return;
 
     try {
@@ -91,9 +83,9 @@ export function SubscribeModal({
     } finally {
       setLoadingCredentials(false);
     }
-  };
+  }, [token]);
 
-  const fetchUserBalance = async () => {
+  const fetchUserBalance = useCallback(async () => {
     if (!token) {
       console.log('❌ No token, skipping balance fetch');
       return;
@@ -121,7 +113,15 @@ export function SubscribeModal({
     } finally {
       setLoadingBalance(false);
     }
-  };
+  }, [token]);
+
+  // Fetch broker credentials and balance
+  useEffect(() => {
+    if (open && token) {
+      fetchBrokerCredentials();
+      fetchUserBalance();
+    }
+  }, [open, token, fetchBrokerCredentials, fetchUserBalance]);
 
   const handleSubscribe = async () => {
     if (!token) {

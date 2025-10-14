@@ -1786,84 +1786,44 @@ router.post('/upload-simple', authenticate, upload.fields([
       });
     }
 
-    // Auto-run backtest if Backtester class exists
-    let backtestMetrics = null;
-    let backtestError = null;
-
+    // Auto-run backtest if Backtester class exists (ASYNC - don't block response)
     if (hasBacktester) {
-      logger.info('Backtester class detected - running auto-backtest with isolated environment...');
+      logger.info('Backtester class detected - starting async backtest...');
 
-      try {
-        // Extract resolution from STRATEGY_CONFIG or use config
-        const resolution = await strategyExecutor.getStrategyResolution(strategy.id) || config.resolution || '5m';
+      // Extract resolution from STRATEGY_CONFIG or use config
+      const resolution = await strategyExecutor.getStrategyResolution(strategy.id) || config.resolution || '5m';
 
-        // Calculate backtest period (last 1 year)
-        const endDate = new Date();
-        const startDate = new Date();
-        startDate.setFullYear(startDate.getFullYear() - 1);
+      // Calculate backtest period (last 1 year)
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setFullYear(startDate.getFullYear() - 1);
 
-        // Prepare backtest settings
-        const backtestSettings = {
-          strategy_id: strategy.id,
-          pair: config.pair || 'B-BTC_USDT',
-          capital: config.capital || 10000,
-          leverage: config.leverage || 10,
-          risk_per_trade: config.risk_per_trade || 0.01,
-          resolution,
-          commission_rate: 0.0005,
-          gst_rate: 0.18,
-          sl_rate: config.sl_rate || 0.02,
-          tp_rate: config.tp_rate || 0.04,
-          start_date: startDate.toISOString().split('T')[0],
-          end_date: endDate.toISOString().split('T')[0],
-        };
+      // Prepare backtest settings
+      const backtestSettings = {
+        strategy_id: strategy.id,
+        pair: config.pair || 'B-BTC_USDT',
+        capital: config.capital || 10000,
+        leverage: config.leverage || 10,
+        risk_per_trade: config.risk_per_trade || 0.01,
+        resolution,
+        commission_rate: 0.0005,
+        gst_rate: 0.18,
+        sl_rate: config.sl_rate || 0.02,
+        tp_rate: config.tp_rate || 0.04,
+        start_date: startDate.toISOString().split('T')[0],
+        end_date: endDate.toISOString().split('T')[0],
+      };
 
-        // Execute backtest using new executor
-        const backtestResult = await strategyExecutor.executeBacktest(
-          strategy.id,
-          backtestSettings
-        );
+      // Execute backtest asynchronously (don't await - run in background)
+      strategyExecutor.executeBacktestAsync(strategy.id, backtestSettings)
+        .catch(err => {
+          logger.error(`Async backtest failed for ${strategy.id}:`, err);
+        });
 
-        if (backtestResult.success && backtestResult.metrics) {
-          // Prepare execution config for scheduler
-          const executionConfig = {
-            symbol: config.pair || 'B-BTC_USDT',
-            resolution: resolution.replace('m', ''),  // Store as "5" not "5m"
-          };
-
-          // Update strategy with backtest metrics and execution config
-          await prisma.strategy.update({
-            where: { id: strategy.id },
-            data: {
-              winRate: backtestResult.metrics.winRate || 0,
-              roi: backtestResult.metrics.roi || 0,
-              maxDrawdown: backtestResult.metrics.maxDrawdown || 0,
-              profitFactor: backtestResult.metrics.profitFactor || 0,
-              totalTrades: backtestResult.total_trades || 0,
-              executionConfig: executionConfig,  // Store for scheduler
-              isActive: true,
-              isApproved: true,
-              isMarketplace: true
-            }
-          });
-
-          backtestMetrics = {
-            winRate: backtestResult.metrics.winRate,
-            roi: backtestResult.metrics.roi,
-            maxDrawdown: backtestResult.metrics.maxDrawdown,
-            profitFactor: backtestResult.metrics.profitFactor,
-            totalTrades: backtestResult.total_trades
-          };
-          logger.info(`Backtest complete: ${backtestResult.total_trades} trades, Win Rate: ${backtestMetrics.winRate?.toFixed(1)}%`);
-        } else {
-          throw new Error(backtestResult.error || 'Backtest failed');
-        }
-      } catch (err) {
-        backtestError = err instanceof Error ? err.message : String(err);
-        logger.error('Backtest failed:', backtestError);
-      }
+      logger.info(`Async backtest started for strategy ${strategy.id}`);
     }
 
+    // Return immediately after upload (backtest runs in background)
     res.json({
       success: true,
       strategy: {
@@ -1889,11 +1849,13 @@ router.post('/upload-simple', authenticate, upload.fields([
           ? 'Strategy will use hardcoded defaults. Consider adding STRATEGY_CONFIG = {...} to your Python file.'
           : undefined
       },
-      backtest: backtestMetrics,
-      backtestError,
-      message: backtestMetrics
-        ? 'Strategy uploaded and backtested successfully'
-        : 'Strategy uploaded (backtest pending or failed)'
+      backtest: {
+        status: hasBacktester ? 'running' : 'not_applicable',
+        message: hasBacktester
+          ? 'Backtest running in background. Monitor progress at /api/strategies/' + strategy.id + '/backtest/progress'
+          : 'No Backtester class found'
+      },
+      message: 'Strategy uploaded successfully. Backtest running in background.'
     });
 
   } catch (error) {

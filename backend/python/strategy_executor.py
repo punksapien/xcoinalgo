@@ -53,7 +53,7 @@ def setup_logging(strategy_dir: str, strategy_id: str, mode: str):
 
 def execute_backtest(module, settings: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Execute strategy in backtest mode
+    Execute strategy in backtest mode with progress reporting
 
     Args:
         module: Loaded strategy module
@@ -62,6 +62,9 @@ def execute_backtest(module, settings: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Backtest results as dictionary
     """
+    import sys
+    import time
+
     try:
         # Get the Backtester class from the module
         Backtester = getattr(module, 'Backtester')
@@ -81,6 +84,16 @@ def execute_backtest(module, settings: Dict[str, Any]) -> Dict[str, Any]:
         sl_rate = settings.get('sl_rate', 0.02)
         tp_rate = settings.get('tp_rate', 0.04)
 
+        # Report progress: Fetching data
+        print(json.dumps({
+            "type": "progress",
+            "stage": "fetching_data",
+            "progress": 0.1,
+            "message": f"Fetching historical data for {pair}..."
+        }), file=sys.stderr, flush=True)
+
+        fetch_start = time.time()
+
         # Fetch historical data
         df = Backtester.fetch_coindcx_data(pair, start_date, end_date, resolution)
 
@@ -90,6 +103,28 @@ def execute_backtest(module, settings: Dict[str, Any]) -> Dict[str, Any]:
                 "error": "Failed to fetch historical data or data is empty",
                 "mode": "backtest"
             }
+
+        fetch_duration = time.time() - fetch_start
+        total_candles = len(df)
+
+        # Report progress: Data fetched
+        print(json.dumps({
+            "type": "progress",
+            "stage": "data_fetched",
+            "progress": 0.3,
+            "message": f"Fetched {total_candles:,} candles in {fetch_duration:.1f}s"
+        }), file=sys.stderr, flush=True)
+
+        # Report progress: Running backtest
+        print(json.dumps({
+            "type": "progress",
+            "stage": "running_backtest",
+            "progress": 0.4,
+            "message": f"Executing backtest on {total_candles:,} candles...",
+            "total_candles": total_candles
+        }), file=sys.stderr, flush=True)
+
+        backtest_start = time.time()
 
         # Execute trades
         trades_df = Backtester.execute_trades(
@@ -102,6 +137,8 @@ def execute_backtest(module, settings: Dict[str, Any]) -> Dict[str, Any]:
             tp_rate=tp_rate
         )
 
+        backtest_duration = time.time() - backtest_start
+
         if trades_df is None or trades_df.empty:
             return {
                 "success": False,
@@ -109,21 +146,53 @@ def execute_backtest(module, settings: Dict[str, Any]) -> Dict[str, Any]:
                 "mode": "backtest"
             }
 
+        # Report progress: Calculating metrics
+        print(json.dumps({
+            "type": "progress",
+            "stage": "calculating_metrics",
+            "progress": 0.9,
+            "message": f"Calculating performance metrics...",
+            "backtest_duration": round(backtest_duration, 1)
+        }), file=sys.stderr, flush=True)
+
         # Evaluate metrics
         metrics = Backtester.evaluate_backtest_metrics(trades_df, initial_capital)
 
         # Convert trades_df to dictionary for JSON serialization
         trades_list = trades_df.to_dict('records') if not trades_df.empty else []
 
+        total_duration = fetch_duration + backtest_duration
+
+        # Report progress: Complete
+        print(json.dumps({
+            "type": "progress",
+            "stage": "complete",
+            "progress": 1.0,
+            "message": f"Backtest complete! {len(trades_list)} trades executed in {total_duration:.1f}s"
+        }), file=sys.stderr, flush=True)
+
         return {
             "success": True,
             "mode": "backtest",
             "metrics": metrics,
             "trades": trades_list,
-            "total_trades": len(trades_list)
+            "total_trades": len(trades_list),
+            "stats": {
+                "total_candles": total_candles,
+                "fetch_duration": round(fetch_duration, 1),
+                "backtest_duration": round(backtest_duration, 1),
+                "total_duration": round(total_duration, 1)
+            }
         }
 
     except Exception as e:
+        # Report error
+        print(json.dumps({
+            "type": "error",
+            "stage": "error",
+            "message": str(e)
+        }), file=sys.stderr, flush=True)
+
         return {
             "success": False,
             "error": str(e),

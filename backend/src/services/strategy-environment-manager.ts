@@ -9,7 +9,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { promisify } from 'util';
 import { exec as execCallback } from 'child_process';
-import logger from '../config/logger';
+import { logger } from '../utils/logger';
 
 const exec = promisify(execCallback);
 
@@ -259,7 +259,7 @@ export class StrategyEnvironmentManager {
     logger.info(`Executing script ${scriptPath} in environment for strategy ${strategyId}`);
 
     return new Promise((resolve, reject) => {
-      const process = spawn(pythonPath, [scriptPath, ...args], {
+      const childProcess = spawn(pythonPath, [scriptPath, ...args], {
         env: { ...process.env, ...env },
         cwd: path.dirname(scriptPath),
       });
@@ -267,15 +267,15 @@ export class StrategyEnvironmentManager {
       let stdout = '';
       let stderr = '';
 
-      process.stdout.on('data', (data) => {
+      childProcess.stdout.on('data', (data) => {
         stdout += data.toString();
       });
 
-      process.stderr.on('data', (data) => {
+      childProcess.stderr.on('data', (data) => {
         stderr += data.toString();
       });
 
-      process.on('close', (code) => {
+      childProcess.on('close', (code) => {
         if (code === 0) {
           resolve({ stdout, stderr });
         } else {
@@ -283,7 +283,7 @@ export class StrategyEnvironmentManager {
         }
       });
 
-      process.on('error', (error) => {
+      childProcess.on('error', (error) => {
         reject(error);
       });
     });
@@ -328,20 +328,20 @@ export class StrategyEnvironmentManager {
       // Use the found uv path if command is 'uv'
       const actualCommand = command === 'uv' && this.uvPath ? this.uvPath : command;
 
-      const process = spawn(actualCommand, args, { cwd });
+      const childProcess = spawn(actualCommand, args, { cwd });
 
       let stderr = '';
 
-      process.stdout.on('data', (data) => {
+      childProcess.stdout.on('data', (data) => {
         logger.debug(data.toString());
       });
 
-      process.stderr.on('data', (data) => {
+      childProcess.stderr.on('data', (data) => {
         stderr += data.toString();
         logger.debug(data.toString());
       });
 
-      process.on('close', (code) => {
+      childProcess.on('close', (code) => {
         if (code === 0) {
           resolve();
         } else {
@@ -349,7 +349,7 @@ export class StrategyEnvironmentManager {
         }
       });
 
-      process.on('error', (error) => {
+      childProcess.on('error', (error) => {
         reject(error);
       });
     });
