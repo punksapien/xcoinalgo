@@ -14,6 +14,7 @@ import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { spawn } from 'child_process';
 import { uvEnvManager } from '../services/python-env';
+import { strategyStructureValidator } from '../services/strategy-structure-validator';
 
 const logger = new Logger('StrategyUpload');
 const router = Router();
@@ -160,6 +161,70 @@ const upload = multer({
   },
   limits: {
     fileSize: 5 * 1024 * 1024, // 5MB limit
+  }
+});
+
+// Validate strategy structure endpoint - validates Python code structure before upload
+router.post('/validate', authenticate, upload.single('strategyFile'), async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const file = req.file;
+
+    if (!file) {
+      return res.status(400).json({
+        error: 'No strategy file provided'
+      });
+    }
+
+    // Read strategy file content
+    const strategyCode = fs.readFileSync(file.path, 'utf8');
+
+    // Clean up uploaded file
+    fs.unlinkSync(file.path);
+
+    // Perform structural validation
+    logger.info('Validating strategy structure...');
+    const validationResult = await strategyStructureValidator.validate(strategyCode);
+
+    // Format errors for user-friendly display
+    const formattedErrors = strategyStructureValidator.formatErrors(validationResult);
+    const summary = strategyStructureValidator.getSummary(validationResult);
+
+    logger.info(`Validation complete: ${validationResult.is_valid ? 'PASSED' : 'FAILED'}`);
+
+    res.json({
+      success: true,
+      validation: {
+        is_valid: validationResult.is_valid,
+        summary,
+        errors: formattedErrors,
+        warnings: validationResult.warnings,
+        details: {
+          found_classes: validationResult.found_classes,
+          found_methods: validationResult.found_methods,
+          total_errors: validationResult.summary.total_errors,
+          total_warnings: validationResult.summary.total_warnings,
+          classes_expected: validationResult.summary.classes_expected,
+          classes_found: validationResult.summary.classes_found
+        }
+      }
+    });
+
+  } catch (error) {
+    logger.error('Strategy validation failed:', error);
+
+    // Clean up file if it exists
+    if (req.file && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+
+    if (error instanceof Error) {
+      return res.status(500).json({
+        error: 'Validation failed',
+        message: error.message
+      });
+    }
+
+    next(error);
   }
 });
 
@@ -1295,52 +1360,78 @@ router.post('/:id/deploy', authenticate, async (req: AuthenticatedRequest, res, 
 // Helper functions
 async function validateStrategyCode(code: string, config: any) {
   try {
-    // Basic validation checks
     const errors: string[] = [];
     const warnings: string[] = [];
 
-    // Check if this is LiveTrader format
-    const isLiveTrader = config.strategyType === 'livetrader' || code.includes('class LiveTrader');
+    // Check if this is the new multi-tenant format (with all required classes)
+    const hasAllClasses = code.includes('class CoinDCXClient') &&
+                          code.includes('class Trader') &&
+                          code.includes('class LiveTrader') &&
+                          code.includes('class Backtester');
 
-    if (isLiveTrader) {
-      // LiveTrader format validation
-      if (!code.includes('class LiveTrader')) {
-        errors.push('LiveTrader strategy must contain a LiveTrader class');
+    if (hasAllClasses) {
+      // NEW FORMAT: Use structural validator
+      logger.info('Detected new multi-tenant format - using structural validator');
+
+      try {
+        const structuralValidation = await strategyStructureValidator.validate(code);
+
+        if (!structuralValidation.is_valid) {
+          const formattedErrors = strategyStructureValidator.formatErrors(structuralValidation);
+          errors.push(...formattedErrors);
+        }
+
+        // Add info about what was found
+        if (structuralValidation.found_classes.length > 0) {
+          logger.info(`Found classes: ${structuralValidation.found_classes.join(', ')}`);
+        }
+
+      } catch (validationError) {
+        logger.error('Structural validation failed:', validationError);
+        errors.push(`Structural validation error: ${validationError}`);
       }
-
-      if (!code.includes('def check_for_new_signal')) {
-        errors.push('LiveTrader must implement check_for_new_signal method');
-      }
-
-      // LiveTrader is allowed to use os, sys, requests, etc. - it's fully self-contained
-      // No security warnings for LiveTrader format
 
     } else {
-      // Old BaseStrategy format validation
-      if (!code.includes('class ') || !code.includes('BaseStrategy')) {
-        errors.push('Strategy must contain a class that inherits from BaseStrategy');
-      }
+      // OLD FORMAT: Basic string checks
+      const isLiveTrader = config.strategyType === 'livetrader' || code.includes('class LiveTrader');
 
-      // Check for required methods
-      if (!code.includes('def generate_signals')) {
-        errors.push('Strategy must implement generate_signals method');
-      }
+      if (isLiveTrader) {
+        // LiveTrader format validation
+        if (!code.includes('class LiveTrader')) {
+          errors.push('LiveTrader strategy must contain a LiveTrader class');
+        }
 
-      // Check for potential security issues (only for old format)
-      const dangerousPatterns = [
-        'import os',
-        'import subprocess',
-        'import sys',
-        'eval(',
-        'exec(',
-        '__import__',
-        'open(',
-        'file(',
-      ];
+        if (!code.includes('def check_for_new_signal')) {
+          errors.push('LiveTrader must implement check_for_new_signal method');
+        }
 
-      for (const pattern of dangerousPatterns) {
-        if (code.includes(pattern)) {
-          warnings.push(`Potentially dangerous pattern detected: ${pattern}`);
+      } else {
+        // Old BaseStrategy format validation
+        if (!code.includes('class ') || !code.includes('BaseStrategy')) {
+          errors.push('Strategy must contain a class that inherits from BaseStrategy');
+        }
+
+        // Check for required methods
+        if (!code.includes('def generate_signals')) {
+          errors.push('Strategy must implement generate_signals method');
+        }
+
+        // Check for potential security issues (only for old format)
+        const dangerousPatterns = [
+          'import os',
+          'import subprocess',
+          'import sys',
+          'eval(',
+          'exec(',
+          '__import__',
+          'open(',
+          'file(',
+        ];
+
+        for (const pattern of dangerousPatterns) {
+          if (code.includes(pattern)) {
+            warnings.push(`Potentially dangerous pattern detected: ${pattern}`);
+          }
         }
       }
     }

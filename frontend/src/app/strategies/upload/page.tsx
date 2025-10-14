@@ -31,6 +31,15 @@ interface ValidationResult {
     backtester: boolean;
     generateSignals: boolean;
   };
+  details?: {
+    found_classes: string[];
+    found_methods: { [key: string]: string[] };
+    total_errors: number;
+    total_warnings: number;
+    classes_expected: number;
+    classes_found: number;
+  };
+  summary?: string;
 }
 
 interface BacktestMetrics {
@@ -94,55 +103,94 @@ export default function StrategyUploadPage() {
     try {
       const code = await fileToValidate.text();
 
-      // Client-side validation
+      // Quick client-side check for basic components
       const detected = {
         liveTrader: code.includes('class LiveTrader'),
         backtester: code.includes('class Backtester'),
         generateSignals: code.includes('def generate_signals_from_strategy'),
       };
 
-      const errors: string[] = [];
-      const warnings: string[] = [];
+      // Check if this is the new multi-tenant format
+      const hasAllClasses = code.includes('class CoinDCXClient') &&
+                            code.includes('class Trader') &&
+                            code.includes('class LiveTrader') &&
+                            code.includes('class Backtester');
 
-      if (!detected.liveTrader) {
-        errors.push('Strategy must contain "class LiveTrader"');
-      }
+      let errors: string[] = [];
+      let warnings: string[] = [];
+      let details = undefined;
+      let summary = undefined;
 
-      if (!detected.generateSignals) {
-        errors.push('Strategy must contain "def generate_signals_from_strategy(df, params)"');
-      }
+      if (hasAllClasses) {
+        // NEW FORMAT: Use backend structural validator
+        try {
+          const formData = new FormData();
+          formData.append('strategyFile', fileToValidate);
 
-      if (!detected.backtester) {
-        warnings.push('No Backtester class found - backtest will be skipped');
-      }
+          const response = await fetch('/api/strategy-upload/validate', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+            body: formData,
+          });
 
-      // Check for CoinDCXClient
-      if (!code.includes('class CoinDCXClient')) {
-        warnings.push('No CoinDCXClient class found - make sure your strategy is self-contained');
-      }
+          if (response.ok) {
+            const data = await response.json();
+            errors = data.validation.errors || [];
+            warnings = data.validation.warnings || [];
+            details = data.validation.details;
+            summary = data.validation.summary;
+          } else {
+            // Fallback to client-side if backend fails
+            warnings.push('Backend validation unavailable, using basic checks');
+          }
+        } catch (err) {
+          console.error('Backend validation failed:', err);
+          warnings.push('Backend validation unavailable, using basic checks');
+        }
+      } else {
+        // OLD FORMAT: Basic client-side checks
+        if (!detected.liveTrader) {
+          errors.push('Strategy must contain "class LiveTrader"');
+        }
 
-      // Check for hardcoded config.json (multi-tenant issue)
-      if (code.includes("open('config.json'") || code.includes('open("config.json"')) {
-        errors.push(
-          'Strategy reads from config.json - this won\'t work for multiple subscribers. ' +
-          'Use settings parameter instead: self.api_key = settings[\'api_key\']'
-        );
-      }
+        if (!detected.generateSignals) {
+          errors.push('Strategy must contain "def generate_signals_from_strategy(df, params)"');
+        }
 
-      // Check for hardcoded API keys
-      if (code.match(/api_key\s*=\s*['"][^'"]+['"]/i) || code.match(/api_secret\s*=\s*['"][^'"]+['"]/i)) {
-        errors.push(
-          'Strategy contains hardcoded API keys. For multi-tenant support, ' +
-          'accept keys from settings parameter: self.api_key = settings[\'api_key\']'
-        );
-      }
+        if (!detected.backtester) {
+          warnings.push('No Backtester class found - backtest will be skipped');
+        }
 
-      // Check if strategy uses settings parameter
-      if (detected.liveTrader && !code.includes('def __init__(self, settings') && !code.includes('def __init__(self,settings')) {
-        warnings.push(
-          'LiveTrader.__init__ should accept "settings" parameter for multi-tenant support. ' +
-          'Example: def __init__(self, settings: dict)'
-        );
+        // Check for CoinDCXClient
+        if (!code.includes('class CoinDCXClient')) {
+          warnings.push('No CoinDCXClient class found - make sure your strategy is self-contained');
+        }
+
+        // Check for hardcoded config.json (multi-tenant issue)
+        if (code.includes("open('config.json'") || code.includes('open("config.json"')) {
+          errors.push(
+            'Strategy reads from config.json - this won\'t work for multiple subscribers. ' +
+            'Use settings parameter instead: self.api_key = settings[\'api_key\']'
+          );
+        }
+
+        // Check for hardcoded API keys
+        if (code.match(/api_key\s*=\s*['"][^'"]+['"]/i) || code.match(/api_secret\s*=\s*['"][^'"]+['"]/i)) {
+          errors.push(
+            'Strategy contains hardcoded API keys. For multi-tenant support, ' +
+            'accept keys from settings parameter: self.api_key = settings[\'api_key\']'
+          );
+        }
+
+        // Check if strategy uses settings parameter
+        if (detected.liveTrader && !code.includes('def __init__(self, settings') && !code.includes('def __init__(self,settings')) {
+          warnings.push(
+            'LiveTrader.__init__ should accept "settings" parameter for multi-tenant support. ' +
+            'Example: def __init__(self, settings: dict)'
+          );
+        }
       }
 
       setValidation({
@@ -150,6 +198,8 @@ export default function StrategyUploadPage() {
         errors,
         warnings,
         detected,
+        details,
+        summary,
       });
 
     } catch (error) {
@@ -447,8 +497,59 @@ export default function StrategyUploadPage() {
                     <div className="flex items-center gap-2">
                       <CheckCircle2 className="h-4 w-4 text-green-500" />
                       <p className="text-sm font-medium text-green-700 dark:text-green-400">
-                        Validation passed! Ready to upload.
+                        {validation.summary || 'Validation passed! Ready to upload.'}
                       </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Detailed Structural Validation Results */}
+                {validation.details && (
+                  <div className="border rounded-lg p-4 bg-muted/50">
+                    <p className="text-sm font-semibold mb-3">Structural Validation Details:</p>
+
+                    <div className="space-y-3">
+                      <div className="text-sm">
+                        <p className="text-muted-foreground mb-1">
+                          Found {validation.details.classes_found} of {validation.details.classes_expected} required classes
+                        </p>
+
+                        {validation.details.found_classes.length > 0 && (
+                          <div className="mt-2">
+                            <p className="font-medium mb-1">Classes Found:</p>
+                            <div className="flex flex-wrap gap-1">
+                              {validation.details.found_classes.map((cls) => (
+                                <Badge key={cls} variant="outline" className="text-xs">
+                                  {cls}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {validation.details.found_methods && Object.keys(validation.details.found_methods).length > 0 && (
+                          <div className="mt-3 max-h-40 overflow-y-auto">
+                            <p className="font-medium mb-1">Methods by Class:</p>
+                            {Object.entries(validation.details.found_methods).map(([className, methods]) => (
+                              <div key={className} className="mb-2">
+                                <p className="text-xs font-medium text-muted-foreground">{className}:</p>
+                                <div className="flex flex-wrap gap-1 mt-1">
+                                  {methods.slice(0, 5).map((method) => (
+                                    <Badge key={method} variant="secondary" className="text-xs">
+                                      {method}()
+                                    </Badge>
+                                  ))}
+                                  {methods.length > 5 && (
+                                    <Badge variant="secondary" className="text-xs">
+                                      +{methods.length - 5} more
+                                    </Badge>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}
