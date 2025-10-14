@@ -12,6 +12,7 @@ import { Logger } from '../utils/logger';
 import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import { spawn } from 'child_process';
 
 const logger = new Logger('StrategyUpload');
 const router = Router();
@@ -49,6 +50,70 @@ function calculateMarginFromConfig(config: any): { marginRequired: number | null
   }
 
   return { marginRequired, marginCurrency };
+}
+
+/**
+ * Execute LiveTrader backtest using Python executor
+ */
+async function executeLiveTraderBacktest(
+  strategyCode: string,
+  config: any
+): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const pythonScript = path.join(__dirname, '../../python/livetrader_backtest_executor.py');
+    const pythonProcess = spawn('python3', [pythonScript], {
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    pythonProcess.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+
+    pythonProcess.stderr.on('data', (data) => {
+      stderr += data.toString();
+      logger.debug(`LiveTrader backtest stderr: ${data.toString()}`);
+    });
+
+    pythonProcess.on('close', (code) => {
+      if (code !== 0) {
+        logger.error(`LiveTrader backtest failed with code ${code}`);
+        logger.error(`Stderr: ${stderr}`);
+        return reject(new Error(`Backtest process exited with code ${code}`));
+      }
+
+      try {
+        const result = JSON.parse(stdout);
+        resolve(result);
+      } catch (parseError) {
+        logger.error('Failed to parse backtest result:', parseError);
+        logger.error('Stdout:', stdout);
+        reject(new Error('Failed to parse backtest result'));
+      }
+    });
+
+    pythonProcess.on('error', (error) => {
+      logger.error('Failed to start backtest process:', error);
+      reject(error);
+    });
+
+    // Send input to Python process
+    const input = JSON.stringify({
+      strategy_code: strategyCode,
+      config: config
+    });
+
+    pythonProcess.stdin.write(input);
+    pythonProcess.stdin.end();
+
+    // Timeout after 5 minutes
+    setTimeout(() => {
+      pythonProcess.kill();
+      reject(new Error('Backtest timeout (5 minutes)'));
+    }, 5 * 60 * 1000);
+  });
 }
 
 // Configure multer for file uploads
@@ -853,19 +918,54 @@ router.post('/cli-upload', authenticate, async (req: AuthenticatedRequest, res, 
     // Auto-trigger backtest after successful upload
     let backtestMetrics = null;
     let backtestError: string | null = null;
-    
+
     // LiveTrader strategies are self-contained and have their own backtest() method
-    // Activate them immediately since they handle their own validation
     if (parsedConfig.strategyType === 'livetrader') {
-      logger.info(`LiveTrader strategy detected - activating immediately (has own backtest() method)`);
-      await prisma.strategy.update({
-        where: { id: strategy.id },
-        data: {
-          isActive: true,
-          isApproved: true,
-          isMarketplace: true,
-        },
-      });
+      logger.info(`LiveTrader strategy detected - running backtest via LiveTrader.backtest() method`);
+      try {
+        // Execute LiveTrader backtest
+        const backtestResult = await executeLiveTraderBacktest(strategyCode, {
+          symbol: parsedConfig.executionConfig?.symbol || parsedConfig.pair || parsedConfig.pairs?.[0],
+          leverage: parsedConfig.riskProfile?.defaultLeverage || 10,
+          capital: parsedConfig.riskProfile?.defaultCapital || 10000,
+          risk_per_trade: parsedConfig.riskProfile?.defaultRiskPerTrade || 0.02,
+          strategy_params: parsedConfig.executionConfig || {}
+        });
+
+        if (!backtestResult.success) {
+          throw new Error(backtestResult.error || 'Backtest failed');
+        }
+
+        // Update strategy metrics and publish to marketplace
+        await prisma.strategy.update({
+          where: { id: strategy.id },
+          data: {
+            winRate: backtestResult.winRate,
+            riskReward: backtestResult.profitFactor,
+            maxDrawdown: backtestResult.maxDrawdown,
+            roi: backtestResult.roi,
+            isActive: true,
+            isApproved: true,
+            isMarketplace: true,
+          },
+        });
+
+        backtestMetrics = {
+          winRate: backtestResult.winRate,
+          profitFactor: backtestResult.profitFactor,
+          maxDrawdown: backtestResult.maxDrawdown,
+          roi: backtestResult.roi,
+          totalTrades: backtestResult.totalTrades,
+        };
+
+        logger.info(`LiveTrader backtest completed for strategy ${strategy.id}: ` +
+          `Win Rate ${backtestMetrics.winRate.toFixed(1)}%, ` +
+          `ROI ${backtestMetrics.roi.toFixed(2)}%`);
+      } catch (err) {
+        logger.error('LiveTrader backtest failed (non-fatal):', err);
+        backtestError = err instanceof Error ? err.message : String(err);
+        // Keep strategy hidden (isActive=false) so marketplace doesn't show N/A cards
+      }
     } else {
       // Old BaseStrategy format - run auto-backtest
       try {
