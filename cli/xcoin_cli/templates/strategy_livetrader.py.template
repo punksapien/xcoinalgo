@@ -524,8 +524,11 @@ class LiveTrader:
         # Fetch 1 year of historical data
         end_time = int(datetime.now().timestamp() * 1000)
         start_time = end_time - (365 * 24 * 60 * 60 * 1000)  # 1 year ago
-
-        df = self.client.get_candles(
+        
+        # Use the first client for fetching historical data
+        client = list(self.clients.values())[0]
+        
+        df = client.get_candles(
             market=self.settings['pair'],
             interval=self.settings['resolution'],
             start_time=start_time,
