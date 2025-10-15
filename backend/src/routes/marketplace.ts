@@ -244,22 +244,28 @@ router.get('/:id', async (req, res, next) => {
     const transformedBacktest = latestBacktest ? {
       ...latestBacktest,
       tradeHistory: Array.isArray(latestBacktest.tradeHistory)
-        ? (latestBacktest.tradeHistory as any[]).map((trade, index) => ({
-            index: index + 1,
-            entryTime: trade.entry_time || '',
-            exitTime: trade.exit_time || '',
-            entryDate: trade.entry_time?.split(' ')[0] || '',
-            exitDate: trade.exit_time?.split(' ')[0] || '',
-            orderType: trade.position || 'market',
-            strike: trade.position || '',
-            action: trade.position || '',
-            quantity: trade.size || 0,
-            entryPrice: trade.entry_price || 0,
-            exitPrice: trade.exit_price || 0,
-            profitLoss: trade.net_pnl || 0,
-            charges: trade.commission || 0,
-            remarks: trade.exit_reason || ''
-          }))
+        ? (latestBacktest.tradeHistory as any[]).map((trade, index) => {
+            // Convert timestamps (milliseconds) to ISO date strings
+            const entryDate = trade.entry_time ? new Date(Number(trade.entry_time)) : null;
+            const exitDate = trade.exit_time ? new Date(Number(trade.exit_time)) : null;
+            
+            return {
+              index: index + 1,
+              entryTime: entryDate ? entryDate.toISOString() : '',
+              exitTime: exitDate ? exitDate.toISOString() : '',
+              entryDate: entryDate ? entryDate.toISOString().split('T')[0] : '',
+              exitDate: exitDate ? exitDate.toISOString().split('T')[0] : '',
+              orderType: trade.position || trade.side || 'market',
+              strike: trade.position || trade.side || '',
+              action: trade.position || trade.side || '',
+              quantity: trade.size || trade.quantity || 0,
+              entryPrice: trade.entry_price || 0,
+              exitPrice: trade.exit_price || 0,
+              profitLoss: trade.net_pnl || trade.pnl || 0,
+              charges: trade.commission || 0,
+              remarks: trade.exit_reason || trade.reason || ''
+            };
+          })
         : []
     } : null;
 
