@@ -239,13 +239,37 @@ router.get('/:id', async (req, res, next) => {
       });
     }
 
+    // Transform backtest data to match frontend expectations
+    const latestBacktest = strategy.backtestResults[0];
+    const transformedBacktest = latestBacktest ? {
+      ...latestBacktest,
+      tradeHistory: Array.isArray(latestBacktest.tradeHistory)
+        ? (latestBacktest.tradeHistory as any[]).map((trade, index) => ({
+            index: index + 1,
+            entryTime: trade.entry_time || '',
+            exitTime: trade.exit_time || '',
+            entryDate: trade.entry_time?.split(' ')[0] || '',
+            exitDate: trade.exit_time?.split(' ')[0] || '',
+            orderType: trade.position || 'market',
+            strike: trade.position || '',
+            action: trade.position || '',
+            quantity: trade.size || 0,
+            entryPrice: trade.entry_price || 0,
+            exitPrice: trade.exit_price || 0,
+            profitLoss: trade.net_pnl || 0,
+            charges: trade.commission || 0,
+            remarks: trade.exit_reason || ''
+          }))
+        : []
+    } : null;
+
     res.json({
       strategy: {
         ...strategy,
         supportedPairs: strategy.supportedPairs ? JSON.parse(strategy.supportedPairs as string) : null,
         timeframes: strategy.timeframes ? JSON.parse(strategy.timeframes as string) : null,
         latestVersion: strategy.versions[0] || null,
-        latestBacktest: strategy.backtestResults[0] || null,
+        latestBacktest: transformedBacktest,
         versions: undefined, // Remove from response
         backtestResults: undefined, // Remove from response
       }

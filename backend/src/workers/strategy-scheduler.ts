@@ -170,12 +170,12 @@ class StrategyScheduler {
   }
 
   /**
-   * Schedule periodic refresh of schedules (every 5 minutes)
+   * Schedule periodic refresh of schedules (every 1 minute)
    */
   private scheduleRefresh(): void {
-    console.log('Scheduling periodic refresh every 5 minutes');
+    console.log('Scheduling periodic refresh every 1 minute');
 
-    cron.schedule('*/5 * * * *', async () => {
+    cron.schedule('* * * * *', async () => {
       if (this.isShuttingDown) {
         return;
       }

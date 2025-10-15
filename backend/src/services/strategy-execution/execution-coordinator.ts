@@ -546,9 +546,13 @@ class ExecutionCoordinator {
       }))
 
       // Prepare input for Python script
+      // Add strategy_id to settings for LiveTrader compatibility
       const input = JSON.stringify({
         strategy_code: strategyCode,
-        settings: strategySettings,
+        settings: {
+          ...strategySettings,
+          strategy_id: strategyId
+        },
         subscribers: subscribersData
       })
 
@@ -677,9 +681,13 @@ class ExecutionCoordinator {
       }))
 
       // Prepare input for Python script
+      // Add strategy_id to settings for LiveTrader compatibility
       const input = JSON.stringify({
         strategy_code: strategyCode,
-        settings: strategySettings,
+        settings: {
+          ...strategySettings,
+          strategy_id: strategyId
+        },
         subscribers: subscribersData
       })
 

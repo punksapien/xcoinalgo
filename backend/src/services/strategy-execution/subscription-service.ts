@@ -145,7 +145,11 @@ class SubscriptionService {
       // If first subscriber, register strategy in registry
       if (isFirstSubscriber && strategy.executionConfig) {
         const config = strategy.executionConfig as any
-        if (config.symbol && config.resolution) {
+
+        // Support both 'symbol' and 'pair' fields
+        const symbol = config.symbol || config.pair
+
+        if (symbol && config.resolution) {
           // ✅ NEW: Initialize strategy settings in Redis with ALL parameters from executionConfig
           await settingsService.initializeStrategy(
             strategyId,
@@ -159,12 +163,12 @@ class SubscriptionService {
 
           await strategyRegistry.registerStrategy(
             strategyId,
-            config.symbol,
+            symbol,
             config.resolution
           )
 
           console.log(
-            `Registered strategy ${strategyId} for ${config.symbol}/${config.resolution} ` +
+            `Registered strategy ${strategyId} for ${symbol}/${config.resolution} ` +
             `(first subscriber)`
           )
         }
@@ -245,16 +249,20 @@ class SubscriptionService {
 
       if (isLastSubscriber && subscription.strategy.executionConfig) {
         const config = subscription.strategy.executionConfig as any
-        if (config.symbol && config.resolution) {
+
+        // Support both 'symbol' and 'pair' fields
+        const symbol = config.symbol || config.pair
+
+        if (symbol && config.resolution) {
           await strategyRegistry.unregisterStrategy(
             subscription.strategyId,
-            config.symbol,
+            symbol,
             config.resolution
           )
 
           console.log(
             `Unregistered strategy ${subscription.strategyId} from ` +
-            `${config.symbol}/${config.resolution} (last subscriber)`
+            `${symbol}/${config.resolution} (last subscriber)`
           )
         }
       }

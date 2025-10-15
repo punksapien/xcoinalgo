@@ -394,7 +394,20 @@ class SettingsService {
         key === 'max_positions' ||
         key === 'lookback_period' ||
         key === 'execution_count' ||
-        key === 'subscribers'
+        key === 'subscribers' ||
+        // Strategy-specific integer parameters
+        key === 'st_period' ||
+        key === 'ema_fast_len' ||
+        key === 'ema_slow_len' ||
+        key === 'bb_len' ||
+        key === 'rsi_len' ||
+        key === 'rsi_oversold' ||
+        key === 'rsi_overbought' ||
+        key === 'atr_len' ||
+        key === 'vol_ma_len' ||
+        key === 'bbw_zscore_len' ||
+        key === 'hold_trend' ||
+        key === 'hold_reversion'
       ) {
         result[key] = parseInt(value, 10)
       } else if (
@@ -403,7 +416,15 @@ class SettingsService {
         key === 'max_daily_loss' ||
         key === 'sl_atr_multiplier' ||
         key === 'tp_atr_multiplier' ||
-        key === 'duration'
+        key === 'duration' ||
+        // Strategy-specific float parameters
+        key === 'st_multiplier' ||
+        key === 'bb_std' ||
+        key === 'zscore_thresh' ||
+        key === 'sl_atr_trend' ||
+        key === 'tp_atr_trend' ||
+        key === 'sl_atr_reversion' ||
+        key === 'tp_atr_reversion'
       ) {
         result[key] = parseFloat(value)
       } else if (key === 'is_active') {
@@ -434,10 +455,15 @@ class SettingsService {
 
       const config = strategy.executionConfig as any
 
+      // Support both 'symbol' and 'pair' fields
+      const symbol = config.symbol || config.pair
+
       return {
         version: 1,
         updated_at: new Date().toISOString(),
-        symbol: config.symbol,
+        strategy_id: strategyId,
+        symbol,  // Normalize to 'symbol'
+        pair: symbol,  // Keep 'pair' for backward compatibility
         resolution: config.resolution,
         lookback_period: config.lookbackPeriod || 200,
         ...config,
