@@ -59,8 +59,8 @@ export default function StrategyUploadPage() {
   const [config, setConfig] = useState({
     name: '',
     description: '',
-    pair: 'B-BTC_USDT',
-    resolution: '5',
+    pair: '',  // Don't hardcode - will be populated from STRATEGY_CONFIG
+    resolution: '',  // Don't hardcode - will be populated from STRATEGY_CONFIG
     author: '',
     tags: '',
   });
@@ -163,6 +163,26 @@ export default function StrategyUploadPage() {
             warnings = data.validation.warnings || [];
             details = data.validation.details;
             summary = data.validation.summary;
+
+            // ✅ Auto-populate form from extracted STRATEGY_CONFIG
+            if (data.extractedConfig) {
+              setConfig(prev => ({
+                ...prev,
+                pair: data.extractedConfig.pair || prev.pair,
+                resolution: data.extractedConfig.resolution || prev.resolution,
+                author: data.extractedConfig.author || prev.author,
+                description: data.extractedConfig.description || prev.description,
+                tags: Array.isArray(data.extractedConfig.tags)
+                  ? data.extractedConfig.tags.join(', ')
+                  : (data.extractedConfig.tags || prev.tags),
+                name: prev.name || data.extractedConfig.name || '',  // Keep user's name if already set
+              }));
+
+              showInfoToast(
+                'Config Detected',
+                `Found STRATEGY_CONFIG: ${data.extractedConfig.pair || 'Unknown pair'} @ ${data.extractedConfig.resolution || '?'}m`
+              );
+            }
           } else {
             // Fallback to client-side if backend fails
             warnings.push('Backend validation unavailable, using basic checks');
@@ -623,30 +643,28 @@ export default function StrategyUploadPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="pair">Trading Pair</Label>
+              <Label htmlFor="pair">Trading Pair (from STRATEGY_CONFIG)</Label>
               <Input
                 id="pair"
-                value={config.pair}
-                onChange={(e) => setConfig({ ...config, pair: e.target.value })}
-                placeholder="e.g., B-BTC_USDT"
-                disabled={uploading || backtestRunning}
+                value={config.pair || 'Auto-detected from file...'}
+                disabled={true}
+                className="bg-muted"
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Format: B-SYMBOL_USDT for futures
+                ✅ Automatically extracted from STRATEGY_CONFIG in your Python file
               </p>
             </div>
 
             <div>
-              <Label htmlFor="resolution">Resolution (minutes)</Label>
+              <Label htmlFor="resolution">Resolution (from STRATEGY_CONFIG)</Label>
               <Input
                 id="resolution"
-                value={config.resolution}
-                onChange={(e) => setConfig({ ...config, resolution: e.target.value })}
-                placeholder="e.g., 5"
-                disabled={uploading || backtestRunning}
+                value={config.resolution ? `${config.resolution} minute${config.resolution !== '1' ? 's' : ''}` : 'Auto-detected from file...'}
+                disabled={true}
+                className="bg-muted"
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Common: 1, 5, 15, 30, 60
+                ✅ Automatically extracted from STRATEGY_CONFIG in your Python file
               </p>
             </div>
           </div>

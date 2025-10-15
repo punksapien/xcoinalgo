@@ -193,7 +193,11 @@ router.post('/validate', authenticate, upload.single('strategyFile'), async (req
     const formattedErrors = strategyStructureValidator.formatErrors(validationResult);
     const summary = strategyStructureValidator.getSummary(validationResult);
 
+    // Extract STRATEGY_CONFIG from Python file
+    const configExtraction = extractStrategyConfig(strategyCode);
+
     logger.info(`Validation complete: ${validationResult.is_valid ? 'PASSED' : 'FAILED'}`);
+    logger.info(`Config extraction: ${configExtraction.success ? configExtraction.extractedParams.length + ' params' : 'failed'}`);
 
     res.json({
       success: true,
@@ -210,7 +214,8 @@ router.post('/validate', authenticate, upload.single('strategyFile'), async (req
           classes_expected: validationResult.summary.classes_expected,
           classes_found: validationResult.summary.classes_found
         }
-      }
+      },
+      extractedConfig: configExtraction.config  // ✅ Return extracted config to frontend
     });
 
   } catch (error) {
@@ -854,7 +859,7 @@ router.delete('/:id', authenticate, async (req: AuthenticatedRequest, res, next)
       // 2. Delete strategy execution folder (strategies/{id}/)
       const strategiesDir = path.join(__dirname, '../../strategies');
       const strategyDir = path.join(strategiesDir, strategyId);
-      
+
       if (fs.existsSync(strategyDir)) {
         fs.rmSync(strategyDir, { recursive: true, force: true });
         logger.info(`✅ Strategy execution folder deleted: ${strategyDir}`);
@@ -1767,11 +1772,28 @@ router.post('/upload-simple', authenticate, upload.fields([
     logger.info('Extracting STRATEGY_CONFIG from Python file...');
     const configExtraction = extractStrategyConfig(strategyCode);
 
-    // Merge extracted config with user-provided config (user overrides defaults)
+    // Merge extracted config with user-provided config
+    // STRATEGY_CONFIG takes precedence for technical params (pair, resolution, etc.)
+    // Frontend can only override metadata (name, description, author, tags)
+    const PROTECTED_PARAMS = ['pair', 'resolution', 'st_period', 'st_multiplier', 'ema_fast_len',
+                               'ema_slow_len', 'bb_len', 'bb_std', 'zscore_thresh', 'rsi_len',
+                               'rsi_oversold', 'rsi_overbought', 'atr_len', 'vol_ma_len',
+                               'bbw_zscore_len', 'hold_trend', 'sl_atr_trend', 'tp_atr_trend',
+                               'hold_reversion', 'sl_atr_reversion', 'tp_atr_reversion',
+                               'margin_currency'];
+
+    const ALLOWED_OVERRIDES = ['name', 'description', 'author', 'tags'];
+
     const mergedConfig = {
-      ...configExtraction.config,  // Defaults from STRATEGY_CONFIG
-      ...config,                    // User overrides from form
+      ...configExtraction.config,  // Start with STRATEGY_CONFIG
     };
+
+    // Only allow metadata overrides from frontend, NEVER technical params
+    Object.keys(config).forEach(key => {
+      if (ALLOWED_OVERRIDES.includes(key) && config[key]) {
+        mergedConfig[key] = config[key];
+      }
+    });
 
     logger.info(`Config merge: extracted=${configExtraction.extractedParams.length} params, user=${Object.keys(config).length}, merged=${Object.keys(mergedConfig).length}`);
 
@@ -1824,18 +1846,18 @@ router.post('/upload-simple', authenticate, upload.fields([
         data: {
           name: strategyName,
           code: strategyCode_db,
-          description: config.description || '',
-          detailedDescription: config.detailedDescription || '',
-          author: config.author || 'Unknown',
+          description: mergedConfig.description || '',
+          detailedDescription: mergedConfig.detailedDescription || '',
+          author: mergedConfig.author || 'Unknown',
           version: '1.0.0',
-          instrument: config.pair || 'B-BTC_USDT',
-          tags: Array.isArray(config.tags) ? config.tags.join(',') : '',
-          strategyType: 'multi_tenant', // Mark as multi-tenant compatible
+          instrument: mergedConfig.pair || 'UNKNOWN',  // ✅ Use extracted pair, don't default to BTC
+          tags: Array.isArray(mergedConfig.tags) ? mergedConfig.tags.join(',') : '',
+          strategyType: 'multi_tenant', // Mark as multi_tenant compatible
           isActive: false, // Will be activated after backtest
           isApproved: false,
           isMarketplace: false,
-          supportedPairs: config.supportedPairs ? JSON.stringify(config.supportedPairs) : null,
-          timeframes: config.timeframes ? JSON.stringify(config.timeframes) : null,
+          supportedPairs: mergedConfig.supportedPairs ? JSON.stringify(mergedConfig.supportedPairs) : null,
+          timeframes: mergedConfig.timeframes ? JSON.stringify(mergedConfig.timeframes) : null,
           executionConfig: mergedConfig, // ✅ Store extracted + user config for live trading
           versions: {
             create: {

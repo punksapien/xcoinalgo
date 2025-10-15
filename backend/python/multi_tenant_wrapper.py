@@ -124,6 +124,52 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
         # ====================================================================
         logging.info("📦 Loading strategy code...")
 
+        # ✅ Setup CSV logging in logs/ directory (current working directory is the strategy folder)
+        import os
+        logs_dir = os.path.join(os.getcwd(), 'logs')
+        os.makedirs(logs_dir, exist_ok=True)
+
+        strategy_id = settings.get('strategy_id', 'unknown')
+        log_file = os.path.join(logs_dir, f'live_trader_{strategy_id}.csv')
+        print_log_file = os.path.join(logs_dir, f'print_output_{strategy_id}.log')
+
+        # Add CSV file handler for persistent logs with IST timezone
+        from datetime import timezone, timedelta
+
+        class ISTFormatter(logging.Formatter):
+            """Custom formatter to show timestamps in IST (UTC+5:30)"""
+            def formatTime(self, record, datefmt=None):
+                ist = timezone(timedelta(hours=5, minutes=30))
+                dt = datetime.fromtimestamp(record.created, tz=ist)
+                if datefmt:
+                    return dt.strftime(datefmt)
+                return dt.strftime('%Y-%m-%d %H:%M:%S IST')
+
+        csv_handler = logging.FileHandler(log_file, mode='a')
+        csv_formatter = ISTFormatter('%(asctime)s,%(levelname)s,%(message)s,%(funcName)s,%(lineno)d')
+        csv_handler.setFormatter(csv_formatter)
+        logging.getLogger().addHandler(csv_handler)
+
+        # ✅ Redirect print() statements to file
+        class PrintLogger:
+            def __init__(self, filename):
+                self.terminal = sys.stdout
+                self.log = open(filename, 'a')
+
+            def write(self, message):
+                self.terminal.write(message)  # Still show in console
+                self.log.write(message)  # Also write to file
+                self.log.flush()
+
+            def flush(self):
+                self.terminal.flush()
+                self.log.flush()
+
+        sys.stdout = PrintLogger(print_log_file)
+
+        logging.info(f"📝 Logging to: {log_file}")
+        logging.info(f"📝 Print output to: {print_log_file}")
+
         exec_scope = {
             '__builtins__': __builtins__,
             'logging': logging,
