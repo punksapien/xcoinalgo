@@ -241,34 +241,52 @@ router.get('/:id', async (req, res, next) => {
 
     // Transform backtest data to match frontend expectations
     const latestBacktest = strategy.backtestResults[0];
+    
+    // Transform monthlyReturns from {month: {pnl, trades}} to {month: pnl}
+    let monthlyReturns = latestBacktest?.monthlyReturns;
+    if (monthlyReturns && typeof monthlyReturns === 'object') {
+      const transformed: Record<string, number> = {};
+      Object.entries(monthlyReturns).forEach(([key, value]) => {
+        // If value is an object with pnl property, extract just the pnl
+        if (value && typeof value === 'object' && 'pnl' in value) {
+          transformed[key] = (value as any).pnl;
+        } else if (typeof value === 'number') {
+          // Already a number, use it directly
+          transformed[key] = value;
+        }
+      });
+      monthlyReturns = transformed;
+    }
+    
     const transformedBacktest = latestBacktest ? {
       ...latestBacktest,
+      monthlyReturns, // Use transformed version
       tradeHistory: Array.isArray(latestBacktest.tradeHistory)
         ? (latestBacktest.tradeHistory as any[]).map((trade, index) => {
             // Helper function to safely parse date - handles strings, numbers, and ISO strings
             const parseDate = (value: any): Date | null => {
               if (!value) return null;
-              
+
               // If already a valid ISO string, use it
               if (typeof value === 'string' && value.includes('T')) {
                 const d = new Date(value);
                 return isNaN(d.getTime()) ? null : d;
               }
-              
+
               // If it's a number (timestamp), convert
               if (typeof value === 'number' || !isNaN(Number(value))) {
                 const d = new Date(Number(value));
                 return isNaN(d.getTime()) ? null : d;
               }
-              
+
               // Try parsing as string
               const d = new Date(value);
               return isNaN(d.getTime()) ? null : d;
             };
-            
+
             const entryDate = parseDate(trade.entry_time);
             const exitDate = parseDate(trade.exit_time);
-            
+
             return {
               index: index + 1,
               entryTime: entryDate ? entryDate.toISOString() : '',
