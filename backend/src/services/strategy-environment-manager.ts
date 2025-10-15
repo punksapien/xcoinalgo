@@ -17,8 +17,8 @@ const exec = promisify(execCallback);
 const ENVIRONMENTS_BASE_DIR = process.env.STRATEGY_ENVIRONMENTS_DIR ||
   path.join(process.cwd(), 'strategy_environments');
 
-// Path to requirements file
-const REQUIREMENTS_FILE = path.join(process.cwd(), 'backend', 'python', 'strategy_requirements.txt');
+// Path to requirements file (relative to this file: src/services -> ../../python)
+const REQUIREMENTS_FILE = path.join(__dirname, '../../python/strategy_requirements.txt');
 
 // Required Python version
 const REQUIRED_PYTHON_VERSION = '3.12.12';
