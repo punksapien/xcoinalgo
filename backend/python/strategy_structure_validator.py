@@ -332,15 +332,28 @@ class StrategyStructureValidator:
         - CANNOT have FEWER parameters than required
         - Allows additional optional params, defaults, *args, **kwargs
         - Checks that required param names exist in order (first N params)
+        - Accepts both static methods and instance methods (flexible about 'self')
         """
         errors = []
 
         required_params = required_method.params
         found_params = found_method['params']
 
-        # Special case: static methods don't have 'self'
-        if found_method.get('is_static') and 'self' in required_params:
+        # Handle 'self' parameter flexibly:
+        # - If required signature has NO 'self', accept both static and instance methods
+        # - If found method has 'self' but required doesn't, skip 'self' in found params
+        # - If found method is @staticmethod and required has 'self', skip 'self' in required
+        has_self_in_required = 'self' in required_params
+        has_self_in_found = len(found_params) > 0 and found_params[0] == 'self'
+
+        # Case 1: Found method is static but required expects instance method
+        if found_method.get('is_static') and has_self_in_required:
             required_params = [p for p in required_params if p != 'self']
+
+        # Case 2: Found method is instance method but required signature doesn't include 'self'
+        # (This means the required signature is flexible - accepts both static and instance)
+        elif has_self_in_found and not has_self_in_required:
+            found_params = found_params[1:]  # Skip 'self' from found params
 
         # Count actual parameters (excluding *args, **kwargs which are always allowed)
         found_positional = [p for p in found_params if p not in ('args', 'kwargs')]
