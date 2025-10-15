@@ -290,7 +290,10 @@ class StrategyRegistry {
    * Generate Redis key for a candle
    */
   private getCandleKey(symbol: string, resolution: string): string {
-    return `candle:${symbol}:${resolution}m`
+    // Strip any existing 'm' suffix before adding it back
+    // (frontend might send "5m" or backend might send "5")
+    const cleanResolution = resolution.replace(/m$/i, '')
+    return `candle:${symbol}:${cleanResolution}`
   }
 }
 

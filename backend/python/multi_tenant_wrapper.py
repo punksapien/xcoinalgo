@@ -134,13 +134,13 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
         print_log_file = os.path.join(logs_dir, f'print_output_{strategy_id}.log')
 
         # Add CSV file handler for persistent logs with IST timezone
-        from datetime import timezone, timedelta
+        from datetime import datetime as dt_class, timezone, timedelta
 
         class ISTFormatter(logging.Formatter):
             """Custom formatter to show timestamps in IST (UTC+5:30)"""
             def formatTime(self, record, datefmt=None):
                 ist = timezone(timedelta(hours=5, minutes=30))
-                dt = datetime.fromtimestamp(record.created, tz=ist)
+                dt = dt_class.fromtimestamp(record.created, tz=ist)
                 if datefmt:
                     return dt.strftime(datefmt)
                 return dt.strftime('%Y-%m-%d %H:%M:%S IST')
