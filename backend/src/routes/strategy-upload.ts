@@ -845,10 +845,20 @@ router.delete('/:id', authenticate, async (req: AuthenticatedRequest, res, next)
       // Continue with DB deletion even if Redis cleanup fails
     }
 
-    // ✅ FILESYSTEM CLEANUP: Delete strategy environment folder
+    // ✅ FILESYSTEM CLEANUP: Delete strategy environment folder and execution folder
     try {
+      // 1. Delete Python environment (.venv) - the big one (500MB-2GB)
       await strategyEnvironmentManager.deleteEnvironment(strategyId);
       logger.info(`✅ Strategy environment folder deleted for ${strategyId}`);
+
+      // 2. Delete strategy execution folder (strategies/{id}/)
+      const strategiesDir = path.join(__dirname, '../../strategies');
+      const strategyDir = path.join(strategiesDir, strategyId);
+      
+      if (fs.existsSync(strategyDir)) {
+        fs.rmSync(strategyDir, { recursive: true, force: true });
+        logger.info(`✅ Strategy execution folder deleted: ${strategyDir}`);
+      }
     } catch (fsError) {
       logger.error('Filesystem cleanup failed (continuing with deletion):', fsError);
       // Continue with DB deletion even if filesystem cleanup fails
