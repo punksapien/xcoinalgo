@@ -9,7 +9,6 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import { logger } from '../../utils/logger';
 import { strategyEnvironmentManager } from '../strategy-environment-manager';
-import { decrypt } from '../../utils/encryption';
 import prisma from '../../utils/database';
 import { backtestProgressTracker } from '../backtest-progress-tracker';
 
@@ -26,6 +25,8 @@ export interface StrategySettings {
   tp_rate?: number;
   start_date?: string;
   end_date?: string;
+  // Allow additional strategy-specific parameters from STRATEGY_CONFIG
+  [key: string]: any;
 }
 
 export interface Subscriber {
@@ -120,8 +121,10 @@ export class StrategyExecutor {
         input
       );
 
-      // Parse result
-      const parsedResult = JSON.parse(result.stdout);
+      // Parse result - extract only the last JSON object from stdout
+      const stdoutLines = result.stdout.trim().split('\n');
+      const lastJsonLine = stdoutLines[stdoutLines.length - 1];
+      const parsedResult = JSON.parse(lastJsonLine);
 
       // Log result
       if (parsedResult.success) {
@@ -187,6 +190,9 @@ export class StrategyExecutor {
         },
       };
 
+      // DEBUG: Log settings keys being sent to Python
+      logger.info(`Python input settings keys (${Object.keys(input.settings).length}): ${Object.keys(input.settings).join(', ')}`);
+
       // Execute with progress tracking
       const result = await this.executePythonScriptWithProgress(
         strategyId,
@@ -195,8 +201,11 @@ export class StrategyExecutor {
         input
       );
 
-      // Parse result
-      const parsedResult = JSON.parse(result.stdout);
+      // Parse result - extract only the last JSON object from stdout
+      // (Python may output debug messages before the final JSON)
+      const stdoutLines = result.stdout.trim().split('\n');
+      const lastJsonLine = stdoutLines[stdoutLines.length - 1];
+      const parsedResult = JSON.parse(lastJsonLine);
 
       // Log result
       if (parsedResult.success) {
@@ -210,13 +219,48 @@ export class StrategyExecutor {
           totalTrades: parsedResult.total_trades
         });
 
-        // Prepare execution config for scheduler
-        const executionConfig = {
-          symbol: settings.pair,
-          resolution: settings.resolution?.replace('m', '') || '5',
-        };
+        // Calculate additional data for comprehensive reporting
+        const equityCurve = this.calculateEquityCurve(parsedResult.trades || [], settings.capital || 10000);
+        const monthlyReturns = this.calculateMonthlyReturns(parsedResult.trades || []);
 
-        // Update strategy with backtest metrics and execution config
+        // Save complete backtest results to database for permanent storage
+        const backtestResult = await prisma.backtestResult.create({
+          data: {
+            strategyId,
+            version: '1.0.0',
+
+            // Backtest parameters
+            startDate: new Date(settings.start_date || new Date()),
+            endDate: new Date(settings.end_date || new Date()),
+            initialBalance: settings.capital || 10000,
+            timeframe: settings.resolution || '5m',
+
+            // Performance metrics
+            finalBalance: equityCurve.finalBalance,
+            totalReturn: equityCurve.totalReturn,
+            totalReturnPct: parsedResult.metrics?.roi || 0,
+            maxDrawdown: parsedResult.metrics?.maxDrawdown || 0,
+            sharpeRatio: parsedResult.metrics?.sharpeRatio || 0,
+            winRate: parsedResult.metrics?.winRate || 0,
+            profitFactor: parsedResult.metrics?.profitFactor || 0,
+            totalTrades: parsedResult.total_trades || 0,
+            avgTrade: parsedResult.metrics?.expectancy || 0,
+
+            // Detailed results for charts and reports
+            equityCurve: equityCurve.data,
+            tradeHistory: parsedResult.trades || [],
+            monthlyReturns: monthlyReturns,
+
+            // Metadata
+            backtestDuration: parsedResult.stats?.total_duration || 0,
+            dataQuality: 'good'
+          }
+        });
+
+        logger.info(`Saved complete backtest results to database (ID: ${backtestResult.id})`);
+
+        // ✅ FIX: Update strategy with backtest metrics ONLY
+        // DO NOT overwrite executionConfig - it already has all STRATEGY_CONFIG parameters from upload
         await prisma.strategy.update({
           where: { id: strategyId },
           data: {
@@ -225,7 +269,7 @@ export class StrategyExecutor {
             maxDrawdown: parsedResult.metrics?.maxDrawdown || 0,
             profitFactor: parsedResult.metrics?.profitFactor || 0,
             totalTrades: parsedResult.total_trades || 0,
-            executionConfig: executionConfig,
+            // ❌ REMOVED: executionConfig: executionConfig, // Don't overwrite!
             isActive: true,
             isApproved: true,
             isMarketplace: true
@@ -269,11 +313,11 @@ export class StrategyExecutor {
         },
       });
 
-      // Decrypt credentials in memory
+      // Use credentials directly (no decryption needed)
       const subscribers: Subscriber[] = subscriptions.map((sub) => ({
         user_id: sub.userId,
-        api_key: decrypt(sub.brokerCredential.apiKey),      // Decrypt in memory
-        api_secret: decrypt(sub.brokerCredential.apiSecret), // Decrypt in memory
+        api_key: sub.brokerCredential.apiKey,      // Plaintext
+        api_secret: sub.brokerCredential.apiSecret, // Plaintext
         capital: sub.capital,
         leverage: sub.leverage,
         risk_per_trade: sub.riskPerTrade,
@@ -344,8 +388,10 @@ export class StrategyExecutor {
         input
       );
 
-      // Parse result
-      const parsedResult = JSON.parse(result.stdout);
+      // Parse result - extract only the last JSON object from stdout
+      const stdoutLines = result.stdout.trim().split('\n');
+      const lastJsonLine = stdoutLines[stdoutLines.length - 1];
+      const parsedResult = JSON.parse(lastJsonLine);
 
       // Log result
       if (parsedResult.success) {
@@ -551,6 +597,73 @@ export class StrategyExecutor {
       logger.error(`Failed to get resolution for strategy ${strategyId}:`, error);
       return '5m'; // Default fallback
     }
+  }
+
+  /**
+   * Calculate equity curve from trade history
+   */
+  private calculateEquityCurve(trades: any[], initialCapital: number): {
+    data: any;
+    finalBalance: number;
+    totalReturn: number;
+  } {
+    if (!trades || trades.length === 0) {
+      return {
+        data: { timestamps: [], values: [] },
+        finalBalance: initialCapital,
+        totalReturn: 0
+      };
+    }
+
+    const timestamps: string[] = [];
+    const values: number[] = [];
+    let currentCapital = initialCapital;
+
+    // Add initial point
+    timestamps.push(trades[0].entry_time);
+    values.push(initialCapital);
+
+    // Build equity curve from trades
+    for (const trade of trades) {
+      currentCapital = trade.capital_after_trade || currentCapital;
+      timestamps.push(trade.exit_time);
+      values.push(currentCapital);
+    }
+
+    const finalBalance = currentCapital;
+    const totalReturn = finalBalance - initialCapital;
+
+    return {
+      data: { timestamps, values },
+      finalBalance,
+      totalReturn
+    };
+  }
+
+  /**
+   * Calculate monthly returns from trade history
+   */
+  private calculateMonthlyReturns(trades: any[]): any {
+    if (!trades || trades.length === 0) {
+      return {};
+    }
+
+    const monthlyData: { [key: string]: { pnl: number; trades: number } } = {};
+
+    for (const trade of trades) {
+      // Parse exit_time to get month key (YYYY-MM format)
+      const exitDate = new Date(trade.exit_time);
+      const monthKey = `${exitDate.getFullYear()}-${String(exitDate.getMonth() + 1).padStart(2, '0')}`;
+
+      if (!monthlyData[monthKey]) {
+        monthlyData[monthKey] = { pnl: 0, trades: 0 };
+      }
+
+      monthlyData[monthKey].pnl += trade.net_pnl || 0;
+      monthlyData[monthKey].trades += 1;
+    }
+
+    return monthlyData;
   }
 }
 

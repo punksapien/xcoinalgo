@@ -146,6 +146,17 @@ class SubscriptionService {
       if (isFirstSubscriber && strategy.executionConfig) {
         const config = strategy.executionConfig as any
         if (config.symbol && config.resolution) {
+          // ✅ NEW: Initialize strategy settings in Redis with ALL parameters from executionConfig
+          await settingsService.initializeStrategy(
+            strategyId,
+            config,  // This includes ALL STRATEGY_CONFIG parameters (st_period, ema_fast_len, etc.)
+            1
+          )
+
+          console.log(
+            `Initialized strategy ${strategyId} settings in Redis with ${Object.keys(config).length} parameters`
+          )
+
           await strategyRegistry.registerStrategy(
             strategyId,
             config.symbol,
