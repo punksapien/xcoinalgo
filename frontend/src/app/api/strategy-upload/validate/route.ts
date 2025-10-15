@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Forward the request to the backend
-    const response = await fetch(`${BACKEND_URL}/api/strategies/validate`, {
+    const response = await fetch(`${BACKEND_URL}/api/strategy-upload/validate`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
