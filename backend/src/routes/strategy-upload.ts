@@ -1606,7 +1606,7 @@ router.post('/upload-simple', authenticate, upload.fields([
     // Auto-detect strategy components
     const hasLiveTrader = strategyCode.includes('class LiveTrader');
     const hasBacktester = strategyCode.includes('class Backtester');
-    const hasGenerateSignals = strategyCode.includes('def generate_signals_from_strategy');
+    const hasTrader = strategyCode.includes('class Trader');
 
     // Save strategy to organized directory structure
     const saveStrategyToFile = (strategyId: string, strategyName: string, code: string) => {
@@ -1649,10 +1649,10 @@ router.post('/upload-simple', authenticate, upload.fields([
       });
     }
 
-    if (!hasGenerateSignals) {
+    if (!hasTrader) {
       return res.status(400).json({
-        error: 'Strategy must contain generate_signals_from_strategy function',
-        hint: 'Expected: def generate_signals_from_strategy(df, params)'
+        error: 'Strategy must contain Trader class with generate_signals method',
+        hint: 'Expected: class Trader with def generate_signals(self, df, params)'
       });
     }
 
@@ -1836,7 +1836,7 @@ router.post('/upload-simple', authenticate, upload.fields([
       detected: {
         liveTrader: hasLiveTrader,
         backtester: hasBacktester,
-        generateSignals: hasGenerateSignals
+        trader: hasTrader
       },
       configExtraction: {
         success: configExtraction.success,

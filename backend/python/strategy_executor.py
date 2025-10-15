@@ -293,9 +293,8 @@ def execute_live(module, settings: Dict[str, Any], subscribers: List[Dict[str, A
         log_filename = os.path.join(logs_dir, f"strategy_{settings.get('strategy_id', 'unknown')}.csv")
         CsvHandler.setup_logging(filename=log_filename)
 
-        # Get required classes/functions from module
+        # Get required classes from module
         LiveTrader = getattr(module, 'LiveTrader')
-        generate_signals = getattr(module, 'generate_signals_from_strategy')
 
         logging.info(f"🚀 Multi-Tenant Execution Started")
         logging.info(f"   Pair: {settings.get('pair')}")
@@ -328,7 +327,8 @@ def execute_live(module, settings: Dict[str, Any], subscribers: List[Dict[str, A
         # ====================================================================
         logging.info("🧠 Generating signals...")
 
-        df_with_signals = generate_signals(df, settings)
+        # Use the LiveTrader instance's inherited generate_signals method
+        df_with_signals = temp_trader.generate_signals(df, settings)
 
         if df_with_signals is None or (hasattr(df_with_signals, 'empty') and df_with_signals.empty):
             raise ValueError("Signal generation returned empty dataframe")

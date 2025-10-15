@@ -225,24 +225,10 @@ def execute_livetrader_strategy(input_data: Dict[str, Any], log_capture: LogCapt
         if 'LiveTrader' not in exec_scope:
             raise ValueError("Strategy code must define 'LiveTrader' class")
 
-        LiveTrader = exec_scope['LiveTrader']
+        if 'Trader' not in exec_scope:
+            raise ValueError("Strategy code must define 'Trader' class (base class for LiveTrader)")
 
-        # Support both standalone function and Trader.generate_signals method
-        if 'generate_signals_from_strategy' in exec_scope:
-            # Pattern 1: Standalone function
-            generate_signals = exec_scope['generate_signals_from_strategy']
-        elif 'Trader' in exec_scope:
-            # Pattern 2: Trader class with generate_signals method
-            logging.info("Using Trader.generate_signals method")
-            Trader = exec_scope['Trader']
-            trader_instance = Trader()
-            generate_signals = lambda df, params: trader_instance.generate_signals(df, params)
-        else:
-            raise ValueError(
-                "Strategy code must define either:\n"
-                "  1. 'generate_signals_from_strategy' function, OR\n"
-                "  2. 'Trader' class with 'generate_signals' method"
-            )
+        LiveTrader = exec_scope['LiveTrader']
 
         logging.info("✅ Strategy classes loaded successfully")
 
@@ -273,7 +259,8 @@ def execute_livetrader_strategy(input_data: Dict[str, Any], log_capture: LogCapt
         # ====================================================================
         logging.info("🧠 Generating signals...")
 
-        df_with_signals = generate_signals(df, settings)
+        # Use the LiveTrader instance's inherited generate_signals method
+        df_with_signals = temp_trader.generate_signals(df, settings)
 
         if df_with_signals is None or (hasattr(df_with_signals, 'empty') and df_with_signals.empty):
             raise ValueError("Signal generation returned empty dataframe")

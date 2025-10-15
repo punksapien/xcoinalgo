@@ -74,7 +74,7 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
 
     Strategy Anatomy (what we expect from quant team):
         - class CoinDCXClient: API communication
-        - def generate_signals_from_strategy(df, params): Strategy logic
+        - class Trader: Contains generate_signals(df, params) method for strategy logic
         - class LiveTrader: Single-tenant live execution
         - class Backtester: Backtesting (optional)
 
@@ -83,7 +83,7 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
         2. For each subscriber:
            a. Initialize LiveTrader with subscriber's credentials
            b. Fetch market data (shared across subscribers)
-           c. Generate signals using generate_signals_from_strategy
+           c. Generate signals using Trader.generate_signals method
            d. Execute check_for_new_signal with subscriber's LiveTrader
 
     Args:
@@ -179,11 +179,10 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
         if 'LiveTrader' not in exec_scope:
             raise ValueError("Strategy code must define 'LiveTrader' class")
 
-        if 'generate_signals_from_strategy' not in exec_scope:
-            raise ValueError("Strategy code must define 'generate_signals_from_strategy' function")
+        if 'Trader' not in exec_scope:
+            raise ValueError("Strategy code must define 'Trader' class (base class for LiveTrader)")
 
         LiveTrader = exec_scope['LiveTrader']
-        generate_signals = exec_scope['generate_signals_from_strategy']
 
         logging.info("✅ Strategy classes loaded successfully")
 
@@ -214,7 +213,8 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
         # ====================================================================
         logging.info("🧠 Generating signals...")
 
-        df_with_signals = generate_signals(df, settings)
+        # Use the LiveTrader instance's inherited generate_signals method
+        df_with_signals = temp_trader.generate_signals(df, settings)
 
         if df_with_signals is None or (hasattr(df_with_signals, 'empty') and df_with_signals.empty):
             raise ValueError("Signal generation returned empty dataframe")
