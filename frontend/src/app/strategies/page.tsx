@@ -58,7 +58,7 @@ interface Strategy {
 
 export default function StrategyManagementPage() {
   const router = useRouter();
-  const { token } = useAuth();
+  const { token, hasHydrated } = useAuth();
 
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [loading, setLoading] = useState(true);
@@ -98,8 +98,19 @@ export default function StrategyManagementPage() {
   }, [statusFilter, token]);
 
   useEffect(() => {
+    // Wait for Zustand to hydrate and for token to be available
+    if (!hasHydrated) {
+      return;
+    }
+
+    // If no token after hydration, redirect to login
+    if (!token) {
+      router.replace('/login');
+      return;
+    }
+
     fetchStrategies();
-  }, [fetchStrategies]);
+  }, [fetchStrategies, hasHydrated, token, router]);
 
   // Poll for strategies with PROCESSING status
   useEffect(() => {
@@ -254,7 +265,8 @@ export default function StrategyManagementPage() {
     );
   };
 
-  if (loading) {
+  // Show loading while hydrating or fetching
+  if (!hasHydrated || loading) {
     return (
       <div className="container mx-auto p-6">
         <div className="flex items-center justify-center h-64">
