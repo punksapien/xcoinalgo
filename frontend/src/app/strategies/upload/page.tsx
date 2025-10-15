@@ -29,7 +29,7 @@ interface ValidationResult {
   detected: {
     liveTrader: boolean;
     backtester: boolean;
-    generateSignals: boolean;
+    trader: boolean;
   };
   details?: {
     found_classes: string[];
@@ -129,7 +129,7 @@ export default function StrategyUploadPage() {
       const detected = {
         liveTrader: code.includes('class LiveTrader'),
         backtester: code.includes('class Backtester'),
-        generateSignals: code.includes('def generate_signals_from_strategy'),
+        trader: code.includes('class Trader'),
       };
 
       // Check if this is the new multi-tenant format
@@ -177,8 +177,8 @@ export default function StrategyUploadPage() {
           errors.push('Strategy must contain "class LiveTrader"');
         }
 
-        if (!detected.generateSignals) {
-          errors.push('Strategy must contain "def generate_signals_from_strategy(df, params)"');
+        if (!detected.trader) {
+          errors.push('Strategy must contain "class Trader" with generate_signals method');
         }
 
         if (!detected.backtester) {
@@ -476,9 +476,9 @@ export default function StrategyUploadPage() {
                       {validation.detected.backtester ? <CheckCircle2 className="h-3 w-3 mr-1" /> : <XCircle className="h-3 w-3 mr-1" />}
                       Backtester
                     </Badge>
-                    <Badge variant={validation.detected.generateSignals ? "default" : "secondary"}>
-                      {validation.detected.generateSignals ? <CheckCircle2 className="h-3 w-3 mr-1" /> : <XCircle className="h-3 w-3 mr-1" />}
-                      generate_signals_from_strategy
+                    <Badge variant={validation.detected.trader ? "default" : "secondary"}>
+                      {validation.detected.trader ? <CheckCircle2 className="h-3 w-3 mr-1" /> : <XCircle className="h-3 w-3 mr-1" />}
+                      Trader
                     </Badge>
                   </div>
                 </div>
@@ -719,9 +719,9 @@ export default function StrategyUploadPage() {
                 Strategy Requirements:
               </p>
               <ul className="text-blue-600 dark:text-blue-300 space-y-1">
-                <li>• Must include <code className="bg-blue-100 dark:bg-blue-900/30 px-1 rounded">class LiveTrader</code> with check_for_new_signal method</li>
-                <li>• Must include <code className="bg-blue-100 dark:bg-blue-900/30 px-1 rounded">def generate_signals_from_strategy(df, params)</code></li>
-                <li>• Should include <code className="bg-blue-100 dark:bg-blue-900/30 px-1 rounded">class Backtester</code> with run() method for auto-backtesting</li>
+                <li>• Must include <code className="bg-blue-100 dark:bg-blue-900/30 px-1 rounded">class Trader</code> with generate_signals(df, params) method</li>
+                <li>• Must include <code className="bg-blue-100 dark:bg-blue-900/30 px-1 rounded">class LiveTrader(Trader)</code> with check_for_new_signal method</li>
+                <li>• Should include <code className="bg-blue-100 dark:bg-blue-900/30 px-1 rounded">class Backtester(Trader)</code> for auto-backtesting</li>
                 <li>• Must be self-contained (include CoinDCXClient if needed)</li>
                 <li>• Upload <code className="bg-blue-100 dark:bg-blue-900/30 px-1 rounded">requirements.txt</code> to specify Python packages and version</li>
                 <li>• Strategies run in isolated uv environments for reproducibility</li>
