@@ -241,7 +241,7 @@ router.get('/:id', async (req, res, next) => {
 
     // Transform backtest data to match frontend expectations
     const latestBacktest = strategy.backtestResults[0];
-    
+
     // Transform monthlyReturns from {month: {pnl, trades}} to {month: pnl}
     let monthlyReturns = latestBacktest?.monthlyReturns;
     if (monthlyReturns && typeof monthlyReturns === 'object') {
@@ -257,7 +257,7 @@ router.get('/:id', async (req, res, next) => {
       });
       monthlyReturns = transformed;
     }
-    
+
     const transformedBacktest = latestBacktest ? {
       ...latestBacktest,
       monthlyReturns, // Use transformed version

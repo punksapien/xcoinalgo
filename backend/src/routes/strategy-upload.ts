@@ -17,6 +17,8 @@ import { uvEnvManager } from '../services/python-env';
 import { strategyStructureValidator } from '../services/strategy-structure-validator';
 import { strategyEnvironmentManager } from '../services/strategy-environment-manager';
 import { strategyExecutor } from '../services/strategy-execution/strategy-executor';
+import { redis } from '../lib/redis-client';
+import { strategyRegistry } from '../services/strategy-execution/strategy-registry';
 
 const logger = new Logger('StrategyUpload');
 const router = Router();
@@ -775,6 +777,72 @@ router.delete('/:id', authenticate, async (req: AuthenticatedRequest, res, next)
       return res.status(400).json({
         error: 'Cannot delete strategy with active deployments. Please stop all deployments first.'
       });
+    }
+
+    // Get strategy to find its execution config for Redis cleanup
+    const strategy = await prisma.strategy.findUnique({
+      where: { id: strategyId },
+      select: {
+        id: true,
+        executionConfig: true,
+        subscriptions: {
+          select: {
+            userId: true
+          }
+        }
+      }
+    });
+
+    if (!strategy) {
+      return res.status(404).json({
+        error: 'Strategy not found'
+      });
+    }
+
+    // ✅ REDIS CLEANUP: Remove all Redis data for this strategy
+    try {
+      // 1. Clean up strategy settings
+      const settingsKey = `strategy:${strategyId}:settings`;
+      await redis.del(settingsKey);
+      logger.info(`Deleted Redis key: ${settingsKey}`);
+
+      // 2. Clean up strategy config from registry
+      const configKey = `strategy:${strategyId}:config`;
+      await redis.del(configKey);
+      logger.info(`Deleted Redis key: ${configKey}`);
+
+      // 3. Clean up all subscription settings for this strategy
+      const userIds = strategy.subscriptions.map(sub => sub.userId);
+      for (const uid of userIds) {
+        const subKey = `subscription:${uid}:${strategyId}:settings`;
+        await redis.del(subKey);
+        logger.info(`Deleted Redis key: ${subKey}`);
+      }
+
+      // 4. Unregister from candle registry if executionConfig exists
+      if (strategy.executionConfig) {
+        const config = strategy.executionConfig as any;
+        const symbol = config.symbol || config.pair;
+        const resolution = config.resolution;
+
+        if (symbol && resolution) {
+          const candleKey = `candles:${symbol}:${resolution}`;
+          await redis.srem(candleKey, strategyId);
+          logger.info(`Removed strategy ${strategyId} from ${candleKey}`);
+
+          // If no strategies left for this candle, clean up the set
+          const count = await redis.scard(candleKey);
+          if (count === 0) {
+            await redis.del(candleKey);
+            logger.info(`Deleted empty candle key: ${candleKey}`);
+          }
+        }
+      }
+
+      logger.info(`✅ All Redis data cleaned up for strategy ${strategyId}`);
+    } catch (redisError) {
+      logger.error('Redis cleanup failed (continuing with deletion):', redisError);
+      // Continue with DB deletion even if Redis cleanup fails
     }
 
     // Hard delete (permanently remove strategy and cascade delete related records)
