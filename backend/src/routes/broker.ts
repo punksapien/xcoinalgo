@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import { authenticate } from '../middleware/auth';
-import { encrypt, decrypt } from '../utils/simple-crypto';
 import prisma from '../utils/database';
 import { AuthenticatedRequest } from '../types';
 import * as CoinDCXClient from '../services/coindcx-client';
@@ -27,11 +26,11 @@ router.post('/keys', authenticate, async (req: AuthenticatedRequest, res, next) 
       });
     }
 
-    // Encrypt the credentials
-    const encryptedApiKey = encrypt(apiKey);
-    const encryptedApiSecret = encrypt(apiSecret);
+    // Trim API keys to remove any whitespace/newlines that would cause HTTP header errors
+    const trimmedApiKey = apiKey.trim();
+    const trimmedApiSecret = apiSecret.trim();
 
-    // Store or update broker credentials
+    // Store or update broker credentials (plaintext - no encryption)
     const brokerCredential = await prisma.brokerCredential.upsert({
       where: {
         userId_brokerName: {
@@ -40,16 +39,16 @@ router.post('/keys', authenticate, async (req: AuthenticatedRequest, res, next) 
         }
       },
       update: {
-        apiKey: encryptedApiKey,
-        apiSecret: encryptedApiSecret,
+        apiKey: trimmedApiKey,
+        apiSecret: trimmedApiSecret,
         isActive: true,
         updatedAt: new Date()
       },
       create: {
         userId,
         brokerName: 'coindcx',
-        apiKey: encryptedApiKey,
-        apiSecret: encryptedApiSecret,
+        apiKey: trimmedApiKey,
+        apiSecret: trimmedApiSecret,
         isActive: true
       }
     });
@@ -119,9 +118,9 @@ router.get('/balance', authenticate, async (req: AuthenticatedRequest, res, next
       });
     }
 
-    // Decrypt credentials
-    const apiKey = decrypt(brokerCredential.apiKey);
-    const apiSecret = decrypt(brokerCredential.apiSecret);
+    // Use credentials directly (no decryption needed)
+    const apiKey = brokerCredential.apiKey;
+    const apiSecret = brokerCredential.apiSecret;
 
     // Fetch balances from CoinDCX
     const balances = await CoinDCXClient.getBalances(apiKey, apiSecret);

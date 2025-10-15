@@ -10,7 +10,6 @@
 import crypto from 'crypto';
 import https from 'https';
 import { URL } from 'url';
-import { decrypt } from '../utils/simple-crypto';
 import { Logger } from '../utils/logger';
 
 const logger = new Logger('CoinDCX-Client');
@@ -297,12 +296,14 @@ async function makePublicRequest<T>(endpoint: string): Promise<T> {
 }
 
 /**
- * Decrypt and prepare credentials from database
+ * Prepare credentials from database (no decryption needed - stored as plaintext)
+ * IMPORTANT: Trim credentials to remove any whitespace/newlines that would cause
+ * "Invalid character in header content" HTTP errors
  */
-function prepareCredentials(encryptedApiKey: string, encryptedApiSecret: string): CoinDCXCredentials {
+function prepareCredentials(apiKey: string, apiSecret: string): CoinDCXCredentials {
   return {
-    apiKey: decrypt(encryptedApiKey),
-    apiSecret: decrypt(encryptedApiSecret),
+    apiKey: apiKey.trim(),
+    apiSecret: apiSecret.trim(),
   };
 }
 
