@@ -76,6 +76,20 @@ class StrategyRegistry {
     symbol: string,
     resolution: string
   ): Promise<void> {
+    // ✅ VALIDATION: Prevent garbage data
+    if (!strategyId || strategyId.trim() === '') {
+      console.error('❌ Attempted to register strategy with empty/null ID - BLOCKED')
+      throw new Error('Strategy ID cannot be empty')
+    }
+    if (!symbol || symbol.trim() === '') {
+      console.error('❌ Attempted to register strategy with empty symbol - BLOCKED')
+      throw new Error('Symbol cannot be empty')
+    }
+    if (!resolution || resolution.toString().trim() === '') {
+      console.error('❌ Attempted to register strategy with empty resolution - BLOCKED')
+      throw new Error('Resolution cannot be empty')
+    }
+
     const candleKey = this.getCandleKey(symbol, resolution)
 
     try {
@@ -94,7 +108,7 @@ class StrategyRegistry {
         resolution,
       })
 
-      console.log(`Registered strategy ${strategyId} for ${symbol} ${resolution}`)
+      console.log(`✅ Registered strategy ${strategyId} for ${symbol} ${resolution}`)
     } catch (error) {
       console.error(`Failed to register strategy ${strategyId}:`, error)
       throw error
@@ -284,6 +298,61 @@ class StrategyRegistry {
     this.initialized = false
 
     console.log('Strategy registry cleared')
+  }
+
+  /**
+   * 🧹 CLEANUP UTILITY: Remove phantom/garbage entries from Redis sets
+   * This removes empty strings, whitespace, and validates strategy IDs exist in DB
+   */
+  async cleanupGarbageEntries(): Promise<{ cleaned: number; errors: string[] }> {
+    console.log('🧹 Starting garbage cleanup...')
+    let cleaned = 0
+    const errors: string[] = []
+
+    try {
+      const candleKeys = await redis.keys('candle:*')
+      
+      for (const candleKey of candleKeys) {
+        const members = await redis.smembers(candleKey)
+        
+        for (const member of members) {
+          // Remove empty/whitespace entries
+          if (!member || member.trim() === '') {
+            await redis.srem(candleKey, member)
+            console.log(`  ❌ Removed garbage entry from ${candleKey}: "${member}"`)
+            cleaned++
+            continue
+          }
+
+          // Validate strategy exists in database
+          const strategyExists = await prisma.strategy.findUnique({
+            where: { id: member },
+            select: { id: true }
+          })
+
+          if (!strategyExists) {
+            await redis.srem(candleKey, member)
+            console.log(`  ❌ Removed orphaned strategy ${member} from ${candleKey} (not in DB)`)
+            cleaned++
+          }
+        }
+
+        // Remove the candle key if it's now empty
+        const remainingMembers = await redis.smembers(candleKey)
+        if (remainingMembers.length === 0) {
+          await redis.del(candleKey)
+          console.log(`  🗑️  Removed empty candle key: ${candleKey}`)
+        }
+      }
+
+      console.log(`✅ Cleanup complete. Removed ${cleaned} garbage entries.`)
+      return { cleaned, errors }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      errors.push(errorMsg)
+      console.error('Cleanup failed:', error)
+      return { cleaned, errors }
+    }
   }
 
   /**
