@@ -1708,6 +1708,7 @@ router.post('/upload-simple', authenticate, upload.fields([
         data: {
           version: newVersion,
           updatedAt: new Date(),
+          executionConfig: mergedConfig, // ✅ Update execution config with latest parameters
           versions: {
             create: {
               version: newVersion,
@@ -1748,6 +1749,7 @@ router.post('/upload-simple', authenticate, upload.fields([
           isMarketplace: false,
           supportedPairs: config.supportedPairs ? JSON.stringify(config.supportedPairs) : null,
           timeframes: config.timeframes ? JSON.stringify(config.timeframes) : null,
+          executionConfig: mergedConfig, // ✅ Store extracted + user config for live trading
           versions: {
             create: {
               version: '1.0.0',
@@ -1798,7 +1800,8 @@ router.post('/upload-simple', authenticate, upload.fields([
       const startDate = new Date();
       startDate.setFullYear(startDate.getFullYear() - 1);
 
-      // Prepare backtest settings
+      // Prepare backtest settings - include ALL merged config params
+      // NOTE: Spread mergedConfig LAST so explicit properties don't overwrite STRATEGY_CONFIG params
       const backtestSettings = {
         strategy_id: strategy.id,
         pair: config.pair || 'B-BTC_USDT',
@@ -1812,7 +1815,11 @@ router.post('/upload-simple', authenticate, upload.fields([
         tp_rate: config.tp_rate || 0.04,
         start_date: startDate.toISOString().split('T')[0],
         end_date: endDate.toISOString().split('T')[0],
+        ...mergedConfig,  // ✅ Spread LAST to add all STRATEGY_CONFIG params (st_period, ema_fast_len, etc.)
       };
+
+      // DEBUG: Log backtest settings to verify all params are included
+      logger.info(`Backtest settings keys (${Object.keys(backtestSettings).length}): ${Object.keys(backtestSettings).join(', ')}`);
 
       // Execute backtest asynchronously (don't await - run in background)
       strategyExecutor.executeBacktestAsync(strategy.id, backtestSettings)
