@@ -238,6 +238,7 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
                 # Create subscriber-specific settings
                 subscriber_settings = {
                     **settings,
+                    'user_id': subscriber['user_id'],  # For unique state file paths
                     'api_key': subscriber['api_key'],
                     'api_secret': subscriber['api_secret'],
                     'leverage': subscriber.get('leverage', 10),
@@ -246,13 +247,15 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
                 }
 
                 # Initialize LiveTrader for this subscriber
+                # (their __init__ sets up self.client with their credentials)
                 subscriber_trader = LiveTrader(settings=subscriber_settings)
 
-                # Execute check_for_new_signal (this will place orders if signal exists)
+                # Execute their check_for_new_signal method
+                # (this contains all their custom trading logic)
                 subscriber_trader.check_for_new_signal(df_with_signals)
 
                 subscribers_processed += 1
-                trades_attempted += 1  # Assume one trade attempt per subscriber
+                trades_attempted += 1
 
                 logging.info(f"   ✅ User {user_id} processed successfully")
 

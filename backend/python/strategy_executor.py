@@ -11,6 +11,7 @@ import importlib.util
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 import traceback
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 def load_strategy_module(strategy_file_path: str):
@@ -201,9 +202,75 @@ def execute_backtest(module, settings: Dict[str, Any]) -> Dict[str, Any]:
         }
 
 
+def process_single_subscriber_live(
+    subscriber: Dict[str, Any],
+    settings: Dict[str, Any],
+    LiveTrader: type,
+    df_with_signals: Any,
+    idx: int,
+    total: int
+) -> Dict[str, Any]:
+    """
+    Process a single subscriber in parallel for live execution.
+
+    Returns:
+        {
+            'user_id': str,
+            'success': bool,
+            'error': str (if failed)
+        }
+    """
+    import logging
+
+    user_id = subscriber.get('user_id')
+
+    try:
+        logging.info(f"\n   [{idx}/{total}] Processing user {user_id}...")
+
+        # Create subscriber-specific settings
+        subscriber_settings = {
+            **settings,
+            'user_id': subscriber['user_id'],  # For unique state file paths
+            'api_key': subscriber['api_key'],
+            'api_secret': subscriber['api_secret'],
+            'leverage': subscriber.get('leverage', 10),
+            'risk_per_trade': subscriber.get('risk_per_trade', 0.02),
+            'initial_capital': subscriber.get('capital', 10000),
+        }
+
+        # Initialize LiveTrader for this subscriber
+        subscriber_trader = LiveTrader(settings=subscriber_settings)
+
+        # Execute their check_for_new_signal method
+        subscriber_trader.check_for_new_signal(df_with_signals)
+
+        logging.info(f"   ✅ User {user_id} processed successfully")
+
+        return {
+            'user_id': user_id,
+            'success': True
+        }
+
+    except Exception as e:
+        error_msg = str(e)
+        logging.error(f"   ❌ User {user_id} failed: {error_msg}")
+        logging.error(traceback.format_exc())
+
+        return {
+            'user_id': user_id,
+            'success': False,
+            'error': error_msg
+        }
+
+
 def execute_live(module, settings: Dict[str, Any], subscribers: List[Dict[str, Any]], strategy_dir: str) -> Dict[str, Any]:
     """
-    Execute strategy in live mode with multiple subscribers
+    Execute strategy in live mode with multiple subscribers using multi-tenant approach.
+
+    Multi-Tenant Approach:
+        1. Fetch market data ONCE (shared across all subscribers)
+        2. Generate signals ONCE (same for all subscribers)
+        3. Execute strategy for EACH subscriber with their credentials
 
     Args:
         module: Loaded strategy module
@@ -214,6 +281,8 @@ def execute_live(module, settings: Dict[str, Any], subscribers: List[Dict[str, A
     Returns:
         Execution results as dictionary
     """
+    import logging
+
     try:
         # Setup logging first
         CsvHandler = getattr(module, 'CsvHandler')
@@ -224,38 +293,121 @@ def execute_live(module, settings: Dict[str, Any], subscribers: List[Dict[str, A
         log_filename = os.path.join(logs_dir, f"strategy_{settings.get('strategy_id', 'unknown')}.csv")
         CsvHandler.setup_logging(filename=log_filename)
 
-        # Get the LiveTrader class
+        # Get required classes/functions from module
         LiveTrader = getattr(module, 'LiveTrader')
+        generate_signals = getattr(module, 'generate_signals_from_strategy')
 
-        # Create LiveTrader instance with settings
-        # Note: LiveTrader __init__ only takes settings parameter
-        live_trader = LiveTrader(settings)
+        logging.info(f"🚀 Multi-Tenant Execution Started")
+        logging.info(f"   Pair: {settings.get('pair')}")
+        logging.info(f"   Resolution: {settings.get('resolution')}")
+        logging.info(f"   Subscribers: {len(subscribers)}")
 
-        # Store subscribers in the instance (if LiveTrader needs it)
-        # The strategy code should handle subscribers internally
-        if hasattr(live_trader, 'subscribers'):
-            live_trader.subscribers = subscribers
+        # ====================================================================
+        # STEP 1: Fetch market data ONCE (shared across all subscribers)
+        # ====================================================================
+        logging.info("📊 Fetching market data (shared across subscribers)...")
 
-        # Run the live trader
-        # This should:
-        # 1. Get latest data
-        # 2. Generate signal ONCE
-        # 3. Execute trades for all subscribers
-        result = live_trader.run()
+        # Use first subscriber's credentials just to fetch data
+        first_subscriber = subscribers[0]
+        temp_settings = {
+            **settings,
+            'api_key': first_subscriber['api_key'],
+            'api_secret': first_subscriber['api_secret']
+        }
+
+        temp_trader = LiveTrader(settings=temp_settings)
+        df = temp_trader.get_latest_data()
+
+        if df is None or (hasattr(df, 'empty') and df.empty):
+            raise ValueError("Failed to fetch market data")
+
+        logging.info(f"   Fetched {len(df)} candles")
+
+        # ====================================================================
+        # STEP 2: Generate signals ONCE (same for all subscribers)
+        # ====================================================================
+        logging.info("🧠 Generating signals...")
+
+        df_with_signals = generate_signals(df, settings)
+
+        if df_with_signals is None or (hasattr(df_with_signals, 'empty') and df_with_signals.empty):
+            raise ValueError("Signal generation returned empty dataframe")
+
+        logging.info("✅ Signals generated")
+
+        # ====================================================================
+        # STEP 3: Execute strategy for EACH subscriber with their credentials (PARALLEL)
+        # ====================================================================
+        max_workers = settings.get('max_workers', 10)  # Configurable, default 10
+        logging.info(f"💼 Processing {len(subscribers)} subscribers in parallel (max_workers={max_workers})...")
+
+        subscribers_processed = 0
+        trades_attempted = 0
+        errors = {}
+
+        # Process subscribers in parallel using ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all subscriber processing tasks
+            future_to_subscriber = {
+                executor.submit(
+                    process_single_subscriber_live,
+                    subscriber,
+                    settings,
+                    LiveTrader,
+                    df_with_signals,
+                    idx,
+                    len(subscribers)
+                ): subscriber
+                for idx, subscriber in enumerate(subscribers, 1)
+            }
+
+            # Collect results as they complete
+            for future in as_completed(future_to_subscriber):
+                subscriber = future_to_subscriber[future]
+                try:
+                    result = future.result()
+
+                    if result['success']:
+                        subscribers_processed += 1
+                        trades_attempted += 1
+                    else:
+                        errors[result['user_id']] = result.get('error', 'Unknown error')
+
+                except Exception as e:
+                    # This catches errors in the future itself (unlikely)
+                    user_id = subscriber.get('user_id', 'unknown')
+                    error_msg = str(e)
+                    errors[user_id] = error_msg
+                    logging.error(f"   ❌ Future exception for user {user_id}: {error_msg}")
+                    logging.error(traceback.format_exc())
+
+        # ====================================================================
+        # STEP 4: Return results
+        # ====================================================================
+        logging.info(f"\n🏁 Multi-Tenant Execution Complete")
+        logging.info(f"   Subscribers Processed: {subscribers_processed}/{len(subscribers)}")
+        logging.info(f"   Trades Attempted: {trades_attempted}")
+        logging.info(f"   Errors: {len(errors)}")
 
         return {
             "success": True,
             "mode": "live",
-            "result": result,
-            "subscribers_count": len(subscribers)
+            "subscribers_processed": subscribers_processed,
+            "trades_attempted": trades_attempted,
+            "errors": errors if errors else None
         }
 
     except Exception as e:
+        logging.error(f"💥 Multi-tenant execution failed: {e}")
+        logging.error(traceback.format_exc())
+
         return {
             "success": False,
             "error": str(e),
             "traceback": traceback.format_exc(),
-            "mode": "live"
+            "mode": "live",
+            "subscribers_processed": 0,
+            "trades_attempted": 0
         }
 
 

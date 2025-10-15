@@ -381,26 +381,30 @@ export class StrategyExecutor {
     input: any
   ): Promise<{ stdout: string; stderr: string }> {
     return new Promise((resolve, reject) => {
-      const process = spawn(pythonPath, [scriptPath], {
+      // Extract strategy directory from input (for cwd)
+      const strategyDir = input.strategy_file ? path.dirname(input.strategy_file) : process.cwd();
+
+      const childProcess = spawn(pythonPath, [scriptPath], {
         stdio: ['pipe', 'pipe', 'pipe'],
+        cwd: strategyDir,  // Set working directory to strategy's isolated env
       });
 
       let stdout = '';
       let stderr = '';
 
       // Send input as JSON to stdin
-      process.stdin.write(JSON.stringify(input));
-      process.stdin.end();
+      childProcess.stdin.write(JSON.stringify(input));
+      childProcess.stdin.end();
 
-      process.stdout.on('data', (data) => {
+      childProcess.stdout.on('data', (data) => {
         stdout += data.toString();
       });
 
-      process.stderr.on('data', (data) => {
+      childProcess.stderr.on('data', (data) => {
         stderr += data.toString();
       });
 
-      process.on('close', (code) => {
+      childProcess.on('close', (code) => {
         if (code === 0) {
           resolve({ stdout, stderr });
         } else {
@@ -408,7 +412,7 @@ export class StrategyExecutor {
         }
       });
 
-      process.on('error', (error) => {
+      childProcess.on('error', (error) => {
         reject(error);
       });
     });
@@ -425,8 +429,12 @@ export class StrategyExecutor {
     input: any
   ): Promise<{ stdout: string; stderr: string }> {
     return new Promise((resolve, reject) => {
-      const process = spawn(pythonPath, [scriptPath], {
+      // Extract strategy directory from input (for cwd)
+      const strategyDir = input.strategy_file ? path.dirname(input.strategy_file) : process.cwd();
+
+      const childProcess = spawn(pythonPath, [scriptPath], {
         stdio: ['pipe', 'pipe', 'pipe'],
+        cwd: strategyDir,  // Set working directory to strategy's isolated env
       });
 
       let stdout = '';
@@ -434,14 +442,14 @@ export class StrategyExecutor {
       let stderrBuffer = '';
 
       // Send input as JSON to stdin
-      process.stdin.write(JSON.stringify(input));
-      process.stdin.end();
+      childProcess.stdin.write(JSON.stringify(input));
+      childProcess.stdin.end();
 
-      process.stdout.on('data', (data) => {
+      childProcess.stdout.on('data', (data) => {
         stdout += data.toString();
       });
 
-      process.stderr.on('data', (data) => {
+      childProcess.stderr.on('data', (data) => {
         const chunk = data.toString();
         stderr += chunk;
         stderrBuffer += chunk;
@@ -483,7 +491,7 @@ export class StrategyExecutor {
         }
       });
 
-      process.on('close', (code) => {
+      childProcess.on('close', (code) => {
         if (code === 0) {
           resolve({ stdout, stderr });
         } else {
@@ -491,7 +499,7 @@ export class StrategyExecutor {
         }
       });
 
-      process.on('error', (error) => {
+      childProcess.on('error', (error) => {
         reject(error);
       });
     });

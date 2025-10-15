@@ -19,6 +19,7 @@ import { spawn } from 'child_process'
 import path from 'path'
 import CoinDCXClient from '../coindcx-client'
 import { Logger } from '../../utils/logger'
+import { strategyEnvironmentManager } from '../strategy-environment-manager'
 
 const prisma = new PrismaClient()
 const logger = new Logger('ExecutionCoordinator')
@@ -377,6 +378,26 @@ class ExecutionCoordinator {
   }
 
   /**
+   * Get Python environment and working directory for strategy
+   */
+  private async getStrategyExecutionEnvironment(strategyId: string): Promise<{
+    pythonPath: string
+    strategyDir: string
+  }> {
+    // Get isolated environment
+    const envInfo = await strategyEnvironmentManager.getEnvironmentInfo(strategyId)
+
+    // Get strategy directory
+    const strategiesDir = path.join(__dirname, '../../../strategies')
+    const strategyDir = path.join(strategiesDir, strategyId)
+
+    return {
+      pythonPath: envInfo.pythonPath,
+      strategyDir
+    }
+  }
+
+  /**
    * Execute Python strategy subprocess
    */
   private async executePythonStrategy(
@@ -384,11 +405,29 @@ class ExecutionCoordinator {
     strategySettings: any,
     executionTime: Date
   ): Promise<PythonExecutionResult> {
-    return new Promise((resolve) => {
+    return new Promise(async (resolve) => {
       const pythonScriptPath = path.join(
         __dirname,
         '../../../python/strategy_runner.py'
       )
+
+      // Get isolated environment and working directory
+      let pythonPath: string
+      let strategyDir: string
+
+      try {
+        const env = await this.getStrategyExecutionEnvironment(strategyId)
+        pythonPath = env.pythonPath
+        strategyDir = env.strategyDir
+      } catch (error) {
+        logger.error(`Failed to get environment for strategy ${strategyId}:`, error)
+        resolve({
+          success: false,
+          signal: null,
+          error: `Environment not found: ${error}`,
+        })
+        return
+      }
 
       // Prepare input for Python script
       const input = JSON.stringify({
@@ -398,9 +437,12 @@ class ExecutionCoordinator {
       })
 
       console.log(`Spawning Python subprocess: ${pythonScriptPath}`)
+      console.log(`Using Python: ${pythonPath}`)
+      console.log(`Working directory: ${strategyDir}`)
 
-      const pythonProcess = spawn('python3', [pythonScriptPath], {
+      const pythonProcess = spawn(pythonPath, [pythonScriptPath], {
         env: { ...process.env },
+        cwd: strategyDir,  // ✅ Already set correctly
       })
 
       let stdout = ''
@@ -448,15 +490,15 @@ class ExecutionCoordinator {
       pythonProcess.stdin.write(input)
       pythonProcess.stdin.end()
 
-      // Timeout after 30 seconds
+      // Timeout after 5 minutes (legacy strategies should be quick)
       setTimeout(() => {
         pythonProcess.kill()
         resolve({
           success: false,
           signal: null,
-          error: 'Python execution timeout (30s)',
+          error: 'Python execution timeout (5min)',
         })
-      }, 30000)
+      }, 300000)  // 5 minutes
     })
   }
 
@@ -469,11 +511,29 @@ class ExecutionCoordinator {
     subscribers: any[],
     strategyCode: string
   ): Promise<PythonExecutionResult> {
-    return new Promise((resolve) => {
+    return new Promise(async (resolve) => {
       const pythonScriptPath = path.join(
         __dirname,
         '../../../python/multi_tenant_wrapper.py'
       )
+
+      // Get isolated environment and working directory
+      let pythonPath: string
+      let strategyDir: string
+
+      try {
+        const env = await this.getStrategyExecutionEnvironment(strategyId)
+        pythonPath = env.pythonPath
+        strategyDir = env.strategyDir
+      } catch (error) {
+        logger.error(`Failed to get environment for strategy ${strategyId}:`, error)
+        resolve({
+          success: false,
+          signal: null,
+          error: `Environment not found: ${error}`,
+        })
+        return
+      }
 
       // Prepare subscribers data (with API keys)
       const subscribersData = subscribers.map(sub => ({
@@ -493,10 +553,13 @@ class ExecutionCoordinator {
       })
 
       console.log(`Spawning multi-tenant wrapper: ${pythonScriptPath}`)
+      console.log(`Using Python: ${pythonPath}`)
+      console.log(`Working directory: ${strategyDir}`)
       console.log(`Subscribers: ${subscribersData.length}`)
 
-      const pythonProcess = spawn('python3', [pythonScriptPath], {
+      const pythonProcess = spawn(pythonPath, [pythonScriptPath], {
         env: { ...process.env },
+        cwd: strategyDir,
       })
 
       let stdout = ''
@@ -558,15 +621,15 @@ class ExecutionCoordinator {
       pythonProcess.stdin.write(input)
       pythonProcess.stdin.end()
 
-      // Timeout after 60 seconds (longer since it places orders for multiple subscribers)
+      // Timeout after 10 minutes (multi-tenant places orders for multiple subscribers)
       setTimeout(() => {
         pythonProcess.kill()
         resolve({
           success: false,
           signal: null,
-          error: 'Multi-tenant wrapper execution timeout (60s)',
+          error: 'Multi-tenant wrapper execution timeout (10min)',
         })
-      }, 60000)
+      }, 600000)  // 10 minutes
     })
   }
 
@@ -579,11 +642,29 @@ class ExecutionCoordinator {
     subscribers: any[],
     strategyCode: string
   ): Promise<PythonExecutionResult> {
-    return new Promise((resolve) => {
+    return new Promise(async (resolve) => {
       const pythonScriptPath = path.join(
         __dirname,
         '../../../python/live_trader_executor.py'
       )
+
+      // Get isolated environment and working directory
+      let pythonPath: string
+      let strategyDir: string
+
+      try {
+        const env = await this.getStrategyExecutionEnvironment(strategyId)
+        pythonPath = env.pythonPath
+        strategyDir = env.strategyDir
+      } catch (error) {
+        logger.error(`Failed to get environment for strategy ${strategyId}:`, error)
+        resolve({
+          success: false,
+          signal: null,
+          error: `Environment not found: ${error}`,
+        })
+        return
+      }
 
       // Prepare subscribers data (with API keys)
       const subscribersData = subscribers.map(sub => ({
@@ -603,10 +684,13 @@ class ExecutionCoordinator {
       })
 
       console.log(`Spawning LiveTrader executor: ${pythonScriptPath}`)
+      console.log(`Using Python: ${pythonPath}`)
+      console.log(`Working directory: ${strategyDir}`)
       console.log(`Subscribers: ${subscribersData.length}`)
 
-      const pythonProcess = spawn('python3', [pythonScriptPath], {
+      const pythonProcess = spawn(pythonPath, [pythonScriptPath], {
         env: { ...process.env },
+        cwd: strategyDir,
       })
 
       let stdout = ''
@@ -667,15 +751,15 @@ class ExecutionCoordinator {
       pythonProcess.stdin.write(input)
       pythonProcess.stdin.end()
 
-      // Timeout after 60 seconds (longer for LiveTrader since it places orders)
+      // Timeout after 10 minutes (LiveTrader processes multiple subscribers)
       setTimeout(() => {
         pythonProcess.kill()
         resolve({
           success: false,
           signal: null,
-          error: 'LiveTrader execution timeout (60s)',
+          error: 'LiveTrader execution timeout (10min)',
         })
-      }, 60000)
+      }, 600000)  // 10 minutes
     })
   }
 
