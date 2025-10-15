@@ -39,6 +39,58 @@ def load_strategy_module(strategy_file_path: str):
     return module
 
 
+def normalize_metrics(raw_metrics: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Normalize metrics from strategy's format to backend's expected format.
+
+    Converts from:
+        {'Win Rate (%)': '56.23%', 'Profit Factor': '2.45', ...}
+    To:
+        {'winRate': 56.23, 'profitFactor': 2.45, ...}
+
+    Args:
+        raw_metrics: Metrics dictionary from strategy's evaluate_backtest_metrics
+
+    Returns:
+        Normalized metrics dictionary with camelCase keys and numeric values
+    """
+    import re
+
+    def parse_percentage(value: str) -> float:
+        """Parse percentage string like '56.23%' to float 56.23"""
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            # Remove % sign, $ sign, and commas
+            clean = value.replace('%', '').replace('$', '').replace(',', '').strip()
+            try:
+                return float(clean)
+            except:
+                return 0.0
+        return 0.0
+
+    # Map user's keys to backend's expected keys
+    normalized = {}
+
+    for key, value in raw_metrics.items():
+        lower_key = key.lower()
+
+        if 'win rate' in lower_key or 'winrate' in lower_key:
+            normalized['winRate'] = parse_percentage(value)
+        elif 'total return' in lower_key or 'roi' in lower_key:
+            normalized['roi'] = parse_percentage(value)
+        elif 'max drawdown' in lower_key and '%' in str(value):
+            normalized['maxDrawdown'] = parse_percentage(value)
+        elif 'profit factor' in lower_key:
+            normalized['profitFactor'] = parse_percentage(value)
+        elif 'net pnl' in lower_key:
+            normalized['netPnl'] = parse_percentage(value)
+        elif 'expectancy' in lower_key:
+            normalized['expectancy'] = parse_percentage(value)
+
+    return normalized
+
+
 def setup_logging(strategy_dir: str, strategy_id: str, mode: str):
     """
     Setup logging using the CsvHandler from the strategy module
@@ -78,6 +130,8 @@ def execute_backtest(module, settings: Dict[str, Any]) -> Dict[str, Any]:
         start_date = settings.get('start_date')
         end_date = settings.get('end_date')
         resolution = settings.get('resolution', '5m')
+        # Strip 'm' from resolution if present (e.g., "5m" -> "5")
+        resolution = resolution.rstrip('m') if isinstance(resolution, str) else str(resolution)
         initial_capital = settings.get('capital', 10000)
         leverage = settings.get('leverage', 1)
         commission_rate = settings.get('commission_rate', 0.0005)
@@ -116,6 +170,25 @@ def execute_backtest(module, settings: Dict[str, Any]) -> Dict[str, Any]:
             "message": f"Fetched {total_candles:,} candles in {fetch_duration:.1f}s"
         }), file=sys.stderr, flush=True)
 
+        # Report progress: Generating signals
+        print(json.dumps({
+            "type": "progress",
+            "stage": "generating_signals",
+            "progress": 0.35,
+            "message": "Generating trading signals..."
+        }), file=sys.stderr, flush=True)
+
+        # Generate signals using Trader.generate_signals (Backtester inherits from Trader)
+        # Use the backtester instance to call both generate_signals AND execute_trades
+        df = backtester.generate_signals(df, settings)
+
+        if df is None or df.empty:
+            return {
+                "success": False,
+                "error": "Signal generation failed or returned empty dataframe",
+                "mode": "backtest"
+            }
+
         # Report progress: Running backtest
         print(json.dumps({
             "type": "progress",
@@ -127,8 +200,8 @@ def execute_backtest(module, settings: Dict[str, Any]) -> Dict[str, Any]:
 
         backtest_start = time.time()
 
-        # Execute trades
-        trades_df = Backtester.execute_trades(
+        # Execute trades (use instance method, not static method)
+        trades_df = backtester.execute_trades(
             df=df,
             initial_capital=initial_capital,
             leverage=leverage,
@@ -157,7 +230,9 @@ def execute_backtest(module, settings: Dict[str, Any]) -> Dict[str, Any]:
         }), file=sys.stderr, flush=True)
 
         # Evaluate metrics
-        metrics = Backtester.evaluate_backtest_metrics(trades_df, initial_capital)
+        raw_metrics = Backtester.evaluate_backtest_metrics(trades_df, initial_capital)
+        # Normalize metrics to backend's expected format (camelCase keys, numeric values)
+        metrics = normalize_metrics(raw_metrics)
 
         # Convert trades_df to dictionary for JSON serialization
         trades_list = trades_df.to_dict('records') if not trades_df.empty else []
@@ -487,8 +562,8 @@ def main():
         # Execute strategy
         result = execute_strategy(input_data)
 
-        # Output result as JSON
-        print(json.dumps(result, indent=2, default=str))
+        # Output result as JSON (single line for parsing)
+        print(json.dumps(result, default=str))
 
         # Exit with appropriate code
         sys.exit(0 if result.get('success') else 1)
@@ -498,7 +573,7 @@ def main():
             "success": False,
             "error": f"Invalid JSON input: {str(e)}"
         }
-        print(json.dumps(error_result, indent=2))
+        print(json.dumps(error_result))
         sys.exit(1)
 
     except Exception as e:
@@ -507,7 +582,7 @@ def main():
             "error": str(e),
             "traceback": traceback.format_exc()
         }
-        print(json.dumps(error_result, indent=2))
+        print(json.dumps(error_result))
         sys.exit(1)
 
 
