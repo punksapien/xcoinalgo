@@ -845,6 +845,15 @@ router.delete('/:id', authenticate, async (req: AuthenticatedRequest, res, next)
       // Continue with DB deletion even if Redis cleanup fails
     }
 
+    // ✅ FILESYSTEM CLEANUP: Delete strategy environment folder
+    try {
+      await strategyEnvironmentManager.deleteEnvironment(strategyId);
+      logger.info(`✅ Strategy environment folder deleted for ${strategyId}`);
+    } catch (fsError) {
+      logger.error('Filesystem cleanup failed (continuing with deletion):', fsError);
+      // Continue with DB deletion even if filesystem cleanup fails
+    }
+
     // Hard delete (permanently remove strategy and cascade delete related records)
     await prisma.strategy.delete({
       where: { id: strategyId }
