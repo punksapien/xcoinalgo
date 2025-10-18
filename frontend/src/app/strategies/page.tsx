@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useAuth } from '@/lib/auth';
 import { showErrorToast, showSuccessToast } from '@/lib/toast-utils';
+import { apiClient, ApiError } from '@/lib/api-client';
 import {
   Plus,
   Search,
@@ -77,25 +78,24 @@ export default function StrategyManagementPage() {
         params.append('status', statusFilter);
       }
 
-      const response = await fetch(`/api/strategy-upload/strategies?${params}`, {
-        headers: token ? {
-          'Authorization': `Bearer ${token}`,
-        } : {},
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch strategies');
-      }
-
-      const data = await response.json();
+      const data = await apiClient.get<{ strategies: Strategy[] }>(
+        `/api/strategy-upload/strategies?${params}`
+      );
       setStrategies(data.strategies || []);
     } catch (error) {
       console.error('Failed to fetch strategies:', error);
-      showErrorToast('Error', 'Failed to load strategies');
+      if (error instanceof ApiError) {
+        // 401 is handled automatically by apiClient (redirects to login)
+        if (error.status !== 401) {
+          showErrorToast('Error', error.message);
+        }
+      } else {
+        showErrorToast('Error', 'Failed to load strategies');
+      }
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, token]);
+  }, [statusFilter]);
 
   useEffect(() => {
     // Wait for Zustand to hydrate and for token to be available
@@ -135,18 +135,7 @@ export default function StrategyManagementPage() {
 
     setActionLoading(strategyId);
     try {
-      const response = await fetch(`/api/strategy-upload/${strategyId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to delete strategy');
-      }
+      await apiClient.delete(`/api/strategy-upload/${strategyId}`);
 
       showSuccessToast('Deleted', 'Strategy deleted successfully');
       setDeleteDialogOpen(false);
@@ -154,10 +143,11 @@ export default function StrategyManagementPage() {
       fetchStrategies();
     } catch (error) {
       console.error('Delete failed:', error);
-      showErrorToast(
-        'Delete Failed',
-        error instanceof Error ? error.message : 'Failed to delete strategy'
-      );
+      if (error instanceof ApiError && error.status !== 401) {
+        showErrorToast('Delete Failed', error.message);
+      } else if (!(error instanceof ApiError)) {
+        showErrorToast('Delete Failed', 'Failed to delete strategy');
+      }
     } finally {
       setActionLoading(null);
     }
@@ -170,18 +160,9 @@ export default function StrategyManagementPage() {
     const endpoint = strategy.isActive ? 'deactivate' : 'activate';
 
     try {
-      const response = await fetch(`/api/strategy-upload/${strategy.id}/${endpoint}`, {
-        method: 'PATCH',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || `Failed to ${endpoint} strategy`);
-      }
+      const data = await apiClient.patch<{ message?: string }>(
+        `/api/strategy-upload/${strategy.id}/${endpoint}`
+      );
 
       showSuccessToast(
         strategy.isActive ? 'Deactivated' : 'Activated',
@@ -190,10 +171,11 @@ export default function StrategyManagementPage() {
       fetchStrategies();
     } catch (error) {
       console.error('Toggle active failed:', error);
-      showErrorToast(
-        'Action Failed',
-        error instanceof Error ? error.message : 'Failed to update strategy status'
-      );
+      if (error instanceof ApiError && error.status !== 401) {
+        showErrorToast('Action Failed', error.message);
+      } else if (!(error instanceof ApiError)) {
+        showErrorToast('Action Failed', 'Failed to update strategy status');
+      }
     } finally {
       setActionLoading(null);
     }

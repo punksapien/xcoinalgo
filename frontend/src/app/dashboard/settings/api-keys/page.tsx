@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
+import { apiClient, ApiError } from '@/lib/api-client';
 import {
   Card,
   CardContent,
@@ -81,19 +82,13 @@ export default function ApiKeysPage() {
 
     try {
       setLoading(true);
-      const response = await fetch('/api/settings/api-keys', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setApiKeys(data.apiKeys || []);
-      } else {
-        throw new Error('Failed to fetch API keys');
-      }
+      const data = await apiClient.get<{ apiKeys: ApiKey[] }>('/api/settings/api-keys');
+      setApiKeys(data.apiKeys || []);
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        // 401 is handled automatically by apiClient (redirects to login)
+        return;
+      }
       console.error('Failed to fetch API keys:', err);
       showErrorToast('Error', 'Failed to load API keys');
     } finally {
@@ -107,28 +102,19 @@ export default function ApiKeysPage() {
 
     setCreating(true);
     try {
-      const response = await fetch('/api/settings/api-keys', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          name: keyName.trim(),
-        }),
+      const data = await apiClient.post<{ apiKey: string }>('/api/settings/api-keys', {
+        name: keyName.trim(),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create API key');
-      }
-
-      const data = await response.json();
       setNewApiKey(data.apiKey);
       setKeyName('');
       await fetchApiKeys();
       showSuccessToast('API Key Created', 'Your new API key has been generated');
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        // 401 is handled automatically by apiClient (redirects to login)
+        return;
+      }
       const friendlyError = getUserFriendlyError(err as Error);
       showErrorToast(friendlyError.title, friendlyError.message);
     } finally {
@@ -143,21 +129,15 @@ export default function ApiKeysPage() {
 
     setDeletingId(keyId);
     try {
-      const response = await fetch(`/api/settings/api-keys/${keyId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to delete API key');
-      }
+      await apiClient.delete(`/api/settings/api-keys/${keyId}`);
 
       await fetchApiKeys();
       showSuccessToast('API Key Revoked', 'The API key has been deleted');
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        // 401 is handled automatically by apiClient (redirects to login)
+        return;
+      }
       const friendlyError = getUserFriendlyError(err as Error);
       showErrorToast(friendlyError.title, friendlyError.message);
     } finally {

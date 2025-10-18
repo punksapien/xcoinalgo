@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
+import { apiClient, ApiError } from '@/lib/api-client';
 import {
   Play,
   Square,
@@ -79,24 +80,14 @@ export default function DeployedBotsPage() {
         params.set('status', filter.toUpperCase());
       }
 
-      const response = await fetch(`/api/bot/deployments?${params}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      if (!response.ok) {
-        if (response.status === 401) {
-          router.push('/login');
-          return;
-        }
-        throw new Error('Failed to fetch deployments');
-      }
-
-      const data: DeploymentResponse = await response.json();
+      const data = await apiClient.get<DeploymentResponse>(`/api/bot/deployments?${params}`);
       setDeployments(data.deployments);
       setError(null);
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        // 401 is handled automatically by apiClient (redirects to login)
+        return;
+      }
       setError(err instanceof Error ? err.message : 'Failed to load deployments');
     } finally {
       setLoading(false);
@@ -126,25 +117,13 @@ export default function DeployedBotsPage() {
     }
 
     try {
-      const response = await fetch('/api/bot/stop', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({ deploymentId }),
-      });
-
-      if (!response.ok) {
-        if (response.status === 401) {
-          router.push('/login');
-          return;
-        }
-        throw new Error('Failed to stop bot');
-      }
-
+      await apiClient.post('/api/bot/stop', { deploymentId });
       fetchDeployments(); // Refresh the list
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        // 401 is handled automatically by apiClient (redirects to login)
+        return;
+      }
       setError(err instanceof Error ? err.message : 'Failed to stop bot');
     }
   };
@@ -156,25 +135,13 @@ export default function DeployedBotsPage() {
     }
 
     try {
-      const response = await fetch('/api/bot/start', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({ strategyId }),
-      });
-
-      if (!response.ok) {
-        if (response.status === 401) {
-          router.push('/login');
-          return;
-        }
-        throw new Error('Failed to start bot');
-      }
-
+      await apiClient.post('/api/bot/start', { strategyId });
       fetchDeployments(); // Refresh the list
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        // 401 is handled automatically by apiClient (redirects to login)
+        return;
+      }
       setError(err instanceof Error ? err.message : 'Failed to start bot');
     }
   };
@@ -190,23 +157,13 @@ export default function DeployedBotsPage() {
     }
 
     try {
-      const response = await fetch(`/api/bot/deployments/${deploymentId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      if (!response.ok) {
-        if (response.status === 401) {
-          router.push('/login');
-          return;
-        }
-        throw new Error('Failed to delete deployment');
-      }
-
+      await apiClient.delete(`/api/bot/deployments/${deploymentId}`);
       fetchDeployments(); // Refresh the list
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        // 401 is handled automatically by apiClient (redirects to login)
+        return;
+      }
       setError(err instanceof Error ? err.message : 'Failed to delete deployment');
     }
   };

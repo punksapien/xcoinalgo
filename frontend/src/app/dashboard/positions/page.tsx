@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
+import { apiClient, ApiError } from '@/lib/api-client';
 import {
   TrendingUp,
   TrendingDown,
@@ -100,27 +101,11 @@ export default function PositionsPage() {
     }
 
     try {
-      const headers = { 'Authorization': `Bearer ${token}` };
-
       // Fetch positions, orders, and P&L data in parallel
-      const [positionsRes, ordersRes, pnlRes] = await Promise.all([
-        fetch('/api/positions/current', { headers }),
-        fetch('/api/positions/orders', { headers }),
-        fetch('/api/positions/pnl', { headers })
-      ]);
-
-      if (!positionsRes.ok || !ordersRes.ok || !pnlRes.ok) {
-        if (positionsRes.status === 401 || ordersRes.status === 401 || pnlRes.status === 401) {
-          router.push('/login');
-          return;
-        }
-        throw new Error('Failed to fetch data');
-      }
-
       const [positionsData, ordersData, pnlDataRes] = await Promise.all([
-        positionsRes.json(),
-        ordersRes.json(),
-        pnlRes.json()
+        apiClient.get<{ positions: Position[] }>('/api/positions/current'),
+        apiClient.get<{ orders: Order[] }>('/api/positions/orders'),
+        apiClient.get<PnLData>('/api/positions/pnl')
       ]);
 
       setPositions(positionsData.positions || []);
@@ -128,6 +113,10 @@ export default function PositionsPage() {
       setPnlData(pnlDataRes);
       setError(null);
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        // 401 is handled automatically by apiClient (redirects to login)
+        return;
+      }
       setError(err instanceof Error ? err.message : 'Failed to load data');
     } finally {
       setLoading(false);
@@ -168,22 +157,18 @@ export default function PositionsPage() {
     }
 
     try {
-      const response = await fetch('/api/positions/close', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({ positionId, reason: 'Manual close' }),
+      await apiClient.post('/api/positions/close', {
+        positionId,
+        reason: 'Manual close'
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to close position');
-      }
 
       // Refresh data
       fetchData();
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        // 401 is handled automatically by apiClient (redirects to login)
+        return;
+      }
       setError(err instanceof Error ? err.message : 'Failed to close position');
     }
   };

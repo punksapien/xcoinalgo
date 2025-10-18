@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
+import { apiClient, ApiError } from '@/lib/api-client';
 import {
   Card,
   CardContent,
@@ -87,17 +88,13 @@ export default function BrokerSetupPage() {
 
     try {
       setLoadingStatus(true);
-      const response = await fetch('/api/broker/status', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setBrokerStatus(data);
-      }
+      const data = await apiClient.get<BrokerStatus>('/api/broker/status');
+      setBrokerStatus(data);
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        // 401 is handled automatically by apiClient (redirects to login)
+        return;
+      }
       console.error('Failed to fetch broker status:', err);
     } finally {
       setLoadingStatus(false);
@@ -120,40 +117,16 @@ export default function BrokerSetupPage() {
 
     try {
       // First test the connection
-      const testResponse = await fetch('/api/broker/test', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          apiKey: apiKey.trim(),
-          apiSecret: secretKey.trim(),
-        }),
+      await apiClient.post('/api/broker/test', {
+        apiKey: apiKey.trim(),
+        apiSecret: secretKey.trim(),
       });
-
-      if (!testResponse.ok) {
-        const errorData = await testResponse.json();
-        throw new Error(errorData.error || 'Failed to validate credentials');
-      }
 
       // If test successful, store the credentials
-      const storeResponse = await fetch('/api/broker/keys', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          apiKey: apiKey.trim(),
-          apiSecret: secretKey.trim(),
-        }),
+      await apiClient.post('/api/broker/keys', {
+        apiKey: apiKey.trim(),
+        apiSecret: secretKey.trim(),
       });
-
-      if (!storeResponse.ok) {
-        const errorData = await storeResponse.json();
-        throw new Error(errorData.error || 'Failed to store credentials');
-      }
 
       showSuccessToast('Broker Connected!', 'Your CoinDCX credentials have been connected successfully');
       setSuccess('CoinDCX credentials connected successfully!');
@@ -162,6 +135,10 @@ export default function BrokerSetupPage() {
       handleModalChange(false); // Close modal on success
       await fetchBrokerStatus(); // Refresh status
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        // 401 is handled automatically by apiClient (redirects to login)
+        return;
+      }
       const friendlyError = getUserFriendlyError(err as Error);
       showErrorToast(friendlyError.title, friendlyError.message);
       setError(err instanceof Error ? err.message : 'Connection failed');
@@ -177,27 +154,19 @@ export default function BrokerSetupPage() {
     setError(null);
 
     try {
-      const response = await fetch('/api/broker/test', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          apiKey: apiKey.trim(),
-          apiSecret: secretKey.trim(),
-        }),
+      await apiClient.post('/api/broker/test', {
+        apiKey: apiKey.trim(),
+        apiSecret: secretKey.trim(),
       });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Connection test failed');
-      }
 
       showSuccessToast('Connection Test Successful!', 'Your CoinDCX credentials are valid and working');
       setSuccess('Connection test successful! ✅');
       setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        // 401 is handled automatically by apiClient (redirects to login)
+        return;
+      }
       const friendlyError = getUserFriendlyError(err as Error);
       showErrorToast(friendlyError.title, friendlyError.message);
       setError(err instanceof Error ? err.message : 'Connection test failed');
@@ -213,22 +182,16 @@ export default function BrokerSetupPage() {
 
     setLoading(true);
     try {
-      const response = await fetch('/api/broker/keys', {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to disconnect');
-      }
+      await apiClient.delete('/api/broker/keys');
 
       showSuccessToast('Broker Disconnected', 'Your CoinDCX credentials have been removed');
       setSuccess('CoinDCX disconnected successfully');
       await fetchBrokerStatus();
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        // 401 is handled automatically by apiClient (redirects to login)
+        return;
+      }
       const friendlyError = getUserFriendlyError(err as Error);
       showErrorToast(friendlyError.title, friendlyError.message);
       setError(err instanceof Error ? err.message : 'Failed to disconnect');
