@@ -9,7 +9,7 @@ export class ApiError extends Error {
   constructor(
     message: string,
     public status: number,
-    public data?: any
+    public data?: unknown
   ) {
     super(message);
     this.name = 'ApiError';
@@ -25,7 +25,7 @@ class ApiClient {
    * Make an authenticated API request
    * Automatically logs out user on 401 responses
    */
-  async request<T = any>(
+  async request<T = unknown>(
     url: string,
     options: FetchOptions = {}
   ): Promise<T> {
@@ -35,14 +35,17 @@ class ApiClient {
     const token = useAuth.getState().token;
 
     // Build headers
-    const requestHeaders: HeadersInit = {
+    const requestHeaders: Record<string, string> = {
       'Content-Type': 'application/json',
-      ...headers,
+      ...(headers as Record<string, string>),
     };
 
     // Add authorization header if we have a token and not skipping auth
     if (token && !skipAuth) {
       requestHeaders['Authorization'] = `Bearer ${token}`;
+      console.log(`[apiClient] Request to ${url} with token: ${token.substring(0, 20)}...`);
+    } else if (!skipAuth) {
+      console.warn(`[apiClient] Request to ${url} WITHOUT token (skipAuth: ${skipAuth}, hasToken: ${!!token})`);
     }
 
     try {
@@ -53,12 +56,21 @@ class ApiClient {
 
       // Handle 401 - User is unauthorized, log them out
       if (response.status === 401) {
-        const logout = useAuth.getState().logout;
-        await logout();
+        console.log('[apiClient] 401 Unauthorized - logging out and redirecting...');
 
-        // Redirect to login page
+        try {
+          const logout = useAuth.getState().logout;
+          await logout();
+        } catch (logoutError) {
+          console.error('[apiClient] Logout error:', logoutError);
+          // Continue with redirect even if logout fails
+        }
+
+        // Force redirect to login page
         if (typeof window !== 'undefined') {
-          window.location.href = '/login';
+          console.log('[apiClient] Redirecting to /login');
+          // Use replace to prevent back button issues
+          window.location.replace('/login');
         }
 
         throw new ApiError(
@@ -85,7 +97,7 @@ class ApiClient {
       }
 
       // Return response as-is for non-JSON responses
-      return await response.text() as any;
+      return await response.text() as T;
     } catch (error) {
       // Re-throw ApiError as-is
       if (error instanceof ApiError) {
@@ -104,16 +116,16 @@ class ApiClient {
   /**
    * GET request
    */
-  async get<T = any>(url: string, options?: FetchOptions): Promise<T> {
+  async get<T = unknown>(url: string, options?: FetchOptions): Promise<T> {
     return this.request<T>(url, { ...options, method: 'GET' });
   }
 
   /**
    * POST request
    */
-  async post<T = any>(
+  async post<T = unknown>(
     url: string,
-    data?: any,
+    data?: unknown,
     options?: FetchOptions
   ): Promise<T> {
     return this.request<T>(url, {
@@ -126,9 +138,9 @@ class ApiClient {
   /**
    * PUT request
    */
-  async put<T = any>(
+  async put<T = unknown>(
     url: string,
-    data?: any,
+    data?: unknown,
     options?: FetchOptions
   ): Promise<T> {
     return this.request<T>(url, {
@@ -141,9 +153,9 @@ class ApiClient {
   /**
    * PATCH request
    */
-  async patch<T = any>(
+  async patch<T = unknown>(
     url: string,
-    data?: any,
+    data?: unknown,
     options?: FetchOptions
   ): Promise<T> {
     return this.request<T>(url, {
@@ -156,7 +168,7 @@ class ApiClient {
   /**
    * DELETE request
    */
-  async delete<T = any>(url: string, options?: FetchOptions): Promise<T> {
+  async delete<T = unknown>(url: string, options?: FetchOptions): Promise<T> {
     return this.request<T>(url, { ...options, method: 'DELETE' });
   }
 }

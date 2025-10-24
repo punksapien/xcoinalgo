@@ -436,7 +436,7 @@ export default function StrategyDetailPage() {
       let peak = runningPnl
 
       return (backtest.tradeHistory as Trade[]).map((trade, index) => {
-        runningPnl += trade.profitLoss
+        runningPnl += getTradePnl(trade)
         peak = Math.max(peak, runningPnl)
         const drawdown = peak - runningPnl
 
@@ -507,8 +507,8 @@ export default function StrategyDetailPage() {
       trade.quantity.toString().includes(query) ||
       trade.entryPrice.toString().includes(query) ||
       trade.exitPrice.toString().includes(query) ||
-      trade.profitLoss.toString().includes(query) ||
-      trade.charges.toString().includes(query) ||
+      getTradePnl(trade).toString().includes(query) ||
+      getTradeCharges(trade).toString().includes(query) ||
       (trade.remarks && trade.remarks.toLowerCase().includes(query))
     )
   }, [strategy?.latestBacktest, searchQuery])
@@ -563,8 +563,8 @@ export default function StrategyDetailPage() {
       trade.quantity,
       trade.entryPrice,
       trade.exitPrice,
-      trade.profitLoss,
-      trade.charges,
+      getTradePnl(trade),
+      getTradeCharges(trade),
       trade.remarks || ''
     ])
 
@@ -1059,10 +1059,10 @@ export default function StrategyDetailPage() {
                               <td className="border border-border/50 px-3 py-2">{trade.quantity}</td>
                               <td className="border border-border/50 px-3 py-2 text-green-500">{formatCurrencyUtil(trade.entryPrice, showingUSD, 1)}</td>
                               <td className="border border-border/50 px-3 py-2 text-green-500">{formatCurrencyUtil(trade.exitPrice, showingUSD, 1)}</td>
-                              <td className={`border border-border/50 px-3 py-2 ${trade.profitLoss > 0 ? 'text-green-500' : 'text-red-500'}`}>
-                                {formatCurrencyUtil(trade.profitLoss, showingUSD, 1)}
+                              <td className={`border border-border/50 px-3 py-2 ${getTradePnl(trade) > 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                {formatCurrencyUtil(getTradePnl(trade), showingUSD, 1)}
                               </td>
-                              <td className="border border-border/50 px-3 py-2">{formatCurrencyUtil(trade.charges, showingUSD, 1)}</td>
+                              <td className="border border-border/50 px-3 py-2">{formatCurrencyUtil(getTradeCharges(trade), showingUSD, 1)}</td>
                               <td className="border border-border/50 px-3 py-2">{trade.remarks || '-'}</td>
                             </tr>
                           ))
