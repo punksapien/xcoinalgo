@@ -311,10 +311,10 @@ class StrategyRegistry {
 
     try {
       const candleKeys = await redis.keys('candle:*')
-      
+
       for (const candleKey of candleKeys) {
         const members = await redis.smembers(candleKey)
-        
+
         for (const member of members) {
           // Remove empty/whitespace entries
           if (!member || member.trim() === '') {
