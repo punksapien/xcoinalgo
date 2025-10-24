@@ -61,10 +61,17 @@ function safeDivide(numerator: number, denominator: number, fallback = 0): numbe
 }
 
 /**
- * Get PNL value from trade - handles both camelCase and snake_case field names
+ * Get gross PNL value from trade (before charges) - handles both camelCase and snake_case field names
+ */
+function getGrossPnl(trade: Trade): number {
+  return trade.pnl_gross || trade.profitLoss || trade.pnl_net || trade.net_pnl || 0
+}
+
+/**
+ * Get net PNL value from trade (after charges) - handles both camelCase and snake_case field names
  */
 function getPnl(trade: Trade): number {
-  return trade.profitLoss || trade.pnl_net || trade.net_pnl || 0
+  return trade.pnl_net || trade.net_pnl || trade.profitLoss || 0
 }
 
 /**
@@ -125,8 +132,8 @@ export function computeMetrics(
 
   // Calculate totals
   const totalCharges = trades.reduce((sum, t) => sum + getCharges(t), 0)
-  const realizedPnl = trades.reduce((sum, t) => sum + getPnl(t), 0)
-  const netPnl = realizedPnl - totalCharges
+  const realizedPnl = trades.reduce((sum, t) => sum + getGrossPnl(t), 0) // Gross PNL (before charges)
+  const netPnl = trades.reduce((sum, t) => sum + getPnl(t), 0) // Net PNL (after charges)
 
   // Reward to risk ratio (avg win / avg loss)
   const rewardToRiskRatio = safeDivide(avgWinningTrade, avgLosingTrade, 0)
@@ -166,13 +173,13 @@ export function computeMetrics(
     }
   })
 
-  // Return / Max Drawdown ratio
-  const returnMaxDD = safeDivide(realizedPnl, Math.abs(baseMaxDrawdown), 0)
+  // Return / Max Drawdown ratio (use net PNL for realistic ratio)
+  const returnMaxDD = safeDivide(netPnl, Math.abs(baseMaxDrawdown), 0)
 
   // Total trades and win rate
   const totalTrades = trades.length
   const winRateCalc = safeDivide(winningTrades.length, totalTrades) * 100
-  const avgTradeCalc = safeDivide(realizedPnl, totalTrades)
+  const avgTradeCalc = safeDivide(netPnl, totalTrades) // Use net PNL for average per trade
 
   return {
     winningTrades: winningTrades.length,

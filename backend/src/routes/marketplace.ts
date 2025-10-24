@@ -300,6 +300,8 @@ router.get('/:id', async (req, res, next) => {
               entryPrice: trade.entry_price || 0,
               exitPrice: trade.exit_price || 0,
               profitLoss: trade.pnl_net || trade.net_pnl || trade.pnl || trade.pnl_gross || 0,
+              pnl_net: trade.pnl_net || trade.net_pnl || 0, // Net PNL (after charges)
+              pnl_gross: trade.pnl_gross || trade.pnl || 0, // Gross PNL (before charges)
               charges: trade.charges || trade.commission || 0,
               remarks: trade.exit_reason || trade.reason || ''
             };
