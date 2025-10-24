@@ -72,6 +72,24 @@ interface Trade {
   profitLoss: number
   charges: number
   remarks: string
+  // Support snake_case from Python backend
+  pnl_net?: number
+  pnl_gross?: number
+  net_pnl?: number
+  entry_time?: string
+  exit_time?: string
+  entry_price?: number
+  exit_price?: number
+  commission?: number
+}
+
+// Helper functions to get trade values with fallback for both naming conventions
+const getTradePnl = (trade: Trade): number => {
+  return trade.profitLoss || trade.pnl_net || trade.net_pnl || 0
+}
+
+const getTradeCharges = (trade: Trade): number => {
+  return trade.charges || trade.commission || 0
 }
 
 interface StrategyData {

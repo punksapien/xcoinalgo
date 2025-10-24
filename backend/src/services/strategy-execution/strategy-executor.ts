@@ -619,14 +619,25 @@ export class StrategyExecutor {
     const values: number[] = [];
     let currentCapital = initialCapital;
 
-    // Add initial point
-    timestamps.push(trades[0].entry_time);
+    // Add initial point - handle both snake_case and camelCase
+    timestamps.push(trades[0].entry_time || trades[0].entryTime);
     values.push(initialCapital);
 
     // Build equity curve from trades
     for (const trade of trades) {
-      currentCapital = trade.capital_after_trade || currentCapital;
-      timestamps.push(trade.exit_time);
+      // Handle multiple field name formats
+      const capitalAfterTrade = trade.capital_after_trade || trade.capitalAfterTrade;
+
+      if (capitalAfterTrade !== undefined) {
+        currentCapital = capitalAfterTrade;
+      } else {
+        // Fallback: calculate from PNL if capital_after_trade not available
+        const tradePnl = trade.net_pnl || trade.pnl_net || trade.pnl || 0;
+        currentCapital += tradePnl;
+      }
+
+      // Handle both snake_case and camelCase for exit time
+      timestamps.push(trade.exit_time || trade.exitTime);
       values.push(currentCapital);
     }
 
@@ -652,14 +663,17 @@ export class StrategyExecutor {
 
     for (const trade of trades) {
       // Parse exit_time to get month key (YYYY-MM format)
-      const exitDate = new Date(trade.exit_time);
+      // Handle both snake_case and camelCase field names
+      const exitDate = new Date(trade.exit_time || trade.exitTime);
       const monthKey = `${exitDate.getFullYear()}-${String(exitDate.getMonth() + 1).padStart(2, '0')}`;
 
       if (!monthlyData[monthKey]) {
         monthlyData[monthKey] = { pnl: 0, trades: 0 };
       }
 
-      monthlyData[monthKey].pnl += trade.net_pnl || 0;
+      // Handle multiple field name formats from different strategy implementations
+      const tradePnl = trade.net_pnl || trade.pnl_net || trade.pnl || 0;
+      monthlyData[monthKey].pnl += tradePnl;
       monthlyData[monthKey].trades += 1;
     }
 

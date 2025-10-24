@@ -18,7 +18,16 @@ export interface Trade {
   entryPrice: number
   exitPrice: number
   profitLoss: number
+  // Support snake_case field names from Python backend
+  pnl_net?: number
+  pnl_gross?: number
+  net_pnl?: number
+  entry_time?: string
+  exit_time?: string
+  entry_price?: number
+  exit_price?: number
   charges: number
+  commission?: number
   remarks: string
 }
 
@@ -49,6 +58,20 @@ export interface ComputedMetrics {
 function safeDivide(numerator: number, denominator: number, fallback = 0): number {
   if (!denominator || denominator === 0) return fallback
   return numerator / denominator
+}
+
+/**
+ * Get PNL value from trade - handles both camelCase and snake_case field names
+ */
+function getPnl(trade: Trade): number {
+  return trade.profitLoss || trade.pnl_net || trade.net_pnl || 0
+}
+
+/**
+ * Get charges value from trade - handles both field name formats
+ */
+function getCharges(trade: Trade): number {
+  return trade.charges || trade.commission || 0
 }
 
 /**
@@ -83,26 +106,26 @@ export function computeMetrics(
   }
 
   // Separate wins and losses
-  const winningTrades = trades.filter(t => t.profitLoss > 0)
-  const losingTrades = trades.filter(t => t.profitLoss < 0)
+  const winningTrades = trades.filter(t => getPnl(t) > 0)
+  const losingTrades = trades.filter(t => getPnl(t) < 0)
 
   // Calculate averages
-  const totalWins = winningTrades.reduce((sum, t) => sum + t.profitLoss, 0)
-  const totalLosses = Math.abs(losingTrades.reduce((sum, t) => sum + t.profitLoss, 0))
+  const totalWins = winningTrades.reduce((sum, t) => sum + getPnl(t), 0)
+  const totalLosses = Math.abs(losingTrades.reduce((sum, t) => sum + getPnl(t), 0))
   const avgWinningTrade = safeDivide(totalWins, winningTrades.length)
   const avgLosingTrade = safeDivide(totalLosses, losingTrades.length)
 
   // Find max profit and loss
   const maxProfit = winningTrades.length > 0
-    ? Math.max(...winningTrades.map(t => t.profitLoss))
+    ? Math.max(...winningTrades.map(t => getPnl(t)))
     : 0
   const maxLoss = losingTrades.length > 0
-    ? Math.min(...losingTrades.map(t => t.profitLoss))
+    ? Math.min(...losingTrades.map(t => getPnl(t)))
     : 0
 
   // Calculate totals
-  const totalCharges = trades.reduce((sum, t) => sum + (t.charges || 0), 0)
-  const realizedPnl = trades.reduce((sum, t) => sum + t.profitLoss, 0)
+  const totalCharges = trades.reduce((sum, t) => sum + getCharges(t), 0)
+  const realizedPnl = trades.reduce((sum, t) => sum + getPnl(t), 0)
   const netPnl = realizedPnl - totalCharges
 
   // Reward to risk ratio (avg win / avg loss)
@@ -119,7 +142,8 @@ export function computeMetrics(
   let maxLossStreak = 0
 
   trades.forEach(trade => {
-    if (trade.profitLoss > 0) {
+    const pnl = getPnl(trade)
+    if (pnl > 0) {
       currentStreak = currentStreak > 0 ? currentStreak + 1 : 1
       maxWinStreak = Math.max(maxWinStreak, currentStreak)
     } else {
@@ -133,7 +157,8 @@ export function computeMetrics(
   let maxTradesInDrawdown = 0
 
   trades.forEach(trade => {
-    if (trade.profitLoss < 0) {
+    const pnl = getPnl(trade)
+    if (pnl < 0) {
       currentDrawdownTrades++
       maxTradesInDrawdown = Math.max(maxTradesInDrawdown, currentDrawdownTrades)
     } else {
@@ -207,14 +232,16 @@ export function generateMonthlySummary(
   // Otherwise compute from trades
   else if (trades && trades.length > 0) {
     trades.forEach(trade => {
-      const date = new Date(trade.exitDate)
+      const exitDate = trade.exitDate || trade.exit_time || ''
+      const date = new Date(exitDate)
       const year = date.getFullYear().toString()
       const monthIndex = date.getMonth()
       const monthName = months[monthIndex]
 
       if (summary[year]) {
-        summary[year][monthName] += trade.profitLoss
-        summary[year]['Total'] += trade.profitLoss
+        const pnl = getPnl(trade)
+        summary[year][monthName] += pnl
+        summary[year]['Total'] += pnl
       }
     })
   }
