@@ -22,9 +22,49 @@ import sys
 import json
 import logging
 import traceback
+import csv
+import os
 from datetime import datetime
 from typing import Dict, Any, List
 from io import StringIO
+
+
+class CsvHandler(logging.FileHandler):
+    """
+    Custom CSV logging handler that writes structured logs to CSV files.
+    Automatically creates CSV header if file is new or empty.
+    """
+    def __init__(self, filename, mode='a', encoding=None, delay=False):
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(filename) if os.path.dirname(filename) else '.', exist_ok=True)
+        super().__init__(filename, mode, encoding, delay)
+        # Write header if file is new or empty
+        if not os.path.exists(filename) or os.path.getsize(filename) == 0:
+            self._write_header()
+
+    def _write_header(self):
+        if self.stream is None:
+            self.stream = self._open()
+        csv_writer = csv.writer(self.stream)
+        csv_writer.writerow(['timestamp', 'level', 'message', 'function', 'line'])
+        self.flush()
+
+    def emit(self, record):
+        try:
+            if self.stream is None:
+                self.stream = self._open()
+            csv_writer = csv.writer(self.stream)
+            log_entry = [
+                datetime.fromtimestamp(record.created).strftime('%Y-%m-%d %H:%M:%S'),
+                record.levelname,
+                record.getMessage(),
+                record.funcName,
+                record.lineno
+            ]
+            csv_writer.writerow(log_entry)
+            self.flush()
+        except Exception:
+            self.handleError(record)
 
 
 class LogCapture:
@@ -149,6 +189,21 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
         csv_formatter = ISTFormatter('%(asctime)s,%(levelname)s,%(message)s,%(funcName)s,%(lineno)d')
         csv_handler.setFormatter(csv_formatter)
         logging.getLogger().addHandler(csv_handler)
+
+        # ✅ Add CsvHandler for structured logging
+        # Creates logs/trading_bot.log (all logs) and logs/error_log.csv (errors only)
+        trading_bot_log_path = os.path.join(logs_dir, 'trading_bot.log')
+        trading_bot_handler = logging.FileHandler(trading_bot_log_path, mode='a')
+        trading_bot_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        trading_bot_handler.setFormatter(trading_bot_formatter)
+        logging.getLogger().addHandler(trading_bot_handler)
+
+        error_log_path = os.path.join(logs_dir, 'error_log.csv')
+        csv_error_handler = CsvHandler(error_log_path)
+        csv_error_handler.setLevel(logging.ERROR)
+        logging.getLogger().addHandler(csv_error_handler)
+
+        logging.info(f"📝 Additional logs: {trading_bot_log_path}, {error_log_path}")
 
         # ✅ Redirect print() statements to file
         class PrintLogger:
