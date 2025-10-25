@@ -356,6 +356,101 @@ class StrategyRegistry {
   }
 
   /**
+   * 🔄 RECONCILIATION: Sync Redis cache with database
+   * Validates Redis against DB bidirectionally:
+   * 1. Removes entries in Redis but not in DB (orphaned)
+   * 2. Adds entries in DB but not in Redis (missing)
+   *
+   * Called periodically (every 5 min) to auto-heal cache drift
+   */
+  async reconcileWithDatabase(): Promise<{ orphaned: number; missing: number; errors: string[] }> {
+    console.log('🔄 Starting cache reconciliation...')
+    let orphanedCount = 0
+    let missingCount = 0
+    const errors: string[] = []
+
+    try {
+      // STEP 1: Remove orphaned entries (in Redis but not in DB)
+      const candleKeys = await redis.keys('candle:*')
+
+      for (const candleKey of candleKeys) {
+        const members = await redis.smembers(candleKey)
+
+        for (const strategyId of members) {
+          // Skip empty/invalid entries
+          if (!strategyId || strategyId.trim() === '') {
+            await redis.srem(candleKey, strategyId)
+            orphanedCount++
+            continue
+          }
+
+          // Check if strategy exists in DB and is active
+          const strategy = await prisma.strategy.findUnique({
+            where: { id: strategyId },
+            select: {
+              id: true,
+              isActive: true,
+              executionConfig: true
+            }
+          })
+
+          if (!strategy || !strategy.isActive) {
+            await redis.srem(candleKey, strategyId)
+            console.log(`  🗑️  Removed orphaned strategy ${strategyId} from ${candleKey}`)
+            orphanedCount++
+          }
+        }
+
+        // Clean up empty candle keys
+        const remainingMembers = await redis.smembers(candleKey)
+        if (remainingMembers.length === 0) {
+          await redis.del(candleKey)
+          console.log(`  🗑️  Removed empty candle key: ${candleKey}`)
+        }
+      }
+
+      // STEP 2: Add missing entries (in DB but not in Redis)
+      const activeStrategies = await prisma.strategy.findMany({
+        where: {
+          isActive: true,
+          subscriberCount: { gt: 0 }
+        },
+        select: {
+          id: true,
+          executionConfig: true
+        }
+      })
+
+      for (const strategy of activeStrategies) {
+        const config = strategy.executionConfig as any
+        const symbol = config?.symbol || config?.pair
+        const resolution = config?.resolution
+
+        if (!symbol || !resolution) {
+          continue
+        }
+
+        const candleKey = this.getCandleKey(symbol, resolution)
+        const isMember = await redis.sismember(candleKey, strategy.id)
+
+        if (!isMember) {
+          await this.registerStrategy(strategy.id, symbol, resolution)
+          console.log(`  ➕ Added missing strategy ${strategy.id} to ${candleKey}`)
+          missingCount++
+        }
+      }
+
+      console.log(`✅ Reconciliation complete. Orphaned: ${orphanedCount}, Missing: ${missingCount}`)
+      return { orphaned: orphanedCount, missing: missingCount, errors }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      errors.push(errorMsg)
+      console.error('❌ Reconciliation failed:', error)
+      return { orphaned: orphanedCount, missing: missingCount, errors }
+    }
+  }
+
+  /**
    * Generate Redis key for a candle
    */
   private getCandleKey(symbol: string, resolution: string): string {

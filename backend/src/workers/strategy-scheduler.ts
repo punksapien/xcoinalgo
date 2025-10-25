@@ -49,8 +49,12 @@ class StrategyScheduler {
     try {
       console.log('Initializing strategy scheduler...');
 
-      // Wait for registry to initialize
+      // 🔄 STARTUP CACHE REBUILD: Clear Redis and rebuild from DB
+      // Guarantees clean state on deployment/restart
+      console.log('🔄 Performing startup cache rebuild...');
+      await strategyRegistry.clear();
       await strategyRegistry.initialize();
+      console.log('✅ Cache rebuilt from database\n');
 
       // Get all active candles
       const activeCandles = await strategyRegistry.getActiveCandles();
@@ -64,8 +68,11 @@ class StrategyScheduler {
 
       console.log(`\nScheduler initialized with ${this.scheduledJobs.size} scheduled jobs\n`);
 
-      // Refresh schedules every 5 minutes in case new strategies are registered
+      // Refresh schedules every 1 minute in case new strategies are registered
       this.scheduleRefresh();
+
+      // 🔄 PERIODIC RECONCILIATION: Validate cache every 5 minutes
+      this.scheduleReconciliation();
 
     } catch (error) {
       console.error('Failed to initialize scheduler:', error);
@@ -215,6 +222,41 @@ class StrategyScheduler {
 
       } catch (error) {
         console.error('Error refreshing schedules:', error);
+      }
+    });
+  }
+
+  /**
+   * Schedule periodic cache reconciliation (every 5 minutes)
+   * Auto-heals cache drift by validating Redis against database
+   */
+  private scheduleReconciliation(): void {
+    console.log('Scheduling periodic cache reconciliation every 5 minutes\n');
+
+    cron.schedule('*/5 * * * *', async () => {
+      if (this.isShuttingDown) {
+        return;
+      }
+
+      console.log('\n🔄 Running periodic cache reconciliation...');
+
+      try {
+        const result = await strategyRegistry.reconcileWithDatabase();
+
+        if (result.orphaned > 0 || result.missing > 0) {
+          console.warn(
+            `⚠️  Cache drift detected! Orphaned: ${result.orphaned}, Missing: ${result.missing}`
+          );
+        } else {
+          console.log('✅ Cache is in sync with database');
+        }
+
+        if (result.errors.length > 0) {
+          console.error('Reconciliation errors:', result.errors);
+        }
+
+      } catch (error) {
+        console.error('Error during reconciliation:', error);
       }
     });
   }

@@ -831,7 +831,7 @@ router.delete('/:id', authenticate, async (req: AuthenticatedRequest, res, next)
         const resolution = config.resolution;
 
         if (symbol && resolution) {
-          const candleKey = `candles:${symbol}:${resolution}`;
+          const candleKey = `candle:${symbol}:${resolution}`;
           await redis.srem(candleKey, strategyId);
           logger.info(`Removed strategy ${strategyId} from ${candleKey}`);
 
