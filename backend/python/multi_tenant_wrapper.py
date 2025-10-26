@@ -229,6 +229,7 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
             '__builtins__': __builtins__,
             'logging': logging,
             'sys': sys,
+            'CsvHandler': CsvHandler,  # ✅ Make CsvHandler available to quant team for custom logs
         }
 
         # Import common dependencies that quant team uses
