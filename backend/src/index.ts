@@ -23,13 +23,10 @@ import { errorHandler } from './middleware/errorHandler';
 import { startHealthCheckMonitoring } from './services/strategyExecutor';
 import { startOrderMonitoring } from './workers/order-monitor';
 import './config/passport'; // Initialize passport configuration
-import prisma from './utils/database';
-import { registerCacheSyncMiddleware } from './services/prisma-cache-middleware';
+// Import prisma (with cache sync extension applied)
+import './utils/database';
 
 dotenv.config();
-
-// Register Prisma middleware for automatic Redis cache synchronization
-registerCacheSyncMiddleware(prisma);
 
 const app = express();
 const PORT = process.env.PORT || 3001;
