@@ -16,7 +16,7 @@ import { redis } from '../lib/redis-client';
  * Call this ONCE during app initialization (in index.ts)
  */
 export function registerCacheSyncMiddleware(prisma: any) {
-  prisma.$use(async (params: Prisma.MiddlewareParams, next: (params: Prisma.MiddlewareParams) => Promise<any>) => {
+  prisma.$use(async (params: any, next: (params: any) => Promise<any>) => {
     // Execute the query first
     const result = await next(params);
 
@@ -56,7 +56,7 @@ export function registerCacheSyncMiddleware(prisma: any) {
 /**
  * Handle strategy deletion - remove from Redis
  */
-async function handleStrategyDeletion(params: Prisma.MiddlewareParams, result: any) {
+async function handleStrategyDeletion(params: any, result: any) {
   const strategyId = params.args?.where?.id;
 
   if (!strategyId) {
@@ -85,7 +85,7 @@ async function handleStrategyDeletion(params: Prisma.MiddlewareParams, result: a
 /**
  * Handle strategy update - sync if executionConfig or isActive changed
  */
-async function handleStrategyUpdate(params: Prisma.MiddlewareParams, result: any) {
+async function handleStrategyUpdate(params: any, result: any) {
   const strategyId = params.args?.where?.id;
   const updates = params.args?.data;
 
@@ -155,7 +155,7 @@ async function handleStrategyUpdate(params: Prisma.MiddlewareParams, result: any
 /**
  * Handle strategy creation - register if active
  */
-async function handleStrategyCreation(params: Prisma.MiddlewareParams, result: any) {
+async function handleStrategyCreation(params: any, result: any) {
   const strategy = result;
 
   if (!strategy?.id) {
