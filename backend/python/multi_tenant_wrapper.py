@@ -326,7 +326,9 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
         # ====================================================================
         # STEP 4: Execute strategy for EACH subscriber with their credentials
         # ====================================================================
-        logging.info(f"💼 Processing {len(subscribers)} subscribers...")
+        logging.info(f"\n{'='*50}")
+        logging.info(f"Cycle Start - In Position: Checking for {len(subscribers)} subscribers")
+        logging.info(f"{'='*50}")
 
         subscribers_processed = 0
         trades_attempted = 0
@@ -334,7 +336,6 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
 
         for idx, subscriber in enumerate(subscribers, 1):
             user_id = subscriber.get('user_id')
-            logging.info(f"\n   [{idx}/{len(subscribers)}] Processing user {user_id}...")
 
             try:
                 # Create subscriber-specific settings
@@ -349,12 +350,22 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
                 }
 
                 # Initialize LiveTrader for this subscriber
-                # (their __init__ sets up self.client with their credentials)
+                # (their __init__ sets up self.client with their credentials and loads state)
                 subscriber_trader = LiveTrader(settings=subscriber_settings)
 
-                # Execute their check_for_new_signal method
-                # (this contains all their custom trading logic)
-                subscriber_trader.check_for_new_signal(df_with_signals)
+                # Log user position status
+                logging.info(f"\n   [{idx}/{len(subscribers)}] Processing user {user_id} - In Position: {subscriber_trader.in_position}")
+
+                # ✅ Position-aware execution: Call the appropriate method based on state
+                if subscriber_trader.in_position:
+                    # User has an open position - manage it (check TP/SL, trailing stop, etc.)
+                    if hasattr(subscriber_trader, 'check_and_manage_position'):
+                        subscriber_trader.check_and_manage_position(df_with_signals)
+                    else:
+                        logging.warning(f"   Strategy missing check_and_manage_position method, skipping position management")
+                else:
+                    # User not in position - check for new entry signals
+                    subscriber_trader.check_for_new_signal(df_with_signals)
 
                 subscribers_processed += 1
                 trades_attempted += 1
@@ -371,10 +382,14 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
         # ====================================================================
         # STEP 5: Return results
         # ====================================================================
-        logging.info(f"\n🏁 Multi-Tenant Execution Complete")
+        resolution_minutes = int(settings.get('resolution', 5))
+        logging.info(f"\n{'='*50}")
+        logging.info(f"🏁 Multi-Tenant Execution Complete")
         logging.info(f"   Subscribers Processed: {subscribers_processed}/{len(subscribers)}")
         logging.info(f"   Trades Attempted: {trades_attempted}")
         logging.info(f"   Errors: {len(errors)}")
+        logging.info(f"Cycle complete. Next execution in ~{resolution_minutes} minutes...")
+        logging.info(f"{'='*50}")
 
         return {
             'success': True,
