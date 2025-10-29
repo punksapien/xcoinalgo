@@ -13,6 +13,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { RefreshCw, ArrowDown, AlertCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { apiClient, ApiError } from "@/lib/api-client"
 
 interface LogEntry {
   timestamp: string
@@ -64,21 +65,10 @@ export function LogViewerModal({
       setLoading(true)
       setError(null)
 
-      const response = await fetch(
-        `/api/strategy-upload/${strategyId}/logs?limit=100`,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          credentials: 'include',
-        }
+      const data = await apiClient.get<LogData>(
+        `/api/strategy-upload/${strategyId}/logs?limit=100`
       )
 
-      if (!response.ok) {
-        throw new Error(`Failed to fetch logs: ${response.statusText}`)
-      }
-
-      const data: LogData = await response.json()
       setLogData(data)
 
       // Auto-scroll to bottom if enabled
@@ -91,7 +81,11 @@ export function LogViewerModal({
         }, 100)
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch logs')
+      if (err instanceof ApiError) {
+        setError(err.message)
+      } else {
+        setError('Failed to fetch logs')
+      }
       console.error('Log fetch error:', err)
     } finally {
       setLoading(false)
