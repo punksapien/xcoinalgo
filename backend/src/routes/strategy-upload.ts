@@ -501,6 +501,14 @@ router.get('/strategies', authenticate, async (req: AuthenticatedRequest, res, n
             take: 1,
           },
 
+          // Subscriptions (for deployment count)
+          subscriptions: {
+            select: {
+              id: true,
+              isActive: true,
+            },
+          },
+
           // Latest backtest results
           backtestResults: {
             select: {
@@ -538,10 +546,8 @@ router.get('/strategies', authenticate, async (req: AuthenticatedRequest, res, n
         const supportedPairs = strategy.supportedPairs ? JSON.parse(strategy.supportedPairs as string) : null;
         const timeframes = strategy.timeframes ? JSON.parse(strategy.timeframes as string) : null;
 
-        // Count active deployments
-        const deploymentCount = strategy.botDeployments.filter(d =>
-          ['ACTIVE', 'DEPLOYING', 'STARTING'].includes(d.status)
-        ).length;
+        // Count active subscriptions (subscribers who have deployed this strategy)
+        const deploymentCount = strategy.subscriptions.filter(sub => sub.isActive).length;
 
         return {
           ...strategy,
@@ -550,7 +556,7 @@ router.get('/strategies', authenticate, async (req: AuthenticatedRequest, res, n
           timeframes,
           // Add computed fields
           deploymentCount,
-          subscriberCount: 0, // TODO: Implement subscription count
+          subscriberCount: deploymentCount, // Same as deployment count (active subscribers)
           latestDeployment: strategy.botDeployments[0] || null,
           latestBacktest: strategy.backtestResults[0] || null,
           // Add features object for frontend compatibility
@@ -561,6 +567,7 @@ router.get('/strategies', authenticate, async (req: AuthenticatedRequest, res, n
           // Remove internal arrays from response
           botDeployments: undefined,
           backtestResults: undefined,
+          subscriptions: undefined,
         };
       }),
       pagination: {

@@ -20,6 +20,7 @@ import {
 import { useAuth } from '@/lib/auth';
 import { showErrorToast, showSuccessToast } from '@/lib/toast-utils';
 import { apiClient, ApiError } from '@/lib/api-client';
+import { LogViewerModal } from '@/components/LogViewerModal';
 import {
   Plus,
   Search,
@@ -68,6 +69,8 @@ export default function StrategyManagementPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedStrategy, setSelectedStrategy] = useState<Strategy | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [logViewerOpen, setLogViewerOpen] = useState(false);
+  const [logViewerStrategy, setLogViewerStrategy] = useState<Strategy | null>(null);
 
   const fetchStrategies = useCallback(async () => {
     try {
@@ -184,6 +187,11 @@ export default function StrategyManagementPage() {
   const confirmDelete = (strategy: Strategy) => {
     setSelectedStrategy(strategy);
     setDeleteDialogOpen(true);
+  };
+
+  const openLogViewer = (strategy: Strategy) => {
+    setLogViewerStrategy(strategy);
+    setLogViewerOpen(true);
   };
 
   const filteredStrategies = strategies.filter(strategy => {
@@ -452,8 +460,8 @@ export default function StrategyManagementPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => router.push(`/dashboard/strategy/${strategy.id}`)}
-                            title="View Details"
+                            onClick={() => openLogViewer(strategy)}
+                            title="View Logs"
                           >
                             <Eye className="h-4 w-4" />
                           </Button>
@@ -538,6 +546,19 @@ export default function StrategyManagementPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Log Viewer Modal */}
+      {logViewerStrategy && (
+        <LogViewerModal
+          isOpen={logViewerOpen}
+          onClose={() => {
+            setLogViewerOpen(false);
+            setLogViewerStrategy(null);
+          }}
+          strategyId={logViewerStrategy.id}
+          strategyName={logViewerStrategy.name}
+        />
+      )}
     </div>
   );
 }
