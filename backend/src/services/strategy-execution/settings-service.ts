@@ -407,7 +407,11 @@ class SettingsService {
         key === 'vol_ma_len' ||
         key === 'bbw_zscore_len' ||
         key === 'hold_trend' ||
-        key === 'hold_reversion'
+        key === 'hold_reversion' ||
+        // Additional strategy parameters
+        key === 'Factor' ||
+        key === 'Pd' ||
+        key === 'prd'
       ) {
         result[key] = parseInt(value, 10)
       } else if (
@@ -425,7 +429,15 @@ class SettingsService {
         key === 'sl_atr_trend' ||
         key === 'tp_atr_trend' ||
         key === 'sl_atr_reversion' ||
-        key === 'tp_atr_reversion'
+        key === 'tp_atr_reversion' ||
+        // Additional strategy float parameters
+        key === 'sl_pct' ||
+        key === 'tp_pct_level_1' ||
+        key === 'tp_pct_level_2' ||
+        key === 'commission_rate' ||
+        key === 'gst_rate' ||
+        key === 'tp_level_1_pct_exit' ||
+        key === 'initial_capital'
       ) {
         result[key] = parseFloat(value)
       } else if (key === 'is_active') {

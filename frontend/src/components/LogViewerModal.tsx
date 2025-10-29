@@ -106,6 +106,13 @@ export function LogViewerModal({
     }
   }
 
+  // Reset selected tab when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      setSelectedTab("")
+    }
+  }, [isOpen])
+
   // Initial fetch and auto-refresh
   useEffect(() => {
     if (isOpen && strategyId) {
