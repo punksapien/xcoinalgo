@@ -17,6 +17,7 @@ import { eventBus } from '../../lib/event-bus'
 import { formatIntervalKey, computeLockTTL, validateExecutionTiming } from '../../lib/time-utils'
 import { spawn } from 'child_process'
 import path from 'path'
+import fs from 'fs'
 import CoinDCXClient from '../coindcx-client'
 import { Logger } from '../../utils/logger'
 import { strategyEnvironmentManager } from '../strategy-environment-manager'
@@ -138,20 +139,22 @@ class ExecutionCoordinator {
 
       console.log(`Executing strategy for ${subscribers.length} active subscribers`)
 
-      // Check strategy type and get strategy code
+      // Get strategy type from database
       const strategy = await prisma.strategy.findUnique({
         where: { id: strategyId },
-        include: {
-          versions: {
-            orderBy: { createdAt: 'desc' },
-            take: 1,
-            select: { strategyCode: true }
-          }
-        }
+        select: { strategyType: true }
       })
 
       const strategyType = strategy?.strategyType
-      const strategyCode = strategy?.versions?.[0]?.strategyCode || ''
+
+      // Read strategy code from disk (source of truth)
+      let strategyCode = ''
+      try {
+        strategyCode = this.getStrategyCodeFromDisk(strategyId)
+      } catch (error) {
+        logger.error(`Failed to read strategy code from disk for ${strategyId}:`, error)
+        throw new Error(`Strategy code not found on disk: ${error}`)
+      }
 
       // Multi-tenant strategies use our wrapper
       const isMultiTenant = strategyType === 'multi_tenant'
@@ -395,6 +398,39 @@ class ExecutionCoordinator {
       pythonPath: envInfo.pythonPath,
       strategyDir
     }
+  }
+
+  /**
+   * Read strategy code from disk (source of truth)
+   * Finds the Python file in the strategy directory
+   */
+  private getStrategyCodeFromDisk(strategyId: string): string {
+    const strategiesDir = path.join(__dirname, '../../../strategies')
+    const strategyDir = path.join(strategiesDir, strategyId)
+
+    if (!fs.existsSync(strategyDir)) {
+      throw new Error(`Strategy directory not found: ${strategyDir}`)
+    }
+
+    // Find all .py files in the directory
+    const files = fs.readdirSync(strategyDir)
+    const pyFiles = files.filter(f => f.endsWith('.py'))
+
+    if (pyFiles.length === 0) {
+      throw new Error(`No Python file found in strategy directory: ${strategyDir}`)
+    }
+
+    if (pyFiles.length > 1) {
+      logger.warn(`Multiple Python files found in ${strategyDir}, using first one: ${pyFiles[0]}`)
+    }
+
+    // Read the first .py file
+    const pyFilePath = path.join(strategyDir, pyFiles[0])
+    const strategyCode = fs.readFileSync(pyFilePath, 'utf8')
+
+    logger.info(`Read strategy code from disk: ${pyFilePath} (${strategyCode.length} bytes)`)
+
+    return strategyCode
   }
 
   /**
