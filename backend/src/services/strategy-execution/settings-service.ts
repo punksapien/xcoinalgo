@@ -417,6 +417,7 @@ class SettingsService {
         key === 'sl_atr_multiplier' ||
         key === 'tp_atr_multiplier' ||
         key === 'duration' ||
+        key === 'currency_conversion_rate' ||
         // Strategy-specific float parameters
         key === 'st_multiplier' ||
         key === 'bb_std' ||
