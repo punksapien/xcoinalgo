@@ -2023,33 +2023,8 @@ router.get('/:id/logs', authenticate, async (req: AuthenticatedRequest, res, nex
       });
     }
 
-    // Get all log files sorted by modification time (most recent first)
-    const logFiles = fs.readdirSync(logsDir)
-      .filter(file => file.startsWith('trading_') && file.endsWith('.log'))
-      .map(file => ({
-        name: file,
-        path: path.join(logsDir, file),
-        mtime: fs.statSync(path.join(logsDir, file)).mtime
-      }))
-      .sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
-
-    // Get the most recent log file
-    if (logFiles.length === 0) {
-      return res.json({
-        success: true,
-        logs: [],
-        message: 'No log files found'
-      });
-    }
-
-    const latestLogFile = logFiles[0];
-    const logContent = fs.readFileSync(latestLogFile.path, 'utf8');
-    const logLines = logContent.split('\n')
-      .filter(line => line.trim().length > 0)
-      .slice(-Number(limit));  // Get last N lines
-
-    // Parse log lines into structured format
-    const parsedLogs = logLines.map(line => {
+    // Helper function to parse log lines
+    const parseLogLine = (line: string) => {
       // Format: 2025-10-14 13:45:00 - INFO - Message here
       const match = line.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) - (\w+) - (.+)$/);
       if (match) {
@@ -2060,44 +2035,122 @@ router.get('/:id/logs', authenticate, async (req: AuthenticatedRequest, res, nex
         };
       }
       return { timestamp: '', level: 'INFO', message: line };
-    });
+    };
 
-    // Also get error CSV if it exists
-    const errorCsvPath = path.join(logsDir, 'error_log.csv');
-    let errors = [];
+    // Helper function to parse CSV lines
+    const parseCsvLine = (line: string) => {
+      const parts = line.split(',');
+      return {
+        timestamp: parts[0] || '',
+        level: parts[1] || 'INFO',
+        message: parts[2] || '',
+        function: parts[3] || '',
+        line: parts[4] || ''
+      };
+    };
 
-    if (fs.existsSync(errorCsvPath)) {
-      const errorContent = fs.readFileSync(errorCsvPath, 'utf8');
-      const errorLines = errorContent.split('\n')
+    // Get all log files in the directory
+    const allFiles = fs.readdirSync(logsDir);
+    const logFilesData: any[] = [];
+
+    // 1. Read trading_bot.log
+    const tradingBotPath = path.join(logsDir, 'trading_bot.log');
+    if (fs.existsSync(tradingBotPath)) {
+      const content = fs.readFileSync(tradingBotPath, 'utf8');
+      const lines = content.split('\n')
+        .filter(line => line.trim().length > 0)
+        .slice(-Number(limit));
+
+      logFilesData.push({
+        name: 'trading_bot.log',
+        displayName: 'Trading Bot',
+        type: 'log',
+        content: lines.map(parseLogLine),
+        size: fs.statSync(tradingBotPath).size,
+        mtime: fs.statSync(tradingBotPath).mtime
+      });
+    }
+
+    // 2. Read live_trader_{strategyId}.csv files
+    const liveTraderFiles = allFiles.filter(f =>
+      f.startsWith('live_trader_') && f.endsWith('.csv')
+    );
+    liveTraderFiles.forEach(file => {
+      const filePath = path.join(logsDir, file);
+      const content = fs.readFileSync(filePath, 'utf8');
+      const lines = content.split('\n')
         .slice(1)  // Skip header
         .filter(line => line.trim().length > 0)
-        .slice(-Number(limit));  // Get last N errors
+        .slice(-Number(limit));
 
-      errors = errorLines.map(line => {
-        const parts = line.split(',');
-        return {
-          timestamp: parts[0] || '',
-          level: parts[1] || 'ERROR',
-          message: parts[2] || '',
-          function: parts[3] || '',
-          line: parts[4] || ''
-        };
+      logFilesData.push({
+        name: file,
+        displayName: 'Live Trader',
+        type: 'csv',
+        content: lines.map(parseCsvLine),
+        size: fs.statSync(filePath).size,
+        mtime: fs.statSync(filePath).mtime
+      });
+    });
+
+    // 3. Read print_output_{strategyId}.log files
+    const printOutputFiles = allFiles.filter(f =>
+      f.startsWith('print_output_') && f.endsWith('.log')
+    );
+    printOutputFiles.forEach(file => {
+      const filePath = path.join(logsDir, file);
+      const content = fs.readFileSync(filePath, 'utf8');
+      const lines = content.split('\n')
+        .filter(line => line.trim().length > 0)
+        .slice(-Number(limit));
+
+      logFilesData.push({
+        name: file,
+        displayName: 'Print Output',
+        type: 'text',
+        content: lines.map(line => ({ timestamp: '', level: 'INFO', message: line })),
+        size: fs.statSync(filePath).size,
+        mtime: fs.statSync(filePath).mtime
+      });
+    });
+
+    // 4. Read error_log.csv
+    const errorCsvPath = path.join(logsDir, 'error_log.csv');
+    if (fs.existsSync(errorCsvPath)) {
+      const content = fs.readFileSync(errorCsvPath, 'utf8');
+      const lines = content.split('\n')
+        .slice(1)  // Skip header
+        .filter(line => line.trim().length > 0)
+        .slice(-Number(limit));
+
+      logFilesData.push({
+        name: 'error_log.csv',
+        displayName: 'Errors',
+        type: 'csv',
+        content: lines.map(parseCsvLine),
+        size: fs.statSync(errorCsvPath).size,
+        mtime: fs.statSync(errorCsvPath).mtime
+      });
+    }
+
+    // Sort by modification time (most recent first)
+    logFilesData.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
+
+    // If no log files found
+    if (logFilesData.length === 0) {
+      return res.json({
+        success: true,
+        logFiles: [],
+        message: 'No log files found'
       });
     }
 
     res.json({
       success: true,
-      logs: parsedLogs,
-      errors,
+      logFiles: logFilesData,
       metadata: {
-        totalLogFiles: logFiles.length,
-        latestLogFile: latestLogFile.name,
-        latestLogTime: latestLogFile.mtime,
-        logFilesAvailable: logFiles.map(f => ({
-          name: f.name,
-          timestamp: f.mtime,
-          size: fs.statSync(f.path).size
-        }))
+        totalLogFiles: logFilesData.length,
+        latestUpdate: logFilesData[0].mtime
       }
     });
 

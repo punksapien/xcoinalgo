@@ -23,20 +23,23 @@ interface LogEntry {
   line?: string
 }
 
+interface LogFile {
+  name: string
+  displayName: string
+  type: 'log' | 'csv' | 'text'
+  content: LogEntry[]
+  size: number
+  mtime: string
+}
+
 interface LogData {
   success: boolean
-  logs: LogEntry[]
-  errors: LogEntry[]
+  logFiles: LogFile[]
   metadata?: {
     totalLogFiles: number
-    latestLogFile: string
-    latestLogTime: string
-    logFilesAvailable: Array<{
-      name: string
-      timestamp: string
-      size: number
-    }>
+    latestUpdate: string
   }
+  message?: string
 }
 
 interface LogViewerModalProps {
@@ -56,8 +59,8 @@ export function LogViewerModal({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [autoRefresh, setAutoRefresh] = useState(true)
-  const [selectedTab, setSelectedTab] = useState<"logs" | "errors">("logs")
-  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const [selectedTab, setSelectedTab] = useState<string>("")
+  const scrollContainerRefs = useRef<{ [key: string]: HTMLDivElement | null }>({})
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true)
 
   const fetchLogs = async () => {
@@ -71,13 +74,21 @@ export function LogViewerModal({
 
       setLogData(data)
 
+      // Set default tab to first log file if not set
+      if (!selectedTab && data.logFiles && data.logFiles.length > 0) {
+        setSelectedTab(data.logFiles[0].name)
+      }
+
       // Auto-scroll to bottom if enabled
-      if (shouldAutoScroll && scrollContainerRef.current) {
+      if (shouldAutoScroll) {
         setTimeout(() => {
-          scrollContainerRef.current?.scrollTo({
-            top: scrollContainerRef.current.scrollHeight,
-            behavior: 'smooth',
-          })
+          const currentRef = scrollContainerRefs.current[selectedTab]
+          if (currentRef) {
+            currentRef.scrollTo({
+              top: currentRef.scrollHeight,
+              behavior: 'smooth',
+            })
+          }
         }, 100)
       }
     } catch (err) {
@@ -105,25 +116,30 @@ export function LogViewerModal({
   }, [isOpen, strategyId, autoRefresh])
 
   // Handle scroll detection for auto-scroll
-  const handleScroll = () => {
-    if (scrollContainerRef.current) {
-      const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current
+  const handleScroll = (tabName: string) => {
+    const container = scrollContainerRefs.current[tabName]
+    if (container) {
+      const { scrollTop, scrollHeight, clientHeight } = container
       const isNearBottom = scrollHeight - scrollTop - clientHeight < 100
       setShouldAutoScroll(isNearBottom)
     }
   }
 
   const scrollToBottom = () => {
-    scrollContainerRef.current?.scrollTo({
-      top: scrollContainerRef.current.scrollHeight,
-      behavior: 'smooth',
-    })
-    setShouldAutoScroll(true)
+    const currentRef = scrollContainerRefs.current[selectedTab]
+    if (currentRef) {
+      currentRef.scrollTo({
+        top: currentRef.scrollHeight,
+        behavior: 'smooth',
+      })
+      setShouldAutoScroll(true)
+    }
   }
 
   const getLevelColor = (level: string) => {
     switch (level.toUpperCase()) {
       case 'ERROR':
+      case 'CRITICAL':
         return 'text-red-500'
       case 'WARNING':
       case 'WARN':
@@ -140,15 +156,75 @@ export function LogViewerModal({
   const formatTimestamp = (timestamp: string) => {
     if (!timestamp) return ''
     try {
-      return new Date(timestamp).toLocaleTimeString('en-US', {
-        hour12: false,
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      })
+      // Try parsing as date first
+      const date = new Date(timestamp)
+      if (!isNaN(date.getTime())) {
+        return date.toLocaleTimeString('en-US', {
+          hour12: false,
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        })
+      }
+      // If already in HH:MM:SS format, return as is
+      return timestamp
     } catch {
       return timestamp
     }
+  }
+
+  const renderLogContent = (logFile: LogFile) => {
+    const tabName = logFile.name
+
+    return (
+      <div
+        ref={(el) => { scrollContainerRefs.current[tabName] = el }}
+        onScroll={() => handleScroll(tabName)}
+        className="flex-1 overflow-y-auto bg-black/5 dark:bg-white/5 rounded-lg p-4 font-mono text-sm"
+      >
+        {loading && !logData && (
+          <div className="flex items-center justify-center h-full text-muted-foreground">
+            <RefreshCw className="h-6 w-6 animate-spin mr-2" />
+            Loading logs...
+          </div>
+        )}
+
+        {!loading && logFile.content.length === 0 && (
+          <div className="flex items-center justify-center h-full text-muted-foreground">
+            No logs available in this file yet.
+          </div>
+        )}
+
+        {logFile.content.length > 0 && (
+          <div className="space-y-1">
+            {logFile.content.map((log, index) => (
+              <div
+                key={index}
+                className={cn(
+                  "flex gap-4 hover:bg-white/5 dark:hover:bg-black/5 px-2 py-1 rounded",
+                  log.level.toUpperCase() === 'ERROR' || log.level.toUpperCase() === 'CRITICAL'
+                    ? 'bg-red-500/10 border-l-2 border-red-500'
+                    : ''
+                )}
+              >
+                <span className="text-muted-foreground shrink-0 text-xs">
+                  {formatTimestamp(log.timestamp)}
+                </span>
+                <span className={cn('shrink-0 font-semibold w-20 text-xs', getLevelColor(log.level))}>
+                  {log.level}
+                </span>
+                <span className="flex-1 break-words text-xs">{log.message}</span>
+                {log.function && (
+                  <span className="text-muted-foreground shrink-0 text-xs">
+                    {log.function}:{log.line}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    )
   }
 
   return (
@@ -189,128 +265,79 @@ export function LogViewerModal({
             {logData?.metadata && (
               <span className="ml-2 text-xs">
                 • {logData.metadata.totalLogFiles} log file(s) • Last updated:{' '}
-                {new Date(logData.metadata.latestLogTime).toLocaleString()}
+                {new Date(logData.metadata.latestUpdate).toLocaleString()}
               </span>
             )}
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs
-          value={selectedTab}
-          onValueChange={(value) => setSelectedTab(value as "logs" | "errors")}
-          className="flex-1 flex flex-col overflow-hidden"
-        >
-          <TabsList>
-            <TabsTrigger value="logs">
-              Logs ({logData?.logs.length || 0})
-            </TabsTrigger>
-            <TabsTrigger value="errors">
-              Errors ({logData?.errors.length || 0})
-            </TabsTrigger>
-          </TabsList>
-
-          {error && (
-            <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-4 mb-4 flex items-center gap-2">
-              <AlertCircle className="h-5 w-5 text-red-500" />
-              <div>
-                <p className="text-sm font-semibold text-red-500">Error loading logs</p>
-                <p className="text-xs text-red-500/80">{error}</p>
-              </div>
+        {error && (
+          <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-4 mb-4 flex items-center gap-2">
+            <AlertCircle className="h-5 w-5 text-red-500" />
+            <div>
+              <p className="text-sm font-semibold text-red-500">Error loading logs</p>
+              <p className="text-xs text-red-500/80">{error}</p>
             </div>
-          )}
+          </div>
+        )}
 
-          <TabsContent value="logs" className="flex-1 flex flex-col overflow-hidden mt-4">
-            <div
-              ref={scrollContainerRef}
-              onScroll={handleScroll}
-              className="flex-1 overflow-y-auto bg-black/5 dark:bg-white/5 rounded-lg p-4 font-mono text-sm"
-            >
-              {loading && !logData && (
-                <div className="flex items-center justify-center h-full text-muted-foreground">
-                  <RefreshCw className="h-6 w-6 animate-spin mr-2" />
-                  Loading logs...
-                </div>
-              )}
+        {logData && logData.logFiles && logData.logFiles.length > 0 ? (
+          <Tabs
+            value={selectedTab}
+            onValueChange={setSelectedTab}
+            className="flex-1 flex flex-col overflow-hidden"
+          >
+            <TabsList>
+              {logData.logFiles.map((logFile) => (
+                <TabsTrigger key={logFile.name} value={logFile.name}>
+                  {logFile.displayName} ({logFile.content.length})
+                </TabsTrigger>
+              ))}
+            </TabsList>
 
-              {!loading && logData && logData.logs.length === 0 && (
-                <div className="flex items-center justify-center h-full text-muted-foreground">
-                  No logs available yet. Strategy may not have been executed.
-                </div>
-              )}
-
-              {logData && logData.logs.length > 0 && (
-                <div className="space-y-1">
-                  {logData.logs.map((log, index) => (
-                    <div
-                      key={index}
-                      className="flex gap-4 hover:bg-white/5 dark:hover:bg-black/5 px-2 py-1 rounded"
-                    >
-                      <span className="text-muted-foreground shrink-0">
-                        {formatTimestamp(log.timestamp)}
-                      </span>
-                      <span className={cn('shrink-0 font-semibold w-16', getLevelColor(log.level))}>
-                        {log.level}
-                      </span>
-                      <span className="flex-1 break-words">{log.message}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {!shouldAutoScroll && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={scrollToBottom}
-                className="mt-2 mx-auto"
+            {logData.logFiles.map((logFile) => (
+              <TabsContent
+                key={logFile.name}
+                value={logFile.name}
+                className="flex-1 flex flex-col overflow-hidden mt-4"
               >
-                <ArrowDown className="h-4 w-4 mr-2" />
-                Scroll to bottom
-              </Button>
+                {renderLogContent(logFile)}
+
+                {!shouldAutoScroll && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={scrollToBottom}
+                    className="mt-2 mx-auto"
+                  >
+                    <ArrowDown className="h-4 w-4 mr-2" />
+                    Scroll to bottom
+                  </Button>
+                )}
+              </TabsContent>
+            ))}
+          </Tabs>
+        ) : (
+          <div className="flex-1 flex items-center justify-center text-muted-foreground">
+            {loading ? (
+              <>
+                <RefreshCw className="h-6 w-6 animate-spin mr-2" />
+                Loading logs...
+              </>
+            ) : logData?.message ? (
+              <div className="text-center">
+                <AlertCircle className="h-12 w-12 mx-auto mb-2" />
+                <p>{logData.message}</p>
+              </div>
+            ) : (
+              <div className="text-center">
+                <AlertCircle className="h-12 w-12 mx-auto mb-2" />
+                <p>No logs found for this strategy</p>
+                <p className="text-xs mt-1">Strategy may not have been executed yet</p>
+              </div>
             )}
-          </TabsContent>
-
-          <TabsContent value="errors" className="flex-1 flex flex-col overflow-hidden mt-4">
-            <div className="flex-1 overflow-y-auto bg-black/5 dark:bg-white/5 rounded-lg p-4 font-mono text-sm">
-              {logData && logData.errors.length === 0 && (
-                <div className="flex items-center justify-center h-full text-muted-foreground">
-                  <div className="text-center">
-                    <AlertCircle className="h-12 w-12 mx-auto mb-2 text-green-500" />
-                    <p>No errors recorded</p>
-                    <p className="text-xs mt-1">Strategy is running smoothly</p>
-                  </div>
-                </div>
-              )}
-
-              {logData && logData.errors.length > 0 && (
-                <div className="space-y-2">
-                  {logData.errors.map((error, index) => (
-                    <div
-                      key={index}
-                      className="bg-red-500/10 border border-red-500/50 rounded-lg p-3"
-                    >
-                      <div className="flex gap-4 mb-1">
-                        <span className="text-muted-foreground text-xs">
-                          {formatTimestamp(error.timestamp)}
-                        </span>
-                        <span className="text-red-500 font-semibold text-xs">
-                          {error.level}
-                        </span>
-                        {error.function && (
-                          <span className="text-muted-foreground text-xs">
-                            {error.function}:{error.line}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-red-500 text-sm break-words">{error.message}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </TabsContent>
-        </Tabs>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   )
