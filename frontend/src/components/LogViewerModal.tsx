@@ -74,9 +74,12 @@ export function LogViewerModal({
 
       setLogData(data)
 
-      // Set default tab to first log file if not set
-      if (!selectedTab && data.logFiles && data.logFiles.length > 0) {
-        setSelectedTab(data.logFiles[0].name)
+      // Set default tab to first log file ONLY on initial load (when selectedTab is empty string)
+      // Don't reset it on subsequent fetches to preserve user's tab selection
+      if (selectedTab === "" && data.logFiles && data.logFiles.length > 0) {
+        // Find Trading Bot tab first, otherwise use first available
+        const tradingBotFile = data.logFiles.find(f => f.name === 'trading_bot.log')
+        setSelectedTab(tradingBotFile?.name || data.logFiles[0].name)
       }
 
       // Auto-scroll to bottom if enabled
@@ -287,9 +290,9 @@ export function LogViewerModal({
             onValueChange={setSelectedTab}
             className="flex-1 flex flex-col overflow-hidden"
           >
-            <TabsList>
+            <TabsList className="w-full justify-start">
               {logData.logFiles.map((logFile) => (
-                <TabsTrigger key={logFile.name} value={logFile.name}>
+                <TabsTrigger key={logFile.name} value={logFile.name} className="flex-1 min-w-[140px]">
                   {logFile.displayName} ({logFile.content.length})
                 </TabsTrigger>
               ))}
