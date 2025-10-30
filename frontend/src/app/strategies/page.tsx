@@ -460,10 +460,10 @@ export default function StrategyManagementPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => openLogViewer(strategy)}
-                            title="View Logs"
+                            onClick={() => router.push(`/strategies/${strategy.id}/edit`)}
+                            title="Edit Code"
                           >
-                            <Eye className="h-4 w-4" />
+                            <FileCode className="h-4 w-4" />
                           </Button>
 
                           <Button

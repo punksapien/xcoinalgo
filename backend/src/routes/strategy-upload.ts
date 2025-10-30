@@ -2160,4 +2160,209 @@ router.get('/:id/logs', authenticate, async (req: AuthenticatedRequest, res, nex
   }
 });
 
+// Get strategy code
+router.get('/:id/code', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const strategyId = req.params.id;
+
+    // Check if strategy exists
+    const strategy = await prisma.strategy.findUnique({
+      where: { id: strategyId },
+      select: { id: true, name: true, code: true }
+    });
+
+    if (!strategy) {
+      return res.status(404).json({
+        error: 'Strategy not found'
+      });
+    }
+
+    // Find the strategy file on disk
+    const strategiesDir = path.join(__dirname, '../../strategies');
+    const strategyDir = path.join(strategiesDir, strategyId);
+
+    // Look for Python files in the strategy directory
+    let strategyFilePath: string | null = null;
+
+    if (fs.existsSync(strategyDir)) {
+      const files = fs.readdirSync(strategyDir);
+      const pyFile = files.find(f => f.endsWith('.py') && f !== '__init__.py');
+
+      if (pyFile) {
+        strategyFilePath = path.join(strategyDir, pyFile);
+      }
+    }
+
+    // If file exists on disk, return it; otherwise return code from database
+    let code = strategy.code;
+    let fileName = `${strategy.name}.py`;
+
+    if (strategyFilePath && fs.existsSync(strategyFilePath)) {
+      code = fs.readFileSync(strategyFilePath, 'utf8');
+      fileName = path.basename(strategyFilePath);
+    }
+
+    res.json({
+      success: true,
+      code,
+      fileName,
+      strategyId,
+      strategyName: strategy.name
+    });
+
+  } catch (error) {
+    logger.error('Failed to get strategy code:', error);
+    next(error);
+  }
+});
+
+// Update strategy code
+router.put('/:id/code', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const strategyId = req.params.id;
+    const { code } = req.body;
+
+    if (!code || typeof code !== 'string') {
+      return res.status(400).json({
+        error: 'Code is required and must be a string'
+      });
+    }
+
+    // Check if strategy exists
+    const strategy = await prisma.strategy.findUnique({
+      where: { id: strategyId },
+      select: { id: true, name: true }
+    });
+
+    if (!strategy) {
+      return res.status(404).json({
+        error: 'Strategy not found'
+      });
+    }
+
+    // Update database
+    await prisma.strategy.update({
+      where: { id: strategyId },
+      data: {
+        code,
+        updatedAt: new Date()
+      }
+    });
+
+    // Update file on disk
+    const strategiesDir = path.join(__dirname, '../../strategies');
+    const strategyDir = path.join(strategiesDir, strategyId);
+
+    if (fs.existsSync(strategyDir)) {
+      const files = fs.readdirSync(strategyDir);
+      const pyFile = files.find(f => f.endsWith('.py') && f !== '__init__.py');
+
+      if (pyFile) {
+        const strategyFilePath = path.join(strategyDir, pyFile);
+        fs.writeFileSync(strategyFilePath, code, 'utf8');
+
+        // Clear Python cache
+        const pycacheDir = path.join(strategyDir, '__pycache__');
+        if (fs.existsSync(pycacheDir)) {
+          fs.rmSync(pycacheDir, { recursive: true, force: true });
+        }
+      }
+    }
+
+    logger.info(`Strategy code updated: ${strategyId}`);
+
+    res.json({
+      success: true,
+      message: 'Strategy code updated successfully'
+    });
+
+  } catch (error) {
+    logger.error('Failed to update strategy code:', error);
+    next(error);
+  }
+});
+
+// Get requirements.txt
+router.get('/:id/requirements', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const strategyId = req.params.id;
+
+    // Check if strategy exists
+    const strategy = await prisma.strategy.findUnique({
+      where: { id: strategyId }
+    });
+
+    if (!strategy) {
+      return res.status(404).json({
+        error: 'Strategy not found'
+      });
+    }
+
+    const strategiesDir = path.join(__dirname, '../../strategies');
+    const strategyDir = path.join(strategiesDir, strategyId);
+    const requirementsPath = path.join(strategyDir, 'requirements.txt');
+
+    let requirements = '# Add your Python package dependencies here\n# Example:\n# pandas==2.0.0\n# numpy==1.24.0\n';
+
+    if (fs.existsSync(requirementsPath)) {
+      requirements = fs.readFileSync(requirementsPath, 'utf8');
+    }
+
+    res.json({
+      success: true,
+      requirements
+    });
+
+  } catch (error) {
+    logger.error('Failed to get requirements:', error);
+    next(error);
+  }
+});
+
+// Update requirements.txt
+router.put('/:id/requirements', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const strategyId = req.params.id;
+    const { requirements } = req.body;
+
+    if (typeof requirements !== 'string') {
+      return res.status(400).json({
+        error: 'Requirements must be a string'
+      });
+    }
+
+    // Check if strategy exists
+    const strategy = await prisma.strategy.findUnique({
+      where: { id: strategyId }
+    });
+
+    if (!strategy) {
+      return res.status(404).json({
+        error: 'Strategy not found'
+      });
+    }
+
+    const strategiesDir = path.join(__dirname, '../../strategies');
+    const strategyDir = path.join(strategiesDir, strategyId);
+
+    if (!fs.existsSync(strategyDir)) {
+      fs.mkdirSync(strategyDir, { recursive: true });
+    }
+
+    const requirementsPath = path.join(strategyDir, 'requirements.txt');
+    fs.writeFileSync(requirementsPath, requirements, 'utf8');
+
+    logger.info(`Requirements updated: ${strategyId}`);
+
+    res.json({
+      success: true,
+      message: 'Requirements updated successfully'
+    });
+
+  } catch (error) {
+    logger.error('Failed to update requirements:', error);
+    next(error);
+  }
+});
+
 export { router as strategyUploadRoutes };
