@@ -4,7 +4,7 @@
 
 import { Router } from 'express';
 import multer from 'multer';
-import { authenticate } from '../middleware/auth';
+import { authenticate, requireQuantRole } from '../middleware/auth';
 import { strategyService } from '../services/strategy-service';
 import { AuthenticatedRequest } from '../types';
 import prisma from '../utils/database';
@@ -169,7 +169,7 @@ const upload = multer({
 });
 
 // Validate strategy structure endpoint - validates Python code structure before upload
-router.post('/validate', authenticate, upload.single('strategyFile'), async (req: AuthenticatedRequest, res, next) => {
+router.post('/validate', authenticate, requireQuantRole, upload.single('strategyFile'), async (req: AuthenticatedRequest, res, next) => {
   try {
     const file = req.file;
 
@@ -238,7 +238,7 @@ router.post('/validate', authenticate, upload.single('strategyFile'), async (req
 });
 
 // Upload strategy file
-router.post('/upload', authenticate, upload.single('strategyFile'), async (req: AuthenticatedRequest, res, next) => {
+router.post('/upload', authenticate, requireQuantRole, upload.single('strategyFile'), async (req: AuthenticatedRequest, res, next) => {
   try {
     const userId = req.userId!;
     const file = req.file;
@@ -432,7 +432,7 @@ router.post('/upload', authenticate, upload.single('strategyFile'), async (req: 
 });
 
 // Get all active strategies (public marketplace)
-router.get('/strategies', authenticate, async (req: AuthenticatedRequest, res, next) => {
+router.get('/strategies', authenticate, requireQuantRole, async (req: AuthenticatedRequest, res, next) => {
   try {
     const userId = req.userId!;
     const { page = 1, limit = 10, search, status, all } = req.query;
@@ -585,7 +585,7 @@ router.get('/strategies', authenticate, async (req: AuthenticatedRequest, res, n
 });
 
 // Get specific strategy details
-router.get('/:id', authenticate, async (req: AuthenticatedRequest, res, next) => {
+router.get('/:id', authenticate, requireQuantRole, async (req: AuthenticatedRequest, res, next) => {
   try {
     const userId = req.userId!;
     const strategyId = req.params.id;
@@ -649,7 +649,7 @@ router.get('/:id', authenticate, async (req: AuthenticatedRequest, res, next) =>
 });
 
 // Update strategy
-router.put('/:id', authenticate, upload.single('strategyFile'), async (req: AuthenticatedRequest, res, next) => {
+router.put('/:id', authenticate, requireQuantRole, upload.single('strategyFile'), async (req: AuthenticatedRequest, res, next) => {
   try {
     const userId = req.userId!;
     const strategyId = req.params.id;
@@ -770,7 +770,7 @@ router.put('/:id', authenticate, upload.single('strategyFile'), async (req: Auth
 });
 
 // Delete strategy
-router.delete('/:id', authenticate, async (req: AuthenticatedRequest, res, next) => {
+router.delete('/:id', authenticate, requireQuantRole, async (req: AuthenticatedRequest, res, next) => {
   try {
     const userId = req.userId!;
     const strategyId = req.params.id;
@@ -967,7 +967,7 @@ router.patch('/:id/activate', authenticate, async (req: AuthenticatedRequest, re
 });
 
 // CLI-friendly upload: accepts JSON payload with file contents (no multipart)
-router.post('/cli-upload', authenticate, async (req: AuthenticatedRequest, res, next) => {
+router.post('/cli-upload', authenticate, requireQuantRole, async (req: AuthenticatedRequest, res, next) => {
   try {
     const userId = req.userId!;
     const { strategyCode, config, requirements, name, description } = req.body;
@@ -1653,7 +1653,7 @@ function extractStrategyConfig(strategyCode: string): {
 // ============================================================================
 // SIMPLE UPLOAD ENDPOINT - For quant team's complete strategy files
 // ============================================================================
-router.post('/upload-simple', authenticate, upload.fields([
+router.post('/upload-simple', authenticate, requireQuantRole, upload.fields([
   { name: 'strategyFile', maxCount: 1 },
   { name: 'requirementsFile', maxCount: 1 }
 ]), async (req: AuthenticatedRequest, res, next) => {
@@ -1993,7 +1993,7 @@ router.post('/upload-simple', authenticate, upload.fields([
 });
 
 // Get strategy logs
-router.get('/:id/logs', authenticate, async (req: AuthenticatedRequest, res, next) => {
+router.get('/:id/logs', authenticate, requireQuantRole, async (req: AuthenticatedRequest, res, next) => {
   try {
     const userId = req.userId!;
     const strategyId = req.params.id;
@@ -2161,7 +2161,7 @@ router.get('/:id/logs', authenticate, async (req: AuthenticatedRequest, res, nex
 });
 
 // Get strategy code
-router.get('/:id/code', authenticate, async (req: AuthenticatedRequest, res, next) => {
+router.get('/:id/code', authenticate, requireQuantRole, async (req: AuthenticatedRequest, res, next) => {
   try {
     const strategyId = req.params.id;
 
@@ -2217,7 +2217,7 @@ router.get('/:id/code', authenticate, async (req: AuthenticatedRequest, res, nex
 });
 
 // Update strategy code
-router.put('/:id/code', authenticate, async (req: AuthenticatedRequest, res, next) => {
+router.put('/:id/code', authenticate, requireQuantRole, async (req: AuthenticatedRequest, res, next) => {
   try {
     const strategyId = req.params.id;
     const { code } = req.body;
@@ -2283,7 +2283,7 @@ router.put('/:id/code', authenticate, async (req: AuthenticatedRequest, res, nex
 });
 
 // Get requirements.txt
-router.get('/:id/requirements', authenticate, async (req: AuthenticatedRequest, res, next) => {
+router.get('/:id/requirements', authenticate, requireQuantRole, async (req: AuthenticatedRequest, res, next) => {
   try {
     const strategyId = req.params.id;
 
@@ -2320,7 +2320,7 @@ router.get('/:id/requirements', authenticate, async (req: AuthenticatedRequest, 
 });
 
 // Update requirements.txt
-router.put('/:id/requirements', authenticate, async (req: AuthenticatedRequest, res, next) => {
+router.put('/:id/requirements', authenticate, requireQuantRole, async (req: AuthenticatedRequest, res, next) => {
   try {
     const strategyId = req.params.id;
     const { requirements } = req.body;

@@ -1,6 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyToken } from '../utils/simple-jwt';
 import { AuthenticatedRequest } from '../types';
+import { PrismaClient, UserRole } from '@prisma/client';
+
+const prisma = new PrismaClient();
 
 export async function authenticate(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   try {
@@ -37,6 +40,44 @@ export async function authenticate(req: AuthenticatedRequest, res: Response, nex
   } catch (error) {
     return res.status(401).json({
       error: 'Invalid or expired authentication token'
+    });
+  }
+}
+
+/**
+ * Middleware to require QUANT role
+ * Must be used AFTER authenticate middleware
+ */
+export async function requireQuantRole(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  try {
+    if (!req.userId) {
+      return res.status(401).json({
+        error: 'Authentication required'
+      });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: req.userId },
+      select: { id: true, email: true, role: true }
+    });
+
+    if (!user) {
+      return res.status(401).json({
+        error: 'User not found'
+      });
+    }
+
+    if (user.role !== UserRole.QUANT) {
+      return res.status(403).json({
+        error: 'Access forbidden. This feature is only available to quant team members.'
+      });
+    }
+
+    next();
+  } catch (error) {
+    console.error('Role check error:', error);
+    return res.status(500).json({
+      error: 'Failed to verify user role'
     });
   }
 }
