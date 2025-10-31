@@ -14,6 +14,7 @@ export interface Strategy {
   marginCurrency?: string;
   deploymentCount: number;
   subscriberCount?: number;
+  isSubscribed?: boolean;
   createdAt: string;
   features?: {
     indicators: string[];

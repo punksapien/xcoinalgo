@@ -367,8 +367,9 @@ function DashboardContent() {
                     size="sm"
                     className="flex-1 bg-primary hover:bg-primary/90 transition-all hover:scale-105"
                     onClick={(e) => handleDeployBot(strategy, e)}
+                    disabled={strategy.isSubscribed}
                   >
-                    Deploy Bot Now
+                    {strategy.isSubscribed ? 'Deployed' : 'Deploy Bot Now'}
                   </Button>
                 </div>
               </CardContent>

@@ -16,7 +16,7 @@ const router = Router();
 
 /**
  * GET /api/marketplace
- * Browse all published strategies (PUBLIC - no auth required)
+ * Browse all published strategies (PUBLIC - optional auth)
  *
  * Query params:
  * - search: search term for name/description/author
@@ -26,7 +26,7 @@ const router = Router();
  * - page: page number (default: 1)
  * - limit: items per page (default: 12)
  */
-router.get('/', async (req, res, next) => {
+router.get('/', async (req: AuthenticatedRequest, res, next) => {
   try {
     const {
       search,
@@ -38,6 +38,21 @@ router.get('/', async (req, res, next) => {
     } = req.query;
 
     const skip = (Number(page) - 1) * Number(limit);
+
+    // Check if user is authenticated (optional)
+    const authHeader = req.headers.authorization;
+    let userId: string | null = null;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7);
+      try {
+        const { verifyToken } = await import('../utils/simple-jwt');
+        const decoded = verifyToken(token);
+        userId = decoded.userId;
+      } catch (error) {
+        // Token invalid or expired - proceed as unauthenticated
+        userId = null;
+      }
+    }
 
     // Build filter conditions
     const whereConditions: any = {
@@ -78,8 +93,8 @@ router.get('/', async (req, res, next) => {
       orderBy = { roi: 'desc' };
     }
 
-    // Fetch strategies
-    const [strategies, total] = await Promise.all([
+    // Fetch strategies and user subscriptions in parallel
+    const [strategies, total, userSubscriptions] = await Promise.all([
       prisma.strategy.findMany({
         where: whereConditions,
         select: {
@@ -117,8 +132,20 @@ router.get('/', async (req, res, next) => {
         skip,
         take: Number(limit),
       }),
-      prisma.strategy.count({ where: whereConditions })
+      prisma.strategy.count({ where: whereConditions }),
+      userId ? prisma.strategySubscription.findMany({
+        where: {
+          userId,
+          isActive: true,
+        },
+        select: {
+          strategyId: true,
+        }
+      }) : Promise.resolve([])
     ]);
+
+    // Create a set of subscribed strategy IDs for quick lookup
+    const subscribedStrategyIds = new Set(userSubscriptions.map(sub => sub.strategyId));
 
     res.json({
       strategies: strategies.map(strategy => ({
@@ -126,6 +153,8 @@ router.get('/', async (req, res, next) => {
         // Parse JSON fields
         supportedPairs: strategy.supportedPairs ? JSON.parse(strategy.supportedPairs as string) : null,
         timeframes: strategy.timeframes ? JSON.parse(strategy.timeframes as string) : null,
+        // Add isSubscribed flag
+        isSubscribed: subscribedStrategyIds.has(strategy.id),
       })),
       pagination: {
         page: Number(page),
