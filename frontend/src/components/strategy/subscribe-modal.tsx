@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/lib/auth';
 import { StrategyExecutionAPI, type SubscriptionConfig } from '@/lib/api/strategy-execution-api';
-import { Loader2, DollarSign, Percent, TrendingUp, Shield, AlertCircle, CheckCircle } from 'lucide-react';
+import { Loader2, DollarSign, Percent, TrendingUp, AlertCircle, CheckCircle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { showSuccessToast, showErrorToast, showWarningToast } from '@/lib/toast-utils';
 import { getUserFriendlyError } from '@/lib/error-messages';
@@ -47,12 +47,8 @@ export function SubscribeModal({
 
   // Form state
   const [capital, setCapital] = useState('10000');
-  const [riskPerTrade, setRiskPerTrade] = useState('0.02'); // 2%
-  const [leverage, setLeverage] = useState('10');
-  const [maxPositions, setMaxPositions] = useState('1');
-  const [maxDailyLoss, setMaxDailyLoss] = useState('0.05'); // 5%
-  const [slAtrMultiplier, setSlAtrMultiplier] = useState('2.0');
-  const [tpAtrMultiplier, setTpAtrMultiplier] = useState('2.5');
+  const [riskPerTrade, setRiskPerTrade] = useState(''); // No default - user must enter
+  const [leverage, setLeverage] = useState(''); // No default - user must enter
   const [selectedCredentialId, setSelectedCredentialId] = useState<string>('');
 
   const fetchBrokerCredentials = useCallback(async () => {
@@ -140,15 +136,21 @@ export function SubscribeModal({
       setError(null);
       setValidationErrors({});
 
+      // Check required fields (no defaults allowed)
+      if (!riskPerTrade || !leverage) {
+        const errors: Record<string, string> = {};
+        if (!riskPerTrade) errors.riskPerTrade = 'Risk per trade is required';
+        if (!leverage) errors.leverage = 'Leverage is required';
+        setValidationErrors(errors);
+        showErrorToast('Required Fields Missing', 'Please enter Risk Per Trade and Leverage values');
+        return;
+      }
+
       // Prepare config for validation
       const configData = {
         capital: parseFloat(capital),
         riskPerTrade: parseFloat(riskPerTrade),
         leverage: parseInt(leverage),
-        maxPositions: parseInt(maxPositions),
-        maxDailyLoss: parseFloat(maxDailyLoss),
-        slAtrMultiplier: slAtrMultiplier ? parseFloat(slAtrMultiplier) : undefined,
-        tpAtrMultiplier: tpAtrMultiplier ? parseFloat(tpAtrMultiplier) : undefined,
         brokerCredentialId: selectedCredentialId,
       };
 
@@ -197,12 +199,6 @@ export function SubscribeModal({
     const cap = parseFloat(capital) || 0;
     const risk = parseFloat(riskPerTrade) || 0;
     return (cap * risk).toFixed(2);
-  };
-
-  const calculateMaxDailyRisk = () => {
-    const cap = parseFloat(capital) || 0;
-    const dailyLoss = parseFloat(maxDailyLoss) || 0;
-    return (cap * dailyLoss).toFixed(2);
   };
 
   return (
@@ -303,7 +299,7 @@ export function SubscribeModal({
             <div className="space-y-2">
               <Label htmlFor="riskPerTrade" className="flex items-center gap-2">
                 <Percent className="h-4 w-4" />
-                Risk Per Trade
+                Risk Per Trade *
               </Label>
               <div className="flex gap-2">
                 <Input
@@ -315,21 +311,30 @@ export function SubscribeModal({
                   value={riskPerTrade}
                   onChange={(e) => setRiskPerTrade(e.target.value)}
                   placeholder="0.02"
+                  className={validationErrors.riskPerTrade ? 'border-red-500' : ''}
+                  required
                 />
                 <span className="flex items-center px-3 bg-secondary rounded-md">
-                  {(parseFloat(riskPerTrade) * 100).toFixed(1)}%
+                  {riskPerTrade ? (parseFloat(riskPerTrade) * 100).toFixed(1) : '0.0'}%
                 </span>
               </div>
-              <p className="text-sm text-muted-foreground">
-                Maximum risk: ₹{calculateMaxRisk()} per trade
-              </p>
+              {validationErrors.riskPerTrade ? (
+                <p className="text-sm text-red-500 flex items-center gap-1">
+                  <AlertCircle className="h-3 w-3" />
+                  {validationErrors.riskPerTrade}
+                </p>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Maximum risk: ₹{calculateMaxRisk()} per trade
+                </p>
+              )}
             </div>
 
             {/* Leverage */}
             <div className="space-y-2">
               <Label htmlFor="leverage" className="flex items-center gap-2">
                 <TrendingUp className="h-4 w-4" />
-                Leverage
+                Leverage *
               </Label>
               <div className="flex gap-2">
                 <Input
@@ -340,85 +345,24 @@ export function SubscribeModal({
                   step="1"
                   value={leverage}
                   onChange={(e) => setLeverage(e.target.value)}
+                  placeholder="10"
+                  className={validationErrors.leverage ? 'border-red-500' : ''}
+                  required
                 />
                 <span className="flex items-center px-3 bg-secondary rounded-md">
-                  {leverage}x
+                  {leverage || '0'}x
                 </span>
               </div>
-              <p className="text-sm text-muted-foreground">
-                Trading leverage multiplier (1-100x)
-              </p>
-            </div>
-
-            {/* Max Positions */}
-            <div className="space-y-2">
-              <Label htmlFor="maxPositions">Max Concurrent Positions</Label>
-              <Input
-                id="maxPositions"
-                type="number"
-                min="1"
-                max="10"
-                value={maxPositions}
-                onChange={(e) => setMaxPositions(e.target.value)}
-              />
-              <p className="text-sm text-muted-foreground">
-                Maximum number of positions open at once
-              </p>
-            </div>
-
-            {/* Max Daily Loss */}
-            <div className="space-y-2">
-              <Label htmlFor="maxDailyLoss" className="flex items-center gap-2">
-                <Shield className="h-4 w-4" />
-                Max Daily Loss
-              </Label>
-              <div className="flex gap-2">
-                <Input
-                  id="maxDailyLoss"
-                  type="number"
-                  min="0.01"
-                  max="0.2"
-                  step="0.01"
-                  value={maxDailyLoss}
-                  onChange={(e) => setMaxDailyLoss(e.target.value)}
-                />
-                <span className="flex items-center px-3 bg-secondary rounded-md">
-                  {(parseFloat(maxDailyLoss) * 100).toFixed(0)}%
-                </span>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Stop trading after ₹{calculateMaxDailyRisk()} loss in one day
-              </p>
-            </div>
-
-            {/* Optional: SL/TP ATR Multipliers */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="slAtr">Stop Loss ATR (Optional)</Label>
-                <Input
-                  id="slAtr"
-                  type="number"
-                  min="0.5"
-                  max="10"
-                  step="0.1"
-                  value={slAtrMultiplier}
-                  onChange={(e) => setSlAtrMultiplier(e.target.value)}
-                  placeholder="2.0"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="tpAtr">Take Profit ATR (Optional)</Label>
-                <Input
-                  id="tpAtr"
-                  type="number"
-                  min="0.5"
-                  max="10"
-                  step="0.1"
-                  value={tpAtrMultiplier}
-                  onChange={(e) => setTpAtrMultiplier(e.target.value)}
-                  placeholder="2.5"
-                />
-              </div>
+              {validationErrors.leverage ? (
+                <p className="text-sm text-red-500 flex items-center gap-1">
+                  <AlertCircle className="h-3 w-3" />
+                  {validationErrors.leverage}
+                </p>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Trading leverage multiplier (1-100x)
+                </p>
+              )}
             </div>
           </div>
         )}
