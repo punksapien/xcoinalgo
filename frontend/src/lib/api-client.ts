@@ -1,9 +1,9 @@
 /**
- * Global API client with automatic 401 handling
- * Automatically logs out user when backend returns 401 Unauthorized
+ * Global API client with NextAuth session integration
+ * Uses NextAuth as single source of truth for authentication
  */
 
-import { useAuth } from './auth';
+import { getSession } from 'next-auth/react';
 
 export class ApiError extends Error {
   constructor(
@@ -21,18 +21,79 @@ interface FetchOptions extends RequestInit {
 }
 
 class ApiClient {
+  private isRefreshing = false;
+  private refreshPromise: Promise<string | null> | null = null;
+
   /**
-   * Make an authenticated API request
-   * Automatically logs out user on 401 responses
+   * Get authentication token from NextAuth session
+   */
+  private async getAuthToken(): Promise<string | null> {
+    try {
+      const session = await getSession();
+      const token = session?.user?.accessToken as string | undefined;
+
+      if (!token) {
+        console.warn('[apiClient] No token found in NextAuth session');
+        return null;
+      }
+
+      return token;
+    } catch (error) {
+      console.error('[apiClient] Error getting session:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Attempt to refresh the session
+   * This triggers NextAuth to fetch a new session from the backend
+   */
+  private async refreshSession(): Promise<string | null> {
+    // Prevent multiple simultaneous refresh attempts
+    if (this.isRefreshing && this.refreshPromise) {
+      return this.refreshPromise;
+    }
+
+    this.isRefreshing = true;
+    this.refreshPromise = (async () => {
+      try {
+        console.log('[apiClient] Attempting to refresh session...');
+
+        // Force NextAuth to refetch the session
+        const session = await getSession();
+
+        if (session?.user?.accessToken) {
+          console.log('[apiClient] Session refreshed successfully');
+          return session.user.accessToken as string;
+        }
+
+        console.warn('[apiClient] Session refresh failed - no token in refreshed session');
+        return null;
+      } catch (error) {
+        console.error('[apiClient] Session refresh error:', error);
+        return null;
+      } finally {
+        this.isRefreshing = false;
+        this.refreshPromise = null;
+      }
+    })();
+
+    return this.refreshPromise;
+  }
+
+  /**
+   * Make an authenticated API request with automatic token refresh
+   * On 401, attempts to refresh session once before failing
    */
   async request<T = unknown>(
     url: string,
-    options: FetchOptions = {}
+    options: FetchOptions = {},
+    isRetry = false
   ): Promise<T> {
     const { skipAuth = false, headers = {}, ...restOptions } = options;
 
-    // Get token from auth store
-    const token = useAuth.getState().token;
+    // Get token from NextAuth session
+    const token = skipAuth ? null : await this.getAuthToken();
 
     // Build headers
     const requestHeaders: Record<string, string> = {
@@ -40,12 +101,12 @@ class ApiClient {
       ...(headers as Record<string, string>),
     };
 
-    // Add authorization header if we have a token and not skipping auth
-    if (token && !skipAuth) {
+    // Add authorization header if we have a token
+    if (token) {
       requestHeaders['Authorization'] = `Bearer ${token}`;
       console.log(`[apiClient] Request to ${url} with token: ${token.substring(0, 20)}...`);
     } else if (!skipAuth) {
-      console.warn(`[apiClient] Request to ${url} WITHOUT token (skipAuth: ${skipAuth}, hasToken: ${!!token})`);
+      console.warn(`[apiClient] Request to ${url} WITHOUT token`);
     }
 
     try {
@@ -54,27 +115,32 @@ class ApiClient {
         headers: requestHeaders,
       });
 
-      // Handle 401 - User is unauthorized, log them out
-      if (response.status === 401) {
-        console.log('[apiClient] 401 Unauthorized - logging out and redirecting...');
+      // Handle 401 - Attempt session refresh on first try
+      if (response.status === 401 && !isRetry) {
+        console.log('[apiClient] 401 Unauthorized - attempting session refresh...');
 
-        try {
-          const logout = useAuth.getState().logout;
-          await logout();
-        } catch (logoutError) {
-          console.error('[apiClient] Logout error:', logoutError);
-          // Continue with redirect even if logout fails
+        const newToken = await this.refreshSession();
+
+        if (newToken) {
+          // Retry the request with refreshed token
+          console.log('[apiClient] Retrying request with refreshed token');
+          return this.request<T>(url, options, true);
         }
 
-        // Force redirect to login page
-        if (typeof window !== 'undefined') {
-          console.log('[apiClient] Redirecting to /login');
-          // Use replace to prevent back button issues
-          window.location.replace('/login');
-        }
-
+        // Refresh failed - throw error without auto-logout
+        console.error('[apiClient] Session refresh failed - user needs to re-authenticate');
         throw new ApiError(
-          'Session expired. Please log in again.',
+          'Your session has expired. Please log in again.',
+          401,
+          await response.json().catch(() => ({}))
+        );
+      }
+
+      // If still 401 after retry, session is truly expired
+      if (response.status === 401 && isRetry) {
+        console.error('[apiClient] 401 after retry - session cannot be refreshed');
+        throw new ApiError(
+          'Your session has expired. Please log in again.',
           401,
           await response.json().catch(() => ({}))
         );

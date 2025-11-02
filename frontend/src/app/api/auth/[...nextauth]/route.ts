@@ -45,8 +45,8 @@ const authOptions: AuthOptions = {
         try {
           // Send Google user data to our backend for verification/creation
           // Use absolute URL for server-side fetch (rewrites don't apply to server requests)
-          const backendUrl = 'http://184.72.102.221/api/auth/google-auth';
-          const response = await fetch(backendUrl, {
+          const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
+          const response = await fetch(`${backendUrl}/api/auth/google-auth`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -59,8 +59,10 @@ const authOptions: AuthOptions = {
 
           if (response.ok) {
             const data = await response.json()
-            // Store our backend token in the user object
+            // Store our backend token and user data in the user object
             user.accessToken = data.token
+            user.id = data.user?.id || user.id
+            user.role = data.user?.role
             return true
           }
           return false
@@ -74,11 +76,15 @@ const authOptions: AuthOptions = {
     async jwt({ token, user, account }) {
       if (user) {
         token.accessToken = user.accessToken
+        token.id = user.id
+        token.role = user.role
       }
       return token
     },
     async session({ session, token }) {
       session.user.accessToken = token.accessToken
+      session.user.id = token.id as string
+      session.user.role = token.role as string
       return session
     },
   },
