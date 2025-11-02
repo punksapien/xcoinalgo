@@ -104,8 +104,12 @@ export function SubscribeModal({
     } catch (err) {
       console.error('❌ Failed to fetch futures balance:', err);
       console.error('Error details:', JSON.stringify(err, null, 2));
-      // Don't show error toast for balance fetch failure, just log it
       setAvailableBalance(null);
+      // Show error toast to inform user about balance fetch failure
+      showErrorToast(
+        'Balance Fetch Failed',
+        'Unable to fetch your wallet balance. Please check your broker connection. You cannot subscribe until balance is verified.'
+      );
     } finally {
       setLoadingBalance(false);
     }
@@ -162,17 +166,24 @@ export function SubscribeModal({
         return;
       }
 
-      // Check balance if available
-      if (availableBalance !== null) {
-        const balanceCheck = validateSufficientBalance(configData.capital, availableBalance);
-        if (!balanceCheck.isValid) {
-          showErrorToast('Insufficient Balance', balanceCheck.error || 'You don\'t have enough balance');
-          return;
-        }
-        if (balanceCheck.error) {
-          // Show warning but allow to proceed
-          showWarningToast('High Capital Allocation', balanceCheck.error);
-        }
+      // Balance check is mandatory - reject if balance is unavailable
+      if (availableBalance === null) {
+        showErrorToast(
+          'Balance Unavailable',
+          'Unable to verify your wallet balance. Please check your broker connection and try again.'
+        );
+        return;
+      }
+
+      // Validate sufficient balance
+      const balanceCheck = validateSufficientBalance(configData.capital, availableBalance);
+      if (!balanceCheck.isValid) {
+        showErrorToast('Insufficient Balance', balanceCheck.error || 'You don\'t have enough balance');
+        return;
+      }
+      if (balanceCheck.error) {
+        // Show warning but allow to proceed
+        showWarningToast('High Capital Allocation', balanceCheck.error);
       }
 
       // Subscribe to strategy
@@ -249,7 +260,14 @@ export function SubscribeModal({
                   {balanceCurrency === 'INR' ? '₹' : '$'}{availableBalance.toFixed(2)}
                 </span>
               </div>
-            ) : null}
+            ) : (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  Unable to fetch your wallet balance. Please check your broker connection and refresh the page to try again.
+                </AlertDescription>
+              </Alert>
+            )}
             {/* Broker Credential Selection */}
             <div className="space-y-2">
               <Label htmlFor="broker">Broker Credential</Label>
@@ -377,7 +395,7 @@ export function SubscribeModal({
           </Button>
           <Button
             onClick={handleSubscribe}
-            disabled={loading || loadingCredentials || brokerCredentials.length === 0}
+            disabled={loading || loadingCredentials || loadingBalance || brokerCredentials.length === 0 || availableBalance === null}
           >
             {loading ? (
               <>
