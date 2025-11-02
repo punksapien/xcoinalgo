@@ -28,6 +28,18 @@ import './utils/database';
 
 dotenv.config();
 
+// Validate critical environment variables
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET || JWT_SECRET === 'your-super-secret-jwt-key') {
+  console.error('❌ FATAL: JWT_SECRET environment variable is not set or using default value!');
+  console.error('❌ Please set JWT_SECRET in your .env file');
+  console.error('❌ The backend cannot start without a proper JWT_SECRET');
+  process.exit(1);
+}
+
+// Log JWT_SECRET confirmation (first 10 chars only for security)
+console.log(`✅ JWT_SECRET loaded: ${JWT_SECRET.substring(0, 10)}... (${JWT_SECRET.length} chars)`);
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 
