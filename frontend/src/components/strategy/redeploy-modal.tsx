@@ -156,9 +156,9 @@ export function RedeployModal({
         return;
       }
 
-      if (isNaN(riskPerTradeNum) || riskPerTradeNum < 0.001 || riskPerTradeNum > 0.1) {
-        setValidationErrors({ riskPerTrade: 'Risk per trade must be between 0.1% and 10%' });
-        showErrorToast('Invalid Risk', 'Risk per trade must be between 0.1% and 10%');
+      if (isNaN(riskPerTradeNum) || riskPerTradeNum < 0.001 || riskPerTradeNum > 0.55) {
+        setValidationErrors({ riskPerTrade: 'Risk per trade must be between 0.1% and 55%' });
+        showErrorToast('Invalid Risk', 'Risk per trade must be between 0.1% and 55%');
         return;
       }
 
@@ -361,7 +361,7 @@ export function RedeployModal({
                 id="riskPerTrade"
                 type="number"
                 min="0.001"
-                max="0.1"
+                max="0.55"
                 step="0.001"
                 value={riskPerTrade}
                 onChange={(e) => setRiskPerTrade(e.target.value)}

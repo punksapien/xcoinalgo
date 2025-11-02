@@ -423,7 +423,7 @@ export function SubscribeModal({
                   id="riskPerTrade"
                   type="number"
                   min="0.001"
-                  max="0.1"
+                  max="0.55"
                   step="0.001"
                   value={riskPerTrade}
                   onChange={(e) => setRiskPerTrade(e.target.value)}
