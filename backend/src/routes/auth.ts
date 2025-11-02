@@ -139,6 +139,7 @@ router.get('/me', authenticate, async (req: AuthenticatedRequest, res, next) => 
       select: {
         id: true,
         email: true,
+        role: true,
         createdAt: true,
         updatedAt: true
       }
@@ -200,6 +201,7 @@ router.post('/google-auth', async (req, res, next) => {
       select: {
         id: true,
         email: true,
+        role: true,
         createdAt: true
       }
     });
@@ -215,6 +217,7 @@ router.post('/google-auth', async (req, res, next) => {
         select: {
           id: true,
           email: true,
+          role: true,
           createdAt: true
         }
       });
@@ -231,6 +234,7 @@ router.post('/google-auth', async (req, res, next) => {
       user: {
         id: user.id,
         email: user.email,
+        role: user.role,
         createdAt: user.createdAt
       },
       token
