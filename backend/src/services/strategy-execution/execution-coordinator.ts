@@ -999,22 +999,32 @@ class ExecutionCoordinator {
     stopLoss?: number,
     leverage: number = 1
   ): number {
+    const MIN_QUANTITY = 0.007  // Minimum quantity for ETH futures
+
+    let positionSize: number
+
     // If no stop loss, use fixed percentage of capital
     if (!stopLoss) {
       const riskAmount = capital * riskPerTrade
-      return (riskAmount * leverage) / entryPrice
+      positionSize = (riskAmount * leverage) / entryPrice
+    } else {
+      // Calculate position size based on stop loss distance
+      const riskAmount = capital * riskPerTrade
+      const stopLossDistance = Math.abs(entryPrice - stopLoss)
+      const riskPerUnit = stopLossDistance
+
+      if (riskPerUnit === 0) {
+        return 0
+      }
+
+      positionSize = (riskAmount / riskPerUnit) * leverage
     }
 
-    // Calculate position size based on stop loss distance
-    const riskAmount = capital * riskPerTrade
-    const stopLossDistance = Math.abs(entryPrice - stopLoss)
-    const riskPerUnit = stopLossDistance
-
-    if (riskPerUnit === 0) {
-      return 0
+    // Enforce minimum quantity
+    if (positionSize > 0 && positionSize < MIN_QUANTITY) {
+      console.warn(`Calculated quantity ${positionSize.toFixed(4)} below minimum ${MIN_QUANTITY}, adjusting to minimum`)
+      return MIN_QUANTITY
     }
-
-    const positionSize = (riskAmount / riskPerUnit) * leverage
 
     return positionSize
   }

@@ -404,6 +404,8 @@ class LiveTrader:
         Returns:
             Position size (quantity)
         """
+        MIN_QUANTITY = Decimal('0.007')  # Minimum quantity for ETH futures
+
         risk_amount = capital * risk_per_trade
         distance = abs(entry_price - stop_loss) / entry_price
         notional = risk_amount * leverage
@@ -411,6 +413,12 @@ class LiveTrader:
 
         # Round to instrument precision
         adjusted_quantity = (Decimal(str(quantity)) // self.qty_increment) * self.qty_increment
+
+        # Enforce minimum quantity
+        if Decimal('0') < adjusted_quantity < MIN_QUANTITY:
+            logging.warning(f"Calculated quantity {adjusted_quantity} below minimum {MIN_QUANTITY}, adjusting to minimum")
+            adjusted_quantity = MIN_QUANTITY
+
         return float(adjusted_quantity)
 
     def place_order_for_subscriber(

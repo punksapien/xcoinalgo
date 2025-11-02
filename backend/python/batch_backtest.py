@@ -588,18 +588,27 @@ class BatchBacktestRunner:
 
     def _calculate_position_size(self, entry_price: float, stop_loss: Optional[float]) -> float:
         """Calculate position size based on risk management"""
+        MIN_QUANTITY = 0.007  # Minimum quantity for ETH futures
+
         if not stop_loss:
             # No stop loss - use fixed risk amount
             risk_amount = self.capital * self.risk_per_trade
-            return (risk_amount * self.leverage) / entry_price
+            quantity = (risk_amount * self.leverage) / entry_price
+        else:
+            risk_amount = self.capital * self.risk_per_trade
+            stop_distance = abs(entry_price - stop_loss)
 
-        risk_amount = self.capital * self.risk_per_trade
-        stop_distance = abs(entry_price - stop_loss)
+            if stop_distance == 0:
+                return 0
 
-        if stop_distance == 0:
-            return 0
+            quantity = (risk_amount / stop_distance) * self.leverage
 
-        return (risk_amount / stop_distance) * self.leverage
+        # Enforce minimum quantity
+        if 0 < quantity < MIN_QUANTITY:
+            logger.warning(f"Calculated quantity {quantity:.4f} below minimum {MIN_QUANTITY}, adjusting to minimum")
+            return MIN_QUANTITY
+
+        return quantity
 
     def _update_equity_curve(self, candle: Dict):
         """Update equity curve with current equity"""
