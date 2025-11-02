@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { RedeployModal } from '@/components/strategy/redeploy-modal';
 import {
   ArrowLeft,
   Play,
@@ -33,6 +34,7 @@ export default function SubscriptionDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [redeployModalOpen, setRedeployModalOpen] = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -83,15 +85,14 @@ export default function SubscriptionDetailPage() {
     }
   };
 
-  const handleResume = async () => {
-    if (!token || !subscription) return;
+  const handleResume = () => {
+    if (!subscription) return;
+    setRedeployModalOpen(true);
+  };
 
-    try {
-      await StrategyExecutionAPI.resumeSubscription(subscription.id, token);
-      fetchSubscriptionDetails();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to resume subscription');
-    }
+  const handleRedeploySuccess = () => {
+    setRedeployModalOpen(false);
+    fetchSubscriptionDetails();
   };
 
   const handleCancel = async () => {
@@ -433,6 +434,16 @@ export default function SubscriptionDetailPage() {
             </CardDescription>
           </CardHeader>
         </Card>
+
+        {/* Redeploy Modal */}
+        {subscription && (
+          <RedeployModal
+            open={redeployModalOpen}
+            onOpenChange={setRedeployModalOpen}
+            subscription={subscription}
+            onSuccess={handleRedeploySuccess}
+          />
+        )}
       </div>
     </div>
   );

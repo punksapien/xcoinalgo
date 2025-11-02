@@ -7,6 +7,7 @@ import { StrategyExecutionAPI, type Subscription } from '@/lib/api/strategy-exec
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { RedeployModal } from '@/components/strategy/redeploy-modal';
 import {
   Play,
   Pause,
@@ -39,6 +40,8 @@ export default function SubscriptionsPage() {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'active' | 'paused'>('all');
   const [refreshing, setRefreshing] = useState(false);
+  const [redeployModalOpen, setRedeployModalOpen] = useState(false);
+  const [selectedSubscription, setSelectedSubscription] = useState<SubscriptionWithLiveStats | null>(null);
   const { token, isAuthenticated } = useAuth();
   const router = useRouter();
 
@@ -88,15 +91,15 @@ export default function SubscriptionsPage() {
     }
   };
 
-  const handleResume = async (subscriptionId: string) => {
-    if (!token) return;
+  const handleResume = (subscription: SubscriptionWithLiveStats) => {
+    setSelectedSubscription(subscription);
+    setRedeployModalOpen(true);
+  };
 
-    try {
-      await StrategyExecutionAPI.resumeSubscription(subscriptionId, token);
-      fetchSubscriptions();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to resume subscription');
-    }
+  const handleRedeploySuccess = () => {
+    setRedeployModalOpen(false);
+    setSelectedSubscription(null);
+    fetchSubscriptions();
   };
 
   const handleCancel = async (subscriptionId: string) => {
@@ -330,7 +333,7 @@ export default function SubscriptionsPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => handleResume(subscription.id)}
+                        onClick={() => handleResume(subscription)}
                         className="flex-1"
                       >
                         <Play className="h-4 w-4 mr-1" />
@@ -412,6 +415,16 @@ export default function SubscriptionsPage() {
               </CardContent>
             </Card>
           </div>
+        )}
+
+        {/* Redeploy Modal */}
+        {selectedSubscription && (
+          <RedeployModal
+            open={redeployModalOpen}
+            onOpenChange={setRedeployModalOpen}
+            subscription={selectedSubscription}
+            onSuccess={handleRedeploySuccess}
+          />
         )}
       </div>
     </div>
