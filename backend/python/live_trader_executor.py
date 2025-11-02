@@ -15,6 +15,7 @@ import sys
 import json
 import logging
 import traceback
+import inspect
 from datetime import datetime
 from typing import Dict, Any, List
 from io import StringIO
@@ -99,8 +100,23 @@ def process_single_subscriber(
         # Initialize LiveTrader for this subscriber
         subscriber_trader = LiveTrader(settings=subscriber_settings)
 
+        # Get capital for position sizing
+        capital = subscriber.get('capital', None)
+
+        # Check if strategy accepts user_input_balance parameter (backward compatibility)
+        sig = inspect.signature(subscriber_trader.check_for_new_signal)
+        accepts_capital_param = 'user_input_balance' in sig.parameters
+
         # Execute their check_for_new_signal method
-        subscriber_trader.check_for_new_signal(df_with_signals)
+        if accepts_capital_param and capital is not None:
+            # New strategy format - pass capital as parameter
+            logging.info(f"   Calling check_for_new_signal with user_input_balance={capital}")
+            subscriber_trader.check_for_new_signal(df_with_signals, user_input_balance=capital)
+        else:
+            # Old strategy format - backward compatible
+            if not accepts_capital_param:
+                logging.info(f"   Using backward compatible call (strategy doesn't accept user_input_balance)")
+            subscriber_trader.check_for_new_signal(df_with_signals)
 
         logging.info(f"   ✅ User {user_id} processed successfully")
 
