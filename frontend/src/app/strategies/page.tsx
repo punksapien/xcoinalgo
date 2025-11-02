@@ -18,6 +18,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useAuth } from '@/lib/auth';
+import { useRoleGuard } from '@/lib/use-role-guard';
 import { showErrorToast, showSuccessToast } from '@/lib/toast-utils';
 import { apiClient, ApiError } from '@/lib/api-client';
 import { LogViewerModal } from '@/components/LogViewerModal';
@@ -61,6 +62,7 @@ interface Strategy {
 export default function StrategyManagementPage() {
   const router = useRouter();
   const { token, hasHydrated } = useAuth();
+  const { isAuthorized, isChecking } = useRoleGuard('QUANT');
 
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [loading, setLoading] = useState(true);
@@ -255,8 +257,8 @@ export default function StrategyManagementPage() {
     );
   };
 
-  // Show loading while hydrating or fetching
-  if (!hasHydrated || loading) {
+  // Show loading while checking role or hydrating or fetching
+  if (isChecking || !hasHydrated || loading) {
     return (
       <div className="container mx-auto p-6">
         <div className="flex items-center justify-center h-64">
@@ -264,6 +266,11 @@ export default function StrategyManagementPage() {
         </div>
       </div>
     );
+  }
+
+  // If not authorized, don't render anything (role guard will redirect)
+  if (!isAuthorized) {
+    return null;
   }
 
   return (

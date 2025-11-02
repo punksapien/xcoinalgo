@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from '@/lib/auth';
+import { useRoleGuard } from '@/lib/use-role-guard';
 import { showErrorToast, showSuccessToast, showInfoToast } from '@/lib/toast-utils';
 import { useBacktestProgress } from '@/hooks/useBacktestProgress';
 import { BacktestProgressBar } from '@/components/BacktestProgressBar';
@@ -53,6 +54,7 @@ interface BacktestMetrics {
 export default function StrategyUploadPage() {
   const router = useRouter();
   const { token } = useAuth();
+  const { isAuthorized, isChecking } = useRoleGuard('QUANT');
 
   const [file, setFile] = useState<File | null>(null);
   const [requirementsFile, setRequirementsFile] = useState<File | null>(null);
@@ -342,6 +344,22 @@ export default function StrategyUploadPage() {
       setUploading(false);
     }
   };
+
+  // Show loading while checking role
+  if (isChecking) {
+    return (
+      <div className="container mx-auto p-6">
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      </div>
+    );
+  }
+
+  // If not authorized, don't render anything (role guard will redirect)
+  if (!isAuthorized) {
+    return null;
+  }
 
   return (
     <div className="container mx-auto p-6 max-w-4xl">

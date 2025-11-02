@@ -6,6 +6,7 @@ interface User {
   id: string;
   email: string;
   createdAt: string;
+  role?: string;
 }
 
 interface AuthState {
@@ -16,6 +17,7 @@ interface AuthState {
   login: (user: User, token: string) => void;
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
+  isQuant: () => boolean;
 }
 
 export const useAuth = create<AuthState>()(
@@ -77,6 +79,10 @@ export const useAuth = create<AuthState>()(
             isAuthenticated: false
           });
         }
+      },
+      isQuant: () => {
+        const { user } = get();
+        return user?.role === 'QUANT';
       }
     }),
     {
