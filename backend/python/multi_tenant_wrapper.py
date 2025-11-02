@@ -24,6 +24,7 @@ import logging
 import traceback
 import csv
 import os
+import inspect
 from datetime import datetime
 from typing import Dict, Any, List
 from io import StringIO
@@ -365,7 +366,23 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
                         logging.warning(f"   Strategy missing check_and_manage_position method, skipping position management")
                 else:
                     # User not in position - check for new entry signals
-                    subscriber_trader.check_for_new_signal(df_with_signals)
+                    # Get capital for position sizing
+                    capital = subscriber.get('capital', None)
+
+                    # Check if strategy accepts user_input_balance parameter (backward compatibility)
+                    sig = inspect.signature(subscriber_trader.check_for_new_signal)
+                    accepts_capital_param = 'user_input_balance' in sig.parameters
+
+                    # Execute their check_for_new_signal method
+                    if accepts_capital_param and capital is not None:
+                        # New strategy format - pass capital as parameter
+                        logging.info(f"   Calling check_for_new_signal with user_input_balance={capital}")
+                        subscriber_trader.check_for_new_signal(df_with_signals, user_input_balance=capital)
+                    else:
+                        # Old strategy format - backward compatible
+                        if not accepts_capital_param:
+                            logging.info(f"   Using backward compatible call (strategy doesn't accept user_input_balance)")
+                        subscriber_trader.check_for_new_signal(df_with_signals)
 
                 subscribers_processed += 1
                 trades_attempted += 1
