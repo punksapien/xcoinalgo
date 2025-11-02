@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/lib/auth';
-import { StrategyExecutionAPI, type SubscriptionConfig } from '@/lib/api/strategy-execution-api';
+import { StrategyExecutionAPI, type SubscriptionConfig, type Subscription } from '@/lib/api/strategy-execution-api';
 import { Loader2, DollarSign, Percent, TrendingUp, AlertCircle, CheckCircle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { showSuccessToast, showErrorToast, showWarningToast } from '@/lib/toast-utils';
@@ -44,6 +44,11 @@ export function SubscribeModal({
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [availableBalance, setAvailableBalance] = useState<number | null>(null);
   const [balanceCurrency, setBalanceCurrency] = useState<'INR' | 'USDT'>('USDT');
+
+  // Capital allocation tracking
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
+  const [loadingSubscriptions, setLoadingSubscriptions] = useState(false);
+  const [allocatedCapital, setAllocatedCapital] = useState<number>(0);
 
   // Form state
   const [capital, setCapital] = useState('10000');
@@ -115,13 +120,53 @@ export function SubscribeModal({
     }
   }, [token]);
 
-  // Fetch broker credentials and balance
+  const fetchUserSubscriptions = useCallback(async () => {
+    if (!token) {
+      console.log('❌ No token, skipping subscriptions fetch');
+      return;
+    }
+
+    console.log('🔄 Fetching user subscriptions...');
+    try {
+      setLoadingSubscriptions(true);
+      const { subscriptions: userSubscriptions } = await StrategyExecutionAPI.getUserSubscriptions(token);
+      console.log('✅ Subscriptions API response:', userSubscriptions);
+
+      // Filter active subscriptions (active and not paused)
+      const activeSubscriptions = userSubscriptions.filter(
+        (sub) => sub.isActive && !sub.isPaused
+      );
+      console.log('📊 Active subscriptions:', activeSubscriptions.length);
+
+      // Calculate total allocated capital
+      const totalAllocated = activeSubscriptions.reduce(
+        (sum, sub) => sum + (sub.capital || 0),
+        0
+      );
+      console.log('💰 Total allocated capital:', totalAllocated);
+
+      setSubscriptions(activeSubscriptions);
+      setAllocatedCapital(totalAllocated);
+    } catch (err) {
+      console.error('❌ Failed to fetch subscriptions:', err);
+      console.error('Error details:', JSON.stringify(err, null, 2));
+      // Don't show error toast - just log it
+      // User can still subscribe even if we can't fetch existing subscriptions
+      setSubscriptions([]);
+      setAllocatedCapital(0);
+    } finally {
+      setLoadingSubscriptions(false);
+    }
+  }, [token]);
+
+  // Fetch broker credentials, balance, and subscriptions
   useEffect(() => {
     if (open && token) {
       fetchBrokerCredentials();
       fetchUserBalance();
+      fetchUserSubscriptions();
     }
-  }, [open, token, fetchBrokerCredentials, fetchUserBalance]);
+  }, [open, token, fetchBrokerCredentials, fetchUserBalance, fetchUserSubscriptions]);
 
   const handleSubscribe = async () => {
     if (!token) {
@@ -175,12 +220,39 @@ export function SubscribeModal({
         return;
       }
 
-      // Validate sufficient balance
-      const balanceCheck = validateSufficientBalance(configData.capital, availableBalance);
-      if (!balanceCheck.isValid) {
-        showErrorToast('Insufficient Balance', balanceCheck.error || 'You don\'t have enough balance');
+      // Calculate available capital (wallet balance - already allocated capital)
+      const availableForAllocation = availableBalance - allocatedCapital;
+      const requestedCapital = configData.capital;
+
+      console.log('💰 Capital allocation check:', {
+        walletBalance: availableBalance,
+        allocatedCapital,
+        availableForAllocation,
+        requestedCapital
+      });
+
+      // Check if user has enough unallocated capital
+      if (availableForAllocation <= 0) {
+        showErrorToast(
+          'No Capital Available',
+          `All your capital is allocated to ${subscriptions.length} active subscription(s). ` +
+          'Please cancel or pause existing subscriptions to free up capital.'
+        );
         return;
       }
+
+      if (requestedCapital > availableForAllocation) {
+        const symbol = balanceCurrency === 'INR' ? '₹' : '$';
+        showErrorToast(
+          'Insufficient Available Capital',
+          `You can only allocate ${symbol}${availableForAllocation.toFixed(2)}. ` +
+          `(Wallet: ${symbol}${availableBalance.toFixed(2)} - Already Allocated: ${symbol}${allocatedCapital.toFixed(2)})`
+        );
+        return;
+      }
+
+      // Validate sufficient balance (original check for high allocation warning)
+      const balanceCheck = validateSufficientBalance(requestedCapital, availableBalance);
       if (balanceCheck.error) {
         // Show warning but allow to proceed
         showWarningToast('High Capital Allocation', balanceCheck.error);
@@ -242,23 +314,50 @@ export function SubscribeModal({
           </Alert>
         ) : (
           <div className="space-y-6 py-4">
-            {/* Available Balance Display */}
-            {loadingBalance ? (
+            {/* Capital Allocation Display */}
+            {loadingBalance || loadingSubscriptions ? (
               <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-lg">
                 <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
-                <span className="text-sm text-blue-700">Fetching your available balance...</span>
+                <span className="text-sm text-blue-700">
+                  Loading balance and allocations...
+                </span>
               </div>
             ) : availableBalance !== null ? (
-              <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="h-4 w-4 text-green-600" />
-                  <span className="text-sm font-medium text-green-700">
-                    Available Futures Balance ({balanceCurrency}):
+              <div className="space-y-2">
+                {/* Total Wallet Balance */}
+                <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 text-green-600" />
+                    <span className="text-sm font-medium text-green-700">
+                      Total Wallet Balance:
+                    </span>
+                  </div>
+                  <span className="text-lg font-bold text-green-700">
+                    {balanceCurrency === 'INR' ? '₹' : '$'}{availableBalance.toFixed(2)}
                   </span>
                 </div>
-                <span className="text-lg font-bold text-green-700">
-                  {balanceCurrency === 'INR' ? '₹' : '$'}{availableBalance.toFixed(2)}
-                </span>
+
+                {/* Already Allocated Capital */}
+                {allocatedCapital > 0 && (
+                  <div className="flex items-center justify-between p-3 bg-orange-50 rounded-lg">
+                    <span className="text-sm font-medium text-orange-700">
+                      Already Allocated ({subscriptions.length} subscription{subscriptions.length !== 1 ? 's' : ''}):
+                    </span>
+                    <span className="text-lg font-bold text-orange-700">
+                      -{balanceCurrency === 'INR' ? '₹' : '$'}{allocatedCapital.toFixed(2)}
+                    </span>
+                  </div>
+                )}
+
+                {/* Available for New Subscription */}
+                <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border-2 border-blue-200">
+                  <span className="text-sm font-semibold text-blue-800">
+                    Available for New Subscription:
+                  </span>
+                  <span className="text-xl font-bold text-blue-800">
+                    {balanceCurrency === 'INR' ? '₹' : '$'}{(availableBalance - allocatedCapital).toFixed(2)}
+                  </span>
+                </div>
               </div>
             ) : (
               <Alert variant="destructive">
@@ -395,7 +494,7 @@ export function SubscribeModal({
           </Button>
           <Button
             onClick={handleSubscribe}
-            disabled={loading || loadingCredentials || loadingBalance || brokerCredentials.length === 0 || availableBalance === null}
+            disabled={loading || loadingCredentials || loadingBalance || loadingSubscriptions || brokerCredentials.length === 0 || availableBalance === null}
           >
             {loading ? (
               <>
