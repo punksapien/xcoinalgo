@@ -85,7 +85,12 @@ class SettingsService {
       const settings = await redis.hgetall(key)
 
       if (settings && Object.keys(settings).length > 0) {
-        return this.deserializeSettings(settings) as StrategySettings
+        const deserialized = this.deserializeSettings(settings) as StrategySettings
+        // Map 'pair' to 'symbol' for backward compatibility
+        if (!deserialized.symbol && deserialized.pair) {
+          deserialized.symbol = deserialized.pair
+        }
+        return deserialized
       }
 
       // Cache miss - fallback to DB if enabled
