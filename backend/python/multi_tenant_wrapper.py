@@ -109,6 +109,38 @@ class LogCapture:
         logger.addHandler(list_handler)
 
 
+def _convert_settings_types(settings: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert string values from Redis to proper types"""
+    converted = {}
+
+    # Integer fields
+    int_fields = ['version', 'leverage', 'max_positions', 'lookback_period', 'Pd', 'prd', 'Factor']
+
+    # Float fields
+    float_fields = ['capital', 'risk_per_trade', 'sl_pct', 'tp_pct', 'commission_rate',
+                    'gst_rate', 'initial_capital', 'currency_conversion_rate']
+
+    for key, value in settings.items():
+        if isinstance(value, str):
+            # Try to convert to appropriate type
+            if key in int_fields:
+                try:
+                    converted[key] = int(value)
+                except ValueError:
+                    converted[key] = value
+            elif key in float_fields:
+                try:
+                    converted[key] = float(value)
+                except ValueError:
+                    converted[key] = value
+            else:
+                converted[key] = value
+        else:
+            converted[key] = value
+
+    return converted
+
+
 def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCapture) -> Dict[str, Any]:
     """
     Execute quant team's strategy for multiple subscribers.
@@ -148,6 +180,9 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
         strategy_code = input_data.get('strategy_code')
         settings = input_data.get('settings', {})
         subscribers = input_data.get('subscribers', [])
+
+        # Convert string values from Redis to proper types
+        settings = _convert_settings_types(settings)
 
         if not strategy_code:
             raise ValueError("Missing strategy_code in input")
