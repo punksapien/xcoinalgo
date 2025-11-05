@@ -39,7 +39,7 @@ export default function SubscriptionsPage() {
   const [subscriptions, setSubscriptions] = useState<SubscriptionWithLiveStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<'all' | 'active' | 'paused'>('all');
+  const [filter, setFilter] = useState<'all' | 'active' | 'paused' | 'cancelled'>('all');
   const [refreshing, setRefreshing] = useState(false);
   const [redeployModalOpen, setRedeployModalOpen] = useState(false);
   const [selectedSubscription, setSelectedSubscription] = useState<SubscriptionWithLiveStats | null>(null);
@@ -119,9 +119,10 @@ export default function SubscriptionsPage() {
   };
 
   const filteredSubscriptions = subscriptions.filter(sub => {
-    if (filter === 'all') return true;
-    if (filter === 'active') return sub.isActive && !sub.isPaused;
-    if (filter === 'paused') return sub.isPaused;
+    if (filter === 'all') return sub.isActive; // Show only active subscriptions (includes paused)
+    if (filter === 'active') return sub.isActive && !sub.isPaused; // Only actively trading
+    if (filter === 'paused') return sub.isActive && sub.isPaused; // Only paused
+    if (filter === 'cancelled') return !sub.isActive; // Only cancelled/unsubscribed
     return true;
   });
 
@@ -171,7 +172,7 @@ export default function SubscriptionsPage() {
 
         {/* Filter Tabs */}
         <div className="flex space-x-1 bg-muted p-1 rounded-lg w-fit">
-          {(['all', 'active', 'paused'] as const).map((filterOption) => (
+          {(['all', 'active', 'paused', 'cancelled'] as const).map((filterOption) => (
             <button
               key={filterOption}
               onClick={() => setFilter(filterOption)}
@@ -182,7 +183,8 @@ export default function SubscriptionsPage() {
               }`}
             >
               {filterOption === 'all' ? 'All' :
-               filterOption === 'active' ? 'Active' : 'Paused'}
+               filterOption === 'active' ? 'Active' :
+               filterOption === 'paused' ? 'Paused' : 'History'}
             </button>
           ))}
         </div>
