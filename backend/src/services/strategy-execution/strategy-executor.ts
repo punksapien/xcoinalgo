@@ -313,15 +313,23 @@ export class StrategyExecutor {
         },
       });
 
-      // Use credentials directly (no decryption needed)
-      const subscribers: Subscriber[] = subscriptions.map((sub) => ({
-        user_id: sub.userId,
-        api_key: sub.brokerCredential.apiKey,      // Plaintext
-        api_secret: sub.brokerCredential.apiSecret, // Plaintext
-        capital: sub.capital,
-        leverage: sub.leverage,
-        risk_per_trade: sub.riskPerTrade,
-      }));
+      // Filter out subscriptions without credentials and map to subscribers
+      const subscribers: Subscriber[] = subscriptions
+        .filter(sub => {
+          if (!sub.brokerCredential) {
+            logger.warn(`Subscription ${sub.id} is missing broker credentials, skipping`);
+            return false;
+          }
+          return true;
+        })
+        .map((sub) => ({
+          user_id: sub.userId,
+          api_key: sub.brokerCredential!.apiKey,      // Plaintext
+          api_secret: sub.brokerCredential!.apiSecret, // Plaintext
+          capital: sub.capital,
+          leverage: sub.leverage,
+          risk_per_trade: sub.riskPerTrade,
+        }));
 
       logger.info(`Found ${subscribers.length} active subscribers for strategy ${strategyId}`);
 

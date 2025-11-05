@@ -345,7 +345,8 @@ model StrategySubscription {
   positionMarginType   String   @default("isolated") // "isolated" or "cross"
 
   // Credentials reference (not raw keys)
-  brokerCredentialId String
+  // Nullable to allow credential deletion while preserving subscription history
+  brokerCredentialId String?
 
   // Status and lifecycle
   isActive         Boolean  @default(true)
@@ -363,7 +364,7 @@ model StrategySubscription {
   // Relations
   user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   strategy         Strategy          @relation(fields: [strategyId], references: [id], onDelete: Cascade)
-  brokerCredential BrokerCredential  @relation(fields: [brokerCredentialId], references: [id])
+  brokerCredential BrokerCredential? @relation(fields: [brokerCredentialId], references: [id], onDelete: SetNull)
   trades           Trade[]
 
   createdAt        DateTime @default(now())
