@@ -19,7 +19,8 @@ import {
   TrendingUp,
   Users,
   Clock,
-  Activity
+  Activity,
+  Trash2
 } from 'lucide-react';
 
 interface LiveStats {
@@ -338,6 +339,17 @@ export default function SubscriptionsPage() {
                       >
                         <Play className="h-4 w-4 mr-1" />
                         Resume
+                      </Button>
+                    )}
+                    {subscription.isActive && (
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => handleCancel(subscription.id)}
+                        className="flex-1"
+                      >
+                        <Trash2 className="h-4 w-4 mr-1" />
+                        Unsubscribe
                       </Button>
                     )}
                     <Button

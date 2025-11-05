@@ -279,6 +279,47 @@ router.delete('/keys', authenticate, async (req: AuthenticatedRequest, res, next
       });
     }
 
+    // Check if user has any active strategy subscriptions using these credentials
+    const brokerCredential = await prisma.brokerCredential.findUnique({
+      where: {
+        userId_brokerName: {
+          userId,
+          brokerName: 'coindcx'
+        }
+      },
+      select: {
+        id: true
+      }
+    });
+
+    if (brokerCredential) {
+      const activeSubscriptions = await prisma.strategySubscription.findMany({
+        where: {
+          userId,
+          brokerCredentialId: brokerCredential.id,
+          isActive: true
+        },
+        include: {
+          strategy: {
+            select: {
+              name: true
+            }
+          }
+        }
+      });
+
+      if (activeSubscriptions.length > 0) {
+        const strategyNames = activeSubscriptions.map(sub => sub.strategy.name).join(', ');
+        return res.status(400).json({
+          error: `Cannot delete credentials while you have ${activeSubscriptions.length} active subscription(s): ${strategyNames}. Please unsubscribe from these strategies first.`,
+          activeSubscriptions: activeSubscriptions.map(sub => ({
+            id: sub.id,
+            strategyName: sub.strategy.name
+          }))
+        });
+      }
+    }
+
     // Delete credentials
     await prisma.brokerCredential.delete({
       where: {
