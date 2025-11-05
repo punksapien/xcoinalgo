@@ -110,32 +110,32 @@ class LogCapture:
 
 
 def _convert_settings_types(settings: Dict[str, Any]) -> Dict[str, Any]:
-    """Convert string values from Redis to proper types"""
+    """
+    Convert string values from Redis to proper types automatically.
+
+    This is a generalized solution that detects numeric strings and converts them
+    to int or float as appropriate, without needing hardcoded field lists.
+    """
     converted = {}
-
-    # Integer fields
-    int_fields = ['version', 'leverage', 'max_positions', 'lookback_period', 'Pd', 'prd', 'Factor']
-
-    # Float fields
-    float_fields = ['capital', 'risk_per_trade', 'sl_pct', 'tp_pct', 'commission_rate',
-                    'gst_rate', 'initial_capital', 'currency_conversion_rate']
 
     for key, value in settings.items():
         if isinstance(value, str):
-            # Try to convert to appropriate type
-            if key in int_fields:
-                try:
-                    converted[key] = int(value)
-                except ValueError:
-                    converted[key] = value
-            elif key in float_fields:
-                try:
-                    converted[key] = float(value)
-                except ValueError:
-                    converted[key] = value
-            else:
+            # Try to automatically detect and convert numeric strings
+            try:
+                # First try int (for values like "10", "5", "100")
+                if '.' not in value and 'e' not in value.lower() and 'E' not in value:
+                    # Looks like an integer
+                    int_val = int(value)
+                    converted[key] = int_val
+                else:
+                    # Has decimal point or scientific notation - treat as float
+                    float_val = float(value)
+                    converted[key] = float_val
+            except (ValueError, AttributeError):
+                # Not a number - keep as string
                 converted[key] = value
         else:
+            # Already the right type
             converted[key] = value
 
     return converted
