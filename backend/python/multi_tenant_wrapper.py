@@ -115,25 +115,44 @@ def _convert_settings_types(settings: Dict[str, Any]) -> Dict[str, Any]:
 
     This is a generalized solution that detects numeric strings and converts them
     to int or float as appropriate, without needing hardcoded field lists.
+
+    Some fields must remain as strings even if they look numeric (e.g., resolution "15").
     """
     converted = {}
 
+    # Fields that should ALWAYS remain as strings, even if they look numeric
+    keep_as_string = {
+        'resolution',  # API expects "15" not 15
+        'pair',        # Symbol pair like "B-ETH_USDT"
+        'name',        # Strategy name
+        'author',      # Author name
+        'tags',        # Tags
+        'margin_currency',  # "INR" or "USDT"
+        'user_id',     # User ID
+        'api_key',     # API credentials
+        'api_secret',  # API credentials
+    }
+
     for key, value in settings.items():
         if isinstance(value, str):
-            # Try to automatically detect and convert numeric strings
-            try:
-                # First try int (for values like "10", "5", "100")
-                if '.' not in value and 'e' not in value.lower() and 'E' not in value:
-                    # Looks like an integer
-                    int_val = int(value)
-                    converted[key] = int_val
-                else:
-                    # Has decimal point or scientific notation - treat as float
-                    float_val = float(value)
-                    converted[key] = float_val
-            except (ValueError, AttributeError):
-                # Not a number - keep as string
+            # Check if this field should stay as string
+            if key in keep_as_string:
                 converted[key] = value
+            else:
+                # Try to automatically detect and convert numeric strings
+                try:
+                    # First try int (for values like "10", "5", "100")
+                    if '.' not in value and 'e' not in value.lower() and 'E' not in value:
+                        # Looks like an integer
+                        int_val = int(value)
+                        converted[key] = int_val
+                    else:
+                        # Has decimal point or scientific notation - treat as float
+                        float_val = float(value)
+                        converted[key] = float_val
+                except (ValueError, AttributeError):
+                    # Not a number - keep as string
+                    converted[key] = value
         else:
             # Already the right type
             converted[key] = value
