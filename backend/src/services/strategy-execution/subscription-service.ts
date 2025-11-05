@@ -72,12 +72,6 @@ class SubscriptionService {
         },
       })
 
-      if (existing) {
-        throw new Error(
-          `User ${userId} is already subscribed to strategy ${strategyId}`
-        )
-      }
-
       // Get strategy to check if this is first subscriber
       const strategy = await prisma.strategy.findUnique({
         where: { id: strategyId },
@@ -92,8 +86,6 @@ class SubscriptionService {
         throw new Error(`Strategy ${strategyId} not found`)
       }
 
-      const isFirstSubscriber = strategy.subscriberCount === 0
-
       // Infer trading type if not provided
       const execCfg: any = (strategy?.executionConfig as any) || {}
       const inferredTradingType: 'spot' | 'futures' = tradingType
@@ -101,25 +93,75 @@ class SubscriptionService {
         : (execCfg.symbol?.startsWith('B-') || !!execCfg.supportsFutures)
           ? 'futures' : 'spot'
 
-      // Create subscription in database
-      const subscription = await prisma.strategySubscription.create({
-        data: {
-          userId,
-          strategyId,
-          capital,
-          riskPerTrade,
-          leverage,
-          maxPositions,
-          maxDailyLoss,
-          slAtrMultiplier,
-          tpAtrMultiplier,
-          brokerCredentialId,
-          tradingType: inferredTradingType,
-          marginCurrency: marginCurrency || 'USDT',
-          isActive: true,
-          isPaused: false,
-        },
-      })
+      let subscription: StrategySubscription
+      let isReactivation = false
+
+      if (existing) {
+        // If subscription exists and is active, throw error
+        if (existing.isActive) {
+          throw new Error(
+            `User ${userId} is already subscribed to strategy ${strategyId}`
+          )
+        }
+
+        // If subscription exists but is cancelled (isActive: false), reactivate it
+        console.log(
+          `Reactivating cancelled subscription ${existing.id} for user ${userId} ` +
+          `to strategy ${strategyId}`
+        )
+
+        subscription = await prisma.strategySubscription.update({
+          where: { id: existing.id },
+          data: {
+            // Update all settings with new values
+            capital,
+            riskPerTrade,
+            leverage,
+            maxPositions,
+            maxDailyLoss,
+            slAtrMultiplier,
+            tpAtrMultiplier,
+            brokerCredentialId,
+            tradingType: inferredTradingType,
+            marginCurrency: marginCurrency || 'USDT',
+            // Reactivate subscription
+            isActive: true,
+            isPaused: false,
+            subscribedAt: new Date(),
+            unsubscribedAt: null,
+            pausedAt: null,
+            // Reset stats for new subscription period
+            totalTrades: 0,
+            winningTrades: 0,
+            losingTrades: 0,
+            totalPnl: 0,
+          },
+        })
+
+        isReactivation = true
+      } else {
+        // Create new subscription
+        subscription = await prisma.strategySubscription.create({
+          data: {
+            userId,
+            strategyId,
+            capital,
+            riskPerTrade,
+            leverage,
+            maxPositions,
+            maxDailyLoss,
+            slAtrMultiplier,
+            tpAtrMultiplier,
+            brokerCredentialId,
+            tradingType: inferredTradingType,
+            marginCurrency: marginCurrency || 'USDT',
+            isActive: true,
+            isPaused: false,
+          },
+        })
+      }
+
+      const isFirstSubscriber = strategy.subscriberCount === 0
 
       // Increment subscriber count
       await prisma.strategy.update({
@@ -182,7 +224,7 @@ class SubscriptionService {
       })
 
       console.log(
-        `Created subscription ${subscription.id} for user ${userId} ` +
+        `${isReactivation ? 'Reactivated' : 'Created'} subscription ${subscription.id} for user ${userId} ` +
         `on strategy ${strategyId}`
       )
 
