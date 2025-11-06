@@ -182,6 +182,11 @@ def execute_backtest(module, settings: Dict[str, Any]) -> Dict[str, Any]:
         # Use the backtester instance to call both generate_signals AND execute_trades
         df = backtester.generate_signals(df, settings)
 
+        # Reset DataFrame index to ensure clean sequential integer indices
+        # This prevents index corruption issues with large datasets after merge_asof/dropna operations
+        if df is not None and not df.empty:
+            df = df.reset_index(drop=True)
+
         if df is None or df.empty:
             return {
                 "success": False,
