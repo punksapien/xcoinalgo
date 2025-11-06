@@ -170,31 +170,8 @@ def execute_backtest(module, settings: Dict[str, Any]) -> Dict[str, Any]:
             "message": f"Fetched {total_candles:,} candles in {fetch_duration:.1f}s"
         }), file=sys.stderr, flush=True)
 
-        # Report progress: Generating signals
-        print(json.dumps({
-            "type": "progress",
-            "stage": "generating_signals",
-            "progress": 0.35,
-            "message": "Generating trading signals..."
-        }), file=sys.stderr, flush=True)
-
-        # Generate signals using Trader.generate_signals (Backtester inherits from Trader)
-        # Use the backtester instance to call both generate_signals AND execute_trades
-        df = backtester.generate_signals(df, settings)
-
-        # Reset DataFrame index to ensure clean sequential integer indices
-        # This prevents index corruption issues with large datasets after merge_asof/dropna operations
-        if df is not None and not df.empty:
-            df = df.reset_index(drop=True)
-
-        if df is None or df.empty:
-            return {
-                "success": False,
-                "error": "Signal generation failed or returned empty dataframe",
-                "mode": "backtest"
-            }
-
         # Report progress: Running backtest
+        # Note: Signal generation is handled internally by execute_trades()
         print(json.dumps({
             "type": "progress",
             "stage": "running_backtest",
