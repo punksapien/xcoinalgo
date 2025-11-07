@@ -1563,7 +1563,14 @@ async function validateStrategyCode(code: string, config: any) {
 }
 
 function generateStrategyCode(name: string): string {
-  return name.toUpperCase().replace(/[^A-Z0-9]/g, '_') + '_V1';
+  const code = name.toUpperCase().replace(/[^A-Z0-9]/g, '_') + '_V1';
+
+  // Enforce maximum length to prevent PostgreSQL index size errors
+  if (code.length > 100) {
+    throw new Error(`Strategy code identifier too long (${code.length} chars). Maximum 100 characters allowed. Please use a shorter strategy name.`);
+  }
+
+  return code;
 }
 
 function incrementVersion(currentVersion: string): string {
@@ -2240,11 +2247,10 @@ router.put('/:id/code', authenticate, requireQuantRole, async (req: Authenticate
       });
     }
 
-    // Update database
+    // Update database (only timestamp - don't update 'code' field as it's an identifier, not content)
     await prisma.strategy.update({
       where: { id: strategyId },
       data: {
-        code,
         updatedAt: new Date()
       }
     });

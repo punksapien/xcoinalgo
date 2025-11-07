@@ -68,7 +68,7 @@ model BrokerCredential {
 model Strategy {
   id              String   @id @default(cuid())
   name            String
-  code            String
+  code            String   @db.VarChar(100)
   description     String?
   detailedDescription String?
   author          String
