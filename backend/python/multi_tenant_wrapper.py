@@ -413,6 +413,28 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
 
                 # ✅ Position-aware execution: Call the appropriate method based on state
                 if subscriber_trader.in_position:
+                    # ✅ SYNC CHECK: Verify position still exists on exchange before managing it
+                    try:
+                        positions = subscriber_trader.client.list_positions(
+                            margin_currency_short_name=[subscriber_settings['margin_currency']]
+                        )
+                        active_pos = next(
+                            (p for p in positions if p['pair'] == subscriber_settings['pair'] and p['active_pos'] != 0.0),
+                            None
+                        )
+
+                        if not active_pos:
+                            logging.info(f"   Position closed manually or externally. Resetting state.")
+                            subscriber_trader._reset_state()
+                            # Skip position management since there's no position
+                            subscribers_processed += 1
+                            logging.info(f"   ✅ User {user_id} processed successfully (state reset)")
+                            continue
+                    except Exception as e:
+                        logging.error(f"   Error checking position on exchange: {e}")
+                        # Continue with position management if API call fails
+                        pass
+
                     # User has an open position - manage it (check TP/SL, trailing stop, etc.)
                     if hasattr(subscriber_trader, 'check_and_manage_position'):
                         subscriber_trader.check_and_manage_position(df_with_signals)
