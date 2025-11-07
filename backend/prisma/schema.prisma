@@ -74,7 +74,7 @@ model Strategy {
   author          String
   version         String   @default("1.0.0")
   instrument      String
-  tags            String   @default("")
+  tags            String   @default("") @db.Text
 
   // Git integration
   gitRepository   String?
@@ -90,7 +90,7 @@ model Strategy {
 
   // Validation status
   validationStatus StrategyValidationStatus @default(PENDING)
-  validationErrors String?
+  validationErrors String?  @db.Text
   lastValidatedAt  DateTime?
 
   // Basic metrics (from latest backtest)
