@@ -341,6 +341,16 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
 
         LiveTrader = exec_scope['LiveTrader']
 
+        # Extract STRATEGY_CONFIG if defined (for multi-resolution support)
+        strategy_config = exec_scope.get('STRATEGY_CONFIG', {})
+        is_multi_resolution = strategy_config.get('is_multi_resolution', False)
+
+        if is_multi_resolution:
+            logging.info(f"📐 Multi-resolution strategy detected:")
+            logging.info(f"   Signal Resolution: {strategy_config.get('signal_resolution')}")
+            logging.info(f"   Exit Resolution: {strategy_config.get('exit_resolution')}")
+            logging.info(f"   Base Resolution: {strategy_config.get('base_resolution', settings.get('resolution'))}")
+
         logging.info("✅ Strategy classes loaded successfully")
 
         # ====================================================================
@@ -370,8 +380,53 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
         # ====================================================================
         logging.info("🧠 Generating signals...")
 
-        # Use the LiveTrader instance's inherited generate_signals method
-        df_with_signals = temp_trader.generate_signals(df, settings)
+        # Multi-resolution signal generation
+        if is_multi_resolution:
+            from strategy_helpers import resample_ohlcv
+
+            signal_resolution = strategy_config.get('signal_resolution')
+            base_resolution = strategy_config.get('base_resolution', settings.get('resolution'))
+
+            if signal_resolution and signal_resolution != base_resolution:
+                logging.info(f"   Resampling {base_resolution} → {signal_resolution} for entry signals...")
+
+                # Resample to signal resolution for indicator calculation
+                df_signal = resample_ohlcv(df, base_resolution, signal_resolution)
+
+                # Generate signals on resampled timeframe
+                df_signal_indicators = temp_trader.generate_signals(df_signal, settings)
+
+                # Forward-fill signals back to base resolution
+                # Identify signal columns (typically: 'signal', 'long_signal', 'short_signal', etc.)
+                signal_cols = [col for col in df_signal_indicators.columns
+                               if 'signal' in col.lower() or col in ['stop_loss', 'take_profit']]
+
+                logging.info(f"   Forward-filling signal columns: {signal_cols}")
+
+                # Ensure datetime index for reindexing
+                df_copy = df.copy()
+                if 'time' in df_copy.columns:
+                    df_copy = df_copy.set_index('time')
+
+                df_signal_copy = df_signal_indicators.copy()
+                if 'time' in df_signal_copy.columns:
+                    df_signal_copy = df_signal_copy.set_index('time')
+
+                # Forward-fill each signal column
+                for col in signal_cols:
+                    if col in df_signal_copy.columns:
+                        df_copy[col] = df_signal_copy[col].reindex(df_copy.index, method='ffill')
+
+                # Reset index
+                df_with_signals = df_copy.reset_index()
+
+                logging.info(f"   ✅ Signals generated on {signal_resolution}, applied to {base_resolution}")
+            else:
+                # Signal resolution same as base - no resampling needed
+                df_with_signals = temp_trader.generate_signals(df, settings)
+        else:
+            # Single resolution path (backward compatible)
+            df_with_signals = temp_trader.generate_signals(df, settings)
 
         if df_with_signals is None or (hasattr(df_with_signals, 'empty') and df_with_signals.empty):
             raise ValueError("Signal generation returned empty dataframe")
