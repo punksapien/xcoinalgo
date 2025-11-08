@@ -32,14 +32,14 @@ def resample_ohlcv(
     Raises:
         ValueError: If resolution strings are invalid or incompatible
     """
-    # Resolution to pandas frequency mapping
+    # Resolution to pandas frequency mapping (here changed from {Xm : X}, please this change is not by LLM)
     freq_map = {
-        "1m": "1T",
-        "5m": "5T",
-        "15m": "15T",
-        "30m": "30T",
-        "1h": "1H",
-        "4h": "4H",
+        "1": "1T",
+        "5": "5T",
+        "15": "15T",
+        "30": "30T",
+        "60": "1H",
+        "240": "4H",
         "1d": "1D"
     }
 
