@@ -629,7 +629,42 @@ class ExecutionCoordinator {
         }
 
         try {
-          const result = JSON.parse(stdout)
+          // Try to parse stdout as JSON
+          let result
+          try {
+            result = JSON.parse(stdout)
+          } catch (parseError) {
+            // JSON parsing failed - likely due to stdout pollution from print() statements
+            console.warn(`⚠️ Direct JSON parse failed, attempting recovery...`)
+
+            // Try to extract the last valid JSON object from stdout
+            // Look for the last occurrence of a complete JSON object
+            const jsonMatch = stdout.match(/\{[\s\S]*\}$/);
+            if (jsonMatch) {
+              console.warn(`⚠️ Found JSON at position ${jsonMatch.index} (${stdout.length - jsonMatch.index} bytes)`)
+
+              if (jsonMatch.index > 0) {
+                const pollutionLength = jsonMatch.index
+                const pollutedContent = stdout.substring(0, Math.min(200, pollutionLength))
+                console.warn(`⚠️ Stdout pollution detected: ${pollutionLength} bytes before JSON`)
+                console.warn(`⚠️ Polluted content preview: ${pollutedContent}${pollutionLength > 200 ? '...' : ''}`)
+              }
+
+              result = JSON.parse(jsonMatch[0])
+              console.log(`✅ Successfully recovered JSON from polluted stdout`)
+            } else {
+              // Could not find JSON, try alternative recovery
+              const firstBrace = stdout.indexOf('{')
+              const lastBrace = stdout.lastIndexOf('}')
+              if (firstBrace >= 0 && lastBrace > firstBrace) {
+                const jsonStr = stdout.substring(firstBrace, lastBrace + 1)
+                result = JSON.parse(jsonStr)
+                console.log(`✅ Recovered JSON using brace matching`)
+              } else {
+                throw parseError // Re-throw original error if recovery failed
+              }
+            }
+          }
 
           if (!result.success) {
             console.error('Multi-tenant execution failed:', result.error)
@@ -647,8 +682,10 @@ class ExecutionCoordinator {
             error: result.error
           })
         } catch (error) {
-          console.error(`Failed to parse multi-tenant wrapper output:`, error)
-          console.error(`stdout: ${stdout}`)
+          console.error(`❌ Failed to parse multi-tenant wrapper output:`, error)
+          console.error(`📊 stdout length: ${stdout.length} bytes`)
+          console.error(`📄 stdout preview (first 500 chars): ${stdout.substring(0, 500)}`)
+          console.error(`📄 stdout preview (last 500 chars): ${stdout.substring(Math.max(0, stdout.length - 500))}`)
           resolve({
             success: false,
             signal: null,

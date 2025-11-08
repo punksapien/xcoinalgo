@@ -260,25 +260,30 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
 
         logging.info(f"📝 Additional logs: {trading_bot_log_path}, {error_log_path}")
 
-        # ✅ Redirect print() statements to file
+        # ✅ Redirect print() statements to file ONLY (prevent stdout pollution)
         class PrintLogger:
             def __init__(self, filename):
                 self.terminal = sys.stdout
                 self.log = open(filename, 'a')
 
             def write(self, message):
-                self.terminal.write(message)  # Still show in console
-                self.log.write(message)  # Also write to file
+                # DO NOT write to terminal - this pollutes stdout and breaks JSON parsing
+                # Only write to log file
+                self.log.write(message)
                 self.log.flush()
 
             def flush(self):
-                self.terminal.flush()
+                # Only flush log file, not terminal
                 self.log.flush()
 
         sys.stdout = PrintLogger(print_log_file)
 
+        # ✅ Also redirect stderr to prevent error output pollution
+        sys.stderr = PrintLogger(error_log_path)
+
         logging.info(f"📝 Logging to: {log_file}")
         logging.info(f"📝 Print output to: {print_log_file}")
+        logging.info(f"📝 Error output to: {error_log_path}")
 
         exec_scope = {
             '__builtins__': __builtins__,
