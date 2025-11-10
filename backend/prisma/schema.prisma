@@ -10,7 +10,18 @@ datasource db {
 model User {
   id          String   @id @default(cuid())
   email       String   @unique
-  password    String
+  password    String?  // Nullable for OAuth-only users
+  googleId    String?  @unique // Google OAuth ID
+
+  // Email verification
+  emailVerified            DateTime?
+  verificationToken        String?  @unique
+  verificationTokenExpiry  DateTime?
+
+  // Password reset
+  resetPasswordToken       String?  @unique
+  resetPasswordExpiry      DateTime?
+
   role        UserRole @default(REGULAR)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -27,6 +38,8 @@ model User {
 enum UserRole {
   REGULAR
   QUANT
+  STRATEGY_ADMIN
+  SUPER_ADMIN
 }
 
 model ApiKey {
