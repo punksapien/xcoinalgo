@@ -22,32 +22,36 @@ const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 5, // 5 attempts per window
   message: 'Too many login attempts. Please try again after 15 minutes.',
-  standardHeaders: true,
+  standardHeaders: 'draft-7',
   legacyHeaders: false,
+  validate: { trustProxy: false },
 });
 
 const registerLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 3, // 3 registrations per hour per IP
   message: 'Too many accounts created. Please try again after an hour.',
-  standardHeaders: true,
+  standardHeaders: 'draft-7',
   legacyHeaders: false,
+  validate: { trustProxy: false },
 });
 
 const otpLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 3, // 3 OTP requests per hour
   message: 'Too many OTP requests. Please try again after an hour.',
-  standardHeaders: true,
+  standardHeaders: 'draft-7',
   legacyHeaders: false,
+  validate: { trustProxy: false },
 });
 
 const passwordResetLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 3, // 3 password reset requests per hour
   message: 'Too many password reset attempts. Please try again after an hour.',
-  standardHeaders: true,
+  standardHeaders: 'draft-7',
   legacyHeaders: false,
+  validate: { trustProxy: false },
 });
 
 // Register new user with email verification
