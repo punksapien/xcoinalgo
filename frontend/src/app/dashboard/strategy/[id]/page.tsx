@@ -359,7 +359,7 @@ export default function StrategyDetailPage() {
   }
 
   const handleBack = () => {
-    router.push('/dashboard/strategies')
+    router.push('/dashboard')
   }
 
   const handleSubscribe = () => {

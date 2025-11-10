@@ -215,7 +215,7 @@ export default function SubscriptionsPage() {
                   : 'Try changing your filter to see other subscriptions'}
               </p>
               {subscriptions.length === 0 && (
-                <Button onClick={() => router.push('/dashboard/strategies')}>
+                <Button onClick={() => router.push('/dashboard')}>
                   Browse Strategies
                 </Button>
               )}
