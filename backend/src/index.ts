@@ -43,9 +43,6 @@ console.log(`✅ JWT_SECRET loaded: ${JWT_SECRET.substring(0, 10)}... (${JWT_SEC
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Enable trust proxy for rate limiting behind reverse proxy
-app.set('trust proxy', true);
-
 // Security middleware with CSP configuration for OAuth
 app.use(helmet({
   contentSecurityPolicy: {
@@ -112,7 +109,7 @@ app.get('/health', (req, res) => {
 });
 
 // API routes
-app.use('/api/user', authRoutes);
+app.use('/api/auth', authRoutes);
 app.use('/api/broker', brokerRoutes);
 app.use('/api/strategy-upload', strategyUploadRoutes);
 app.use('/api/bot', botRoutes);
