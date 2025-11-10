@@ -383,60 +383,144 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
         # ====================================================================
         # STEP 3: Generate signals ONCE (same for all subscribers)
         # ====================================================================
-        logging.info("🧠 Generating signals...")
+  """
+  NOTE: FROM START TO THE END OF THIS COMMENT IS THE CODE COMMENTED AT 2025-11-10 10.19 A.M. ASIA/KOLKATA TZ (ORIGINALLY WRITTEN BY AN LLM)
+        # logging.info("🧠 Generating signals...")
 
-        # Multi-resolution signal generation
+        # # Multi-resolution signal generation
+        # if is_multi_resolution:
+        #     from strategy_helpers import resample_ohlcv
+
+        #     signal_resolution = strategy_config.get('signal_resolution')
+        #     base_resolution = strategy_config.get('base_resolution', settings.get('resolution'))
+
+        #     if signal_resolution and signal_resolution != base_resolution:
+        #         logging.info(f"   Resampling {base_resolution} → {signal_resolution} for entry signals...")
+
+        #         # Resample to signal resolution for indicator calculation
+        #         df_signal = resample_ohlcv(df, base_resolution, signal_resolution)
+
+        #         # Generate signals on resampled timeframe
+        #         df_signal_indicators = temp_trader.generate_signals(df_signal, settings)
+
+        #         # Forward-fill signals back to base resolution
+        #         # Identify signal columns (typically: 'signal', 'long_signal', 'short_signal', etc.)
+        #         signal_cols = [col for col in df_signal_indicators.columns
+        #                        if 'signal' in col.lower() or col in ['stop_loss', 'take_profit']]
+
+        #         logging.info(f"   Forward-filling signal columns: {signal_cols}")
+
+        #         # Ensure datetime index for reindexing
+        #         df_copy = df.copy()
+        #         if 'time' in df_copy.columns:
+        #             df_copy = df_copy.set_index('time')
+
+        #         df_signal_copy = df_signal_indicators.copy()
+        #         if 'time' in df_signal_copy.columns:
+        #             df_signal_copy = df_signal_copy.set_index('time')
+
+        #         # Forward-fill each signal column
+        #         for col in signal_cols:
+        #             if col in df_signal_copy.columns:
+        #                 df_copy[col] = df_signal_copy[col].reindex(df_copy.index, method='ffill')
+
+        #         # Reset index
+        #         df_with_signals = df_copy.reset_index()
+
+        #         logging.info(f"   ✅ Signals generated on {signal_resolution}, applied to {base_resolution}")
+        #     else:
+        #         # Signal resolution same as base - no resampling needed
+        #         df_with_signals = temp_trader.generate_signals(df, settings)
+        # else:
+        #     # Single resolution path (backward compatible)
+        #     df_with_signals = temp_trader.generate_signals(df, settings)
+
+        # if df_with_signals is None or (hasattr(df_with_signals, 'empty') and df_with_signals.empty):
+        #     raise ValueError("Signal generation returned empty dataframe")
+
+        # logging.info("✅ Signals generated") 
+        
+        """
+        # ====================================================================
+        #MANUAL FIX AFTER COMMENTING THE CODE
+        # ====================================================================
+        # In execute_multi_tenant_strategy, update STEP 3
+
+# ====================================================================
+# STEP 3: Generate signals (BOTH 5m Exit and 15m Entry)
+# ====================================================================
+        logging.info("🧠 Generating signals...")
+        
+        # FIRST: Generate 5m indicators (for TSL / exit logic)
+        logging.info("  Generating 5m indicators for exit logic (e.g., Trailingsl)...")
+        # We use the base 'df' for this. Must be a copy.
+        df_with_5m_indicators = temp_trader.generate_signals(df.copy(), settings)
+        
+        # Robustness Check: Ensure the 5m indicator was generated
+        if 'Trailingsl' not in df_with_5m_indicators.columns:
+            logging.error("  FATAL: 'Trailingsl' not found after generating 5m indicators. Aborting.")
+            raise ValueError("Strategy's generate_signals did not produce 'Trailingsl' column on 5m data")
+        else:
+            logging.info("  ✅ 5m 'Trailingsl' generated.")
+        
+        # SECOND: Generate 15m signals (for entry logic)
         if is_multi_resolution:
             from strategy_helpers import resample_ohlcv
-
+        
             signal_resolution = strategy_config.get('signal_resolution')
             base_resolution = strategy_config.get('base_resolution', settings.get('resolution'))
-
+        
             if signal_resolution and signal_resolution != base_resolution:
-                logging.info(f"   Resampling {base_resolution} → {signal_resolution} for entry signals...")
-
-                # Resample to signal resolution for indicator calculation
+                logging.info(f"  Resampling {base_resolution} -> {signal_resolution} for entry signals...")
+        
+                # Resample to signal resolution
                 df_signal = resample_ohlcv(df, base_resolution, signal_resolution)
-
+        
                 # Generate signals on resampled timeframe
-                df_signal_indicators = temp_trader.generate_signals(df_signal, settings)
-
-                # Forward-fill signals back to base resolution
-                # Identify signal columns (typically: 'signal', 'long_signal', 'short_signal', etc.)
-                signal_cols = [col for col in df_signal_indicators.columns
-                               if 'signal' in col.lower() or col in ['stop_loss', 'take_profit']]
-
-                logging.info(f"   Forward-filling signal columns: {signal_cols}")
-
-                # Ensure datetime index for reindexing
-                df_copy = df.copy()
-                if 'time' in df_copy.columns:
-                    df_copy = df_copy.set_index('time')
-
-                df_signal_copy = df_signal_indicators.copy()
-                if 'time' in df_signal_copy.columns:
-                    df_signal_copy = df_signal_copy.set_index('time')
-
-                # Forward-fill each signal column
+                df_15m_signals = temp_trader.generate_signals(df_signal.copy(), settings)
+        
+                # Identify ONLY the entry signal columns
+                signal_cols = [col for col in df_15m_signals.columns
+                               if 'signal' in col.lower()] # e.g., long_signal, short_signal
+                
+                if not signal_cols:
+                     logging.warning("  No 'signal' columns found in 15m data. Entry may not work.")
+                else:
+                     logging.info(f"  Forward-filling entry signal columns: {signal_cols}")
+        
+                # Use the 5m dataframe (which has 'Trailingsl') as the base
+                df_with_signals = df_with_5m_indicators.copy()
+                if 'time' in df_with_signals.columns:
+                    df_with_signals = df_with_signals.set_index('time')
+        
+                df_15m_copy = df_15m_signals.copy()
+                if 'time' in df_15m_copy.columns:
+                    df_15m_copy = df_15m_copy.set_index('time')
+                
+                # Forward-fill each 15m entry signal onto the 5m dataframe
                 for col in signal_cols:
-                    if col in df_signal_copy.columns:
-                        df_copy[col] = df_signal_copy[col].reindex(df_copy.index, method='ffill')
-
-                # Reset index
-                df_with_signals = df_copy.reset_index()
-
-                logging.info(f"   ✅ Signals generated on {signal_resolution}, applied to {base_resolution}")
+                    if col in df_15m_copy.columns:
+                        df_with_signals[col] = df_15m_copy[col].reindex(df_with_signals.index, method='ffill')
+                    else:
+                        # Ensure column exists even if empty (e.g., 'short_signal' not present)
+                        if col not in df_with_signals.columns:
+                            df_with_signals[col] = False 
+        
+                df_with_signals = df_with_signals.reset_index()
+                
+                logging.info(f"  ✅ 15m entry signals merged onto 5m indicator data.")
             else:
-                # Signal resolution same as base - no resampling needed
-                df_with_signals = temp_trader.generate_signals(df, settings)
+                # Signal resolution same as base
+                df_with_signals = df_with_5m_indicators
         else:
-            # Single resolution path (backward compatible)
-            df_with_signals = temp_trader.generate_signals(df, settings)
-
+            # Single resolution path
+            df_with_signals = df_with_5m_indicators
+        
         if df_with_signals is None or (hasattr(df_with_signals, 'empty') and df_with_signals.empty):
             raise ValueError("Signal generation returned empty dataframe")
+        
+        logging.info("✅ All signals generated and merged")
 
-        logging.info("✅ Signals generated")
 
         # ====================================================================
         # STEP 4: Execute strategy for EACH subscriber with their credentials
