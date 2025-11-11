@@ -70,9 +70,10 @@ export default function AccessRequestsPage() {
 
       setRequests(res.data.requests || []);
       setIsLoading(false);
-    } catch (err: any) {
+    } catch (err) {
       console.error('Failed to load access requests:', err);
-      setError(err.response?.data?.error || 'Failed to load access requests');
+      const error = err as { response?: { data?: { error?: string } } };
+      setError(error.response?.data?.error || 'Failed to load access requests');
       setIsLoading(false);
     }
   };
@@ -98,9 +99,10 @@ export default function AccessRequestsPage() {
 
       // Reload requests
       await loadRequests();
-    } catch (err: any) {
+    } catch (err) {
       console.error('Failed to approve request:', err);
-      setError(err.response?.data?.error || 'Failed to approve request');
+      const error = err as { response?: { data?: { error?: string } } };
+      setError(error.response?.data?.error || 'Failed to approve request');
     } finally {
       setProcessingId(null);
     }
@@ -127,9 +129,10 @@ export default function AccessRequestsPage() {
 
       // Reload requests
       await loadRequests();
-    } catch (err: any) {
+    } catch (err) {
       console.error('Failed to reject request:', err);
-      setError(err.response?.data?.error || 'Failed to reject request');
+      const error = err as { response?: { data?: { error?: string } } };
+      setError(error.response?.data?.error || 'Failed to reject request');
     } finally {
       setProcessingId(null);
     }

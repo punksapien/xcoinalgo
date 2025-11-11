@@ -476,6 +476,7 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
                         if col not in df_with_signals.columns:
                             df_with_signals[col] = False
 
+
                 df_with_signals = df_with_signals.reset_index()
 
                 logging.info(f"  ✅ 15m entry signals merged onto 5m indicator data.")

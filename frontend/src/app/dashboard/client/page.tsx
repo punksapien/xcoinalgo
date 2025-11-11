@@ -83,11 +83,11 @@ export default function ClientDashboardPage() {
 
       // Calculate stats
       const totalStrategies = strategiesData.length;
-      const publicStrategies = strategiesData.filter((s: any) => s.isPublic).length;
+      const publicStrategies = strategiesData.filter((s: { isPublic: boolean }) => s.isPublic).length;
       const privateStrategies = totalStrategies - publicStrategies;
-      const totalSubscribers = strategiesData.reduce((sum: number, s: any) => sum + (s.subscriberCount || 0), 0);
+      const totalSubscribers = strategiesData.reduce((sum: number, s: { subscriberCount?: number }) => sum + (s.subscriberCount || 0), 0);
       const pendingRequests = requestsData.length;
-      const activeInviteLinks = strategiesData.reduce((sum: number, s: any) => sum + (s.activeInviteLinks || 0), 0);
+      const activeInviteLinks = strategiesData.reduce((sum: number, s: { activeInviteLinks?: number }) => sum + (s.activeInviteLinks || 0), 0);
 
       setStats({
         totalStrategies,
@@ -99,9 +99,10 @@ export default function ClientDashboardPage() {
       });
 
       setIsLoading(false);
-    } catch (err: any) {
+    } catch (err) {
       console.error('Failed to load dashboard data:', err);
-      setError(err.response?.data?.error || 'Failed to load dashboard data');
+      const error = err as { response?: { data?: { error?: string } } };
+      setError(error.response?.data?.error || 'Failed to load dashboard data');
       setIsLoading(false);
     }
   };

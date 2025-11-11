@@ -65,9 +65,10 @@ export default function InviteLandingPage() {
       const res = await axios.get(`/api/strategies/join/${inviteCode}`);
       setStrategy(res.data.strategy);
       setIsLoading(false);
-    } catch (err: any) {
+    } catch (err) {
       console.error('Failed to load invite:', err);
-      setError(err.response?.data?.error || 'Invalid or expired invite link');
+      const error = err as { response?: { data?: { error?: string } } };
+      setError(error.response?.data?.error || 'Invalid or expired invite link');
       setIsLoading(false);
     }
   };
@@ -101,9 +102,10 @@ export default function InviteLandingPage() {
 
       setSuccess('Access request submitted successfully! You will be notified when approved.');
       setRequestStatus('pending');
-    } catch (err: any) {
+    } catch (err) {
       console.error('Failed to request access:', err);
-      const errorMsg = err.response?.data?.error || 'Failed to submit access request';
+      const error = err as { response?: { data?: { error?: string } } };
+      const errorMsg = error.response?.data?.error || 'Failed to submit access request';
       setError(errorMsg);
 
       // Check if already requested

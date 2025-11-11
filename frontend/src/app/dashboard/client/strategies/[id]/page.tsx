@@ -84,7 +84,7 @@ export default function StrategyDetailPage() {
         headers: { Authorization: `Bearer ${authToken}` }
       });
 
-      const strategyData = strategiesRes.data.strategies.find((s: any) => s.id === strategyId);
+      const strategyData = strategiesRes.data.strategies.find((s: { id: string }) => s.id === strategyId);
       if (!strategyData) {
         throw new Error('Strategy not found or you do not have access to it');
       }
@@ -98,9 +98,10 @@ export default function StrategyDetailPage() {
 
       setInviteLinks(inviteLinksRes.data.inviteLinks || []);
       setIsLoading(false);
-    } catch (err: any) {
+    } catch (err) {
       console.error('Failed to load strategy data:', err);
-      setError(err.response?.data?.error || 'Failed to load strategy data');
+      const error = err as { response?: { data?: { error?: string } } };
+      setError(error.response?.data?.error || 'Failed to load strategy data');
       setIsLoading(false);
     }
   };
@@ -129,9 +130,10 @@ export default function StrategyDetailPage() {
 
       setStrategy({ ...strategy, isPublic: !strategy.isPublic });
       setSuccess(`Strategy is now ${!strategy.isPublic ? 'public' : 'private'}`);
-    } catch (err: any) {
+    } catch (err) {
       console.error('Failed to update visibility:', err);
-      setError(err.response?.data?.error || 'Failed to update visibility');
+      const error = err as { response?: { data?: { error?: string } } };
+      setError(error.response?.data?.error || 'Failed to update visibility');
     } finally {
       setIsUpdating(false);
     }
@@ -159,9 +161,10 @@ export default function StrategyDetailPage() {
 
       setInviteLinks([res.data.inviteLink, ...inviteLinks]);
       setSuccess('Invite link generated successfully');
-    } catch (err: any) {
+    } catch (err) {
       console.error('Failed to generate invite link:', err);
-      setError(err.response?.data?.error || 'Failed to generate invite link');
+      const error = err as { response?: { data?: { error?: string } } };
+      setError(error.response?.data?.error || 'Failed to generate invite link');
     } finally {
       setIsUpdating(false);
     }
@@ -188,9 +191,10 @@ export default function StrategyDetailPage() {
       // Reload invite links
       await loadStrategyData();
       setSuccess('Invite link revoked successfully');
-    } catch (err: any) {
+    } catch (err) {
       console.error('Failed to revoke invite link:', err);
-      setError(err.response?.data?.error || 'Failed to revoke invite link');
+      const error = err as { response?: { data?: { error?: string } } };
+      setError(error.response?.data?.error || 'Failed to revoke invite link');
     } finally {
       setIsUpdating(false);
     }
