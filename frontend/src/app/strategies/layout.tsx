@@ -13,7 +13,7 @@ export default function QuantLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, isAuthenticated, hasHydrated, isQuant, checkAuth } = useAuth();
+  const { user, isAuthenticated, hasHydrated, hasQuantAccess, checkAuth } = useAuth();
   const { data: session, status: sessionStatus } = useSession();
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -39,9 +39,9 @@ export default function QuantLayout({
 
       // Wait a bit for checkAuth to complete and state to update
       setTimeout(() => {
-        // Check if user has QUANT role
-        if (!isQuant()) {
-          // Not a quant, redirect to dashboard
+        // Check if user has QUANT or ADMIN role
+        if (!hasQuantAccess()) {
+          // Not a quant/admin, redirect to dashboard
           router.replace('/dashboard');
           return;
         }
@@ -69,7 +69,7 @@ export default function QuantLayout({
     return null;
   }
 
-  if (!isQuant()) {
+  if (!hasQuantAccess()) {
     return null;
   }
 
