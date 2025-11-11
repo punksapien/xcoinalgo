@@ -20,22 +20,22 @@ import { useTheme } from '@/lib/theme';
 const navigation = [
   {
     name: 'Overview',
-    href: '/dashboard/admin',
+    href: '/admin',
     icon: BarChart3,
   },
   {
     name: 'Users',
-    href: '/dashboard/admin/users',
+    href: '/admin/users',
     icon: Users,
   },
   {
     name: 'Strategies',
-    href: '/dashboard/admin/strategies',
+    href: '/admin/strategies',
     icon: TrendingUp,
   },
   {
     name: 'Access Requests',
-    href: '/dashboard/admin/requests',
+    href: '/admin/requests',
     icon: Bell,
   },
 ];

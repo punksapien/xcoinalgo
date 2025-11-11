@@ -108,7 +108,7 @@ export function Sidebar({ onNavigate }: SidebarProps = {}) {
           {/* Admin Dashboard Button - Only show for ADMIN users */}
           {isAdmin() && (
             <Link
-              href="/dashboard/admin"
+              href="/admin"
               onClick={onNavigate}
               className="w-full flex items-center justify-center px-3 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-all duration-200"
               title="Platform management and analytics"
@@ -121,7 +121,7 @@ export function Sidebar({ onNavigate }: SidebarProps = {}) {
           {/* Client Dashboard Button - Only show for CLIENT or ADMIN users */}
           {hasClientAccess() && (
             <Link
-              href="/dashboard/client"
+              href="/client"
               onClick={onNavigate}
               className="w-full flex items-center justify-center px-3 py-2 text-sm font-medium text-sidebar-foreground/80 bg-primary/10 hover:bg-primary/20 text-primary rounded-lg transition-all duration-200"
               title="Manage your strategies and access requests"

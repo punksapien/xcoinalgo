@@ -19,22 +19,22 @@ import { useTheme } from '@/lib/theme';
 const navigation = [
   {
     name: 'Overview',
-    href: '/dashboard/client',
+    href: '/client',
     icon: LayoutDashboard,
   },
   {
     name: 'My Strategies',
-    href: '/dashboard/client/strategies',
+    href: '/client/strategies',
     icon: TrendingUp,
   },
   {
     name: 'Invite Links',
-    href: '/dashboard/client/invites',
+    href: '/client/invites',
     icon: Link2,
   },
   {
     name: 'Access Requests',
-    href: '/dashboard/client/requests',
+    href: '/client/requests',
     icon: Bell,
   },
 ];
