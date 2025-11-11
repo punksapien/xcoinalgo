@@ -79,6 +79,7 @@ export default function StrategyManagementPage() {
       setLoading(true);
       const params = new URLSearchParams();
       params.append('all', 'true'); // Get both active and inactive
+      params.append('limit', '1000'); // Get all strategies (increase from default 10)
       if (statusFilter !== 'all') {
         params.append('status', statusFilter);
       }
