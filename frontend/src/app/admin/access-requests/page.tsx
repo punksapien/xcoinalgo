@@ -102,7 +102,7 @@ export default function AdminAccessRequestsPage() {
             <div className="py-12 text-center">
               <p className="text-muted-foreground">No pending access requests</p>
               <p className="text-sm text-muted-foreground mt-2">
-                When users request access to private strategies, they'll appear here for approval
+                When users request access to private strategies, they&apos;ll appear here for approval
               </p>
             </div>
           ) : (
