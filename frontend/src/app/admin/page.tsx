@@ -3,55 +3,10 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import axios from 'axios';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { AlertCircle, Users, TrendingUp, Activity, Bell, UserCheck, UserX, Trash2 } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { AlertCircle, Users, TrendingUp, Activity, Bell } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-
-interface User {
-  id: string;
-  email: string;
-  role: string;
-  createdAt: string;
-  strategiesOwned: number;
-  subscriptions: number;
-}
-
-interface Strategy {
-  id: string;
-  name: string;
-  code: string;
-  description: string;
-  author: string;
-  isPublic: boolean;
-  isActive: boolean;
-  client: {
-    id: string;
-    email: string;
-  } | null;
-  subscriberCount: number;
-  activeInviteLinks: number;
-  pendingRequests: number;
-  createdAt: string;
-}
-
-interface AccessRequest {
-  id: string;
-  strategy: {
-    id: string;
-    name: string;
-    code: string;
-  };
-  user: {
-    id: string;
-    email: string;
-    createdAt: string;
-  };
-  inviteCode: string;
-  status: string;
-  requestedAt: string;
-}
+import { useRouter } from 'next/navigation';
 
 interface PlatformStats {
   totalUsers: number;
@@ -63,20 +18,16 @@ interface PlatformStats {
 
 export default function AdminDashboard() {
   const { token } = useAuth();
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  // Data states
   const [stats, setStats] = useState<PlatformStats | null>(null);
-  const [users, setUsers] = useState<User[]>([]);
-  const [strategies, setStrategies] = useState<Strategy[]>([]);
-  const [accessRequests, setAccessRequests] = useState<AccessRequest[]>([]);
 
   useEffect(() => {
-    loadDashboardData();
+    loadStats();
   }, [token]);
 
-  const loadDashboardData = async () => {
+  const loadStats = async () => {
     if (!token) return;
 
     setLoading(true);
@@ -85,112 +36,17 @@ export default function AdminDashboard() {
     try {
       const authToken = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
 
-      const [statsRes, usersRes, strategiesRes, requestsRes] = await Promise.all([
-        axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/admin/stats`, {
-          headers: { Authorization: authToken }
-        }),
-        axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/admin/users`, {
-          headers: { Authorization: authToken }
-        }),
-        axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/admin/strategies`, {
-          headers: { Authorization: authToken }
-        }),
-        axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/admin/access-requests`, {
-          headers: { Authorization: authToken }
-        })
-      ]);
+      const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/admin/stats`, {
+        headers: { Authorization: authToken }
+      });
 
-      setStats(statsRes.data);
-      setUsers(usersRes.data.users);
-      setStrategies(strategiesRes.data.strategies);
-      setAccessRequests(requestsRes.data.requests);
+      setStats(response.data);
     } catch (err) {
       const error = err as { response?: { data?: { error?: string } } };
       setError(error?.response?.data?.error || 'Failed to load dashboard data');
       console.error('Dashboard load error:', err);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const updateUserRole = async (userId: string, newRole: string) => {
-    if (!token) return;
-
-    try {
-      const authToken = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
-
-      await axios.put(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/admin/users/${userId}/role`,
-        { role: newRole },
-        { headers: { Authorization: authToken } }
-      );
-
-      // Reload users
-      loadDashboardData();
-    } catch (err) {
-      const error = err as { response?: { data?: { error?: string } } };
-      setError(error?.response?.data?.error || 'Failed to update user role');
-    }
-  };
-
-  const assignStrategy = async (strategyId: string, clientId: string) => {
-    if (!token) return;
-
-    try {
-      const authToken = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
-
-      await axios.put(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/admin/strategies/${strategyId}/assign`,
-        { clientId },
-        { headers: { Authorization: authToken } }
-      );
-
-      // Reload strategies
-      loadDashboardData();
-    } catch (err) {
-      const error = err as { response?: { data?: { error?: string } } };
-      setError(error?.response?.data?.error || 'Failed to assign strategy');
-    }
-  };
-
-  const unassignStrategy = async (strategyId: string) => {
-    if (!token) return;
-
-    try {
-      const authToken = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
-
-      await axios.delete(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/admin/strategies/${strategyId}/unassign`,
-        { headers: { Authorization: authToken } }
-      );
-
-      // Reload strategies
-      loadDashboardData();
-    } catch (err) {
-      const error = err as { response?: { data?: { error?: string } } };
-      setError(error?.response?.data?.error || 'Failed to unassign strategy');
-    }
-  };
-
-  const deleteStrategy = async (strategyId: string, strategyName: string) => {
-    if (!token) return;
-
-    const confirmed = confirm(`Are you sure you want to delete "${strategyName}"? This action cannot be undone.`);
-    if (!confirmed) return;
-
-    try {
-      const authToken = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
-
-      await axios.delete(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/admin/strategies/${strategyId}`,
-        { headers: { Authorization: authToken } }
-      );
-
-      // Reload strategies
-      loadDashboardData();
-    } catch (err) {
-      const error = err as { response?: { data?: { error?: string } } };
-      setError(error?.response?.data?.error || 'Failed to delete strategy');
     }
   };
 
@@ -232,7 +88,10 @@ export default function AdminDashboard() {
       {/* Platform Stats */}
       {stats && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card>
+          <Card
+            className="cursor-pointer hover:bg-muted/50 transition-colors"
+            onClick={() => router.push('/admin/users')}
+          >
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
                 Total Users
@@ -247,7 +106,10 @@ export default function AdminDashboard() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card
+            className="cursor-pointer hover:bg-muted/50 transition-colors"
+            onClick={() => router.push('/admin/strategies')}
+          >
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
                 Total Strategies
@@ -277,7 +139,10 @@ export default function AdminDashboard() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card
+            className="cursor-pointer hover:bg-muted/50 transition-colors"
+            onClick={() => router.push('/admin/access-requests')}
+          >
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
                 Pending Requests
@@ -294,183 +159,50 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* Users Section */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Platform Users</CardTitle>
-          <CardDescription>Manage user roles and permissions</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {users.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-8 text-center">
-              No users found in the platform.
-            </p>
-          ) : (
-            <div className="space-y-4">
-              {users.map((user) => (
-                <div
-                  key={user.id}
-                  className="flex items-center justify-between p-4 border border-border rounded-lg"
-                >
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3">
-                      <p className="font-medium text-foreground">{user.email}</p>
-                      <Badge variant={user.role === 'ADMIN' ? 'default' : 'secondary'}>
-                        {user.role}
-                      </Badge>
-                    </div>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Strategies: {user.strategiesOwned} • Subscriptions: {user.subscriptions}
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <select
-                      className="px-3 py-1.5 text-sm border border-border rounded-md bg-background"
-                      value={user.role}
-                      onChange={(e) => updateUserRole(user.id, e.target.value)}
-                    >
-                      <option value="REGULAR">REGULAR</option>
-                      <option value="QUANT">QUANT</option>
-                      <option value="CLIENT">CLIENT</option>
-                      <option value="ADMIN">ADMIN</option>
-                    </select>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Strategies Section */}
-      <Card>
-        <CardHeader>
-          <CardTitle>All Strategies</CardTitle>
-          <CardDescription>Assign strategies to clients and manage visibility</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {strategies.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-8 text-center">
-              No strategies found. Contact your quant team to upload strategies.
-            </p>
-          ) : (
-            <div className="space-y-4">
-              {strategies.map((strategy) => (
-                <div
-                  key={strategy.id}
-                  className="flex flex-col gap-3 p-4 border border-border rounded-lg"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3">
-                        <h3 className="font-semibold text-foreground">{strategy.name}</h3>
-                        <Badge variant="outline">{strategy.code}</Badge>
-                        <Badge variant={strategy.isPublic ? 'default' : 'secondary'}>
-                          {strategy.isPublic ? 'Public' : 'Private'}
-                        </Badge>
-                        <Badge
-                          variant={strategy.isActive ? 'default' : 'secondary'}
-                          className={strategy.isActive ? 'bg-green-600' : 'bg-gray-500'}
-                        >
-                          {strategy.isActive ? 'Active' : 'Inactive'}
-                        </Badge>
-                      </div>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        {strategy.description || 'No description provided'}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Subscribers: {strategy.subscriberCount} • Pending: {strategy.pendingRequests}
-                      </p>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => deleteStrategy(strategy.id, strategy.name)}
-                      disabled={strategy.subscriberCount > 0}
-                      title={strategy.subscriberCount > 0 ? 'Cannot delete strategy with active subscribers' : 'Delete strategy'}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-
-                  <div className="flex items-center gap-3 pt-2 border-t border-border">
-                    {strategy.client ? (
-                      <div className="flex items-center gap-3">
-                        <UserCheck className="h-4 w-4 text-green-600" />
-                        <span className="text-sm text-muted-foreground">
-                          Assigned to: <span className="font-medium text-foreground">{strategy.client.email}</span>
-                        </span>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => unassignStrategy(strategy.id)}
-                        >
-                          <UserX className="h-3 w-3 mr-1" />
-                          Unassign
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-3">
-                        <UserX className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-sm text-muted-foreground">Not assigned to any client</span>
-                        <select
-                          className="px-3 py-1.5 text-sm border border-border rounded-md bg-background"
-                          onChange={(e) => {
-                            if (e.target.value) {
-                              assignStrategy(strategy.id, e.target.value);
-                            }
-                          }}
-                          defaultValue=""
-                        >
-                          <option value="">Assign to client...</option>
-                          {users
-                            .filter((u) => u.role === 'CLIENT' || u.role === 'ADMIN')
-                            .map((u) => (
-                              <option key={u.id} value={u.id}>
-                                {u.email}
-                              </option>
-                            ))}
-                        </select>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Access Requests Section */}
-      {accessRequests.length > 0 && (
-        <Card>
+      {/* Quick Links */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8">
+        <Card
+          className="cursor-pointer hover:bg-muted/50 transition-colors"
+          onClick={() => router.push('/admin/users')}
+        >
           <CardHeader>
-            <CardTitle>Pending Access Requests</CardTitle>
-            <CardDescription>Strategy access requests awaiting approval</CardDescription>
+            <CardTitle className="text-lg">User Management</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {accessRequests.map((request) => (
-                <div
-                  key={request.id}
-                  className="flex items-center justify-between p-4 border border-border rounded-lg"
-                >
-                  <div>
-                    <p className="font-medium text-foreground">{request.user.email}</p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Requesting access to: <span className="font-medium">{request.strategy.name}</span>
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Via invite code: {request.inviteCode}
-                    </p>
-                  </div>
-                  <Badge variant="outline">Pending</Badge>
-                </div>
-              ))}
-            </div>
+            <p className="text-sm text-muted-foreground">
+              Manage user roles and permissions across the platform
+            </p>
           </CardContent>
         </Card>
-      )}
+
+        <Card
+          className="cursor-pointer hover:bg-muted/50 transition-colors"
+          onClick={() => router.push('/admin/strategies')}
+        >
+          <CardHeader>
+            <CardTitle className="text-lg">Strategy Management</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">
+              Assign strategies to clients and manage visibility
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card
+          className="cursor-pointer hover:bg-muted/50 transition-colors"
+          onClick={() => router.push('/admin/access-requests')}
+        >
+          <CardHeader>
+            <CardTitle className="text-lg">Access Requests</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">
+              Review and approve strategy access requests from users
+            </p>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
