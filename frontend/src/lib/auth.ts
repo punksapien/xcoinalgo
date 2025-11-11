@@ -24,6 +24,7 @@ interface AuthState {
   isClient: () => boolean;
   isAdmin: () => boolean;
   hasClientAccess: () => boolean;
+  hasQuantAccess: () => boolean;
 }
 
 export const useAuth = create<AuthState>()(
@@ -105,6 +106,10 @@ export const useAuth = create<AuthState>()(
       hasClientAccess: () => {
         const { user } = get();
         return user?.role === 'CLIENT' || user?.role === 'ADMIN';
+      },
+      hasQuantAccess: () => {
+        const { user } = get();
+        return user?.role === 'QUANT' || user?.role === 'ADMIN';
       },
       startPeriodicRefresh: () => {
         const state = get();

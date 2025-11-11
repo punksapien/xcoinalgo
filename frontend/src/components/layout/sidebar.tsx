@@ -49,7 +49,7 @@ interface SidebarProps {
 
 export function Sidebar({ onNavigate }: SidebarProps = {}) {
   const pathname = usePathname();
-  const { logout, user, hasClientAccess, isAdmin, isQuant } = useAuth();
+  const { logout, user, hasClientAccess, isAdmin, hasQuantAccess } = useAuth();
   const { isDark, toggleTheme } = useTheme();
 
   const handleLogout = async () => {
@@ -132,8 +132,8 @@ export function Sidebar({ onNavigate }: SidebarProps = {}) {
             </Link>
           )}
 
-          {/* Quant Dashboard Button - Only show for QUANT users */}
-          {isQuant() && (
+          {/* Quant Dashboard Button - Only show for QUANT or ADMIN users */}
+          {hasQuantAccess() && (
             <Link
               href="/strategies"
               onClick={onNavigate}
