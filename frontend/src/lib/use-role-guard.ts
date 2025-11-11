@@ -25,7 +25,7 @@ import { showErrorToast } from '@/lib/toast-utils';
  */
 export function useRoleGuard(requiredRole: string) {
   const router = useRouter();
-  const { user, isAuthenticated, hasHydrated, isQuant } = useAuth();
+  const { user, isAuthenticated, hasHydrated, isQuant, hasQuantAccess } = useAuth();
   const [isChecking, setIsChecking] = useState(true);
   const [isAuthorized, setIsAuthorized] = useState(false);
 
@@ -45,7 +45,8 @@ export function useRoleGuard(requiredRole: string) {
     let authorized = false;
 
     if (requiredRole === 'QUANT') {
-      authorized = isQuant();
+      // Allow both QUANT and ADMIN users to access quant pages
+      authorized = hasQuantAccess();
     } else {
       // For other roles, check user.role directly
       authorized = user?.role === requiredRole;
@@ -63,7 +64,7 @@ export function useRoleGuard(requiredRole: string) {
     }
 
     setIsChecking(false);
-  }, [hasHydrated, isAuthenticated, user, requiredRole, router, isQuant]);
+  }, [hasHydrated, isAuthenticated, user, requiredRole, router, hasQuantAccess]);
 
   return { isAuthorized, isChecking };
 }
