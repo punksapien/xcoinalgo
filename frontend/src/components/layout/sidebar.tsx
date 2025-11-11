@@ -14,7 +14,8 @@ import {
   Sun,
   TrendingUp,
   LayoutDashboard,
-  Shield
+  Shield,
+  Code2
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { useTheme } from '@/lib/theme';
@@ -48,7 +49,7 @@ interface SidebarProps {
 
 export function Sidebar({ onNavigate }: SidebarProps = {}) {
   const pathname = usePathname();
-  const { logout, user, hasClientAccess, isAdmin } = useAuth();
+  const { logout, user, hasClientAccess, isAdmin, isQuant } = useAuth();
   const { isDark, toggleTheme } = useTheme();
 
   const handleLogout = async () => {
@@ -128,6 +129,19 @@ export function Sidebar({ onNavigate }: SidebarProps = {}) {
             >
               <LayoutDashboard className="h-4 w-4 mr-2" />
               Go to Client Dashboard
+            </Link>
+          )}
+
+          {/* Quant Dashboard Button - Only show for QUANT users */}
+          {isQuant() && (
+            <Link
+              href="/strategies"
+              onClick={onNavigate}
+              className="w-full flex items-center justify-center px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-all duration-200"
+              title="Upload and manage trading strategies"
+            >
+              <Code2 className="h-4 w-4 mr-2" />
+              Go to Quant Dashboard
             </Link>
           )}
 
