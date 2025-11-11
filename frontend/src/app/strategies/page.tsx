@@ -337,7 +337,7 @@ export default function StrategyManagementPage() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Deployed</p>
+                <p className="text-sm text-muted-foreground">Total Subscribers</p>
                 <p className="text-2xl font-bold text-blue-500">
                   {strategies.reduce((sum, s) => sum + (s.deploymentCount || 0), 0)}
                 </p>
@@ -409,7 +409,7 @@ export default function StrategyManagementPage() {
                     <th className="text-left py-3 px-4 font-medium">Strategy</th>
                     <th className="text-left py-3 px-4 font-medium">Status</th>
                     <th className="text-left py-3 px-4 font-medium">Performance</th>
-                    <th className="text-left py-3 px-4 font-medium">Deployments</th>
+                    <th className="text-left py-3 px-4 font-medium">Subscribers</th>
                     <th className="text-left py-3 px-4 font-medium">Updated</th>
                     <th className="text-right py-3 px-4 font-medium">Actions</th>
                   </tr>
@@ -496,7 +496,7 @@ export default function StrategyManagementPage() {
                             disabled={actionLoading === strategy.id || strategy.deploymentCount > 0}
                             title={
                               strategy.deploymentCount > 0
-                                ? 'Cannot delete - has active deployments'
+                                ? 'Cannot delete - has active subscribers'
                                 : 'Delete Strategy'
                             }
                           >
@@ -524,8 +524,8 @@ export default function StrategyManagementPage() {
               {selectedStrategy?.deploymentCount && selectedStrategy.deploymentCount > 0 && (
                 <div className="mt-3 p-3 bg-red-50 dark:bg-red-900/10 rounded-lg border border-red-200 dark:border-red-800">
                   <p className="text-red-700 dark:text-red-400 font-medium">
-                    ⚠️ This strategy has {selectedStrategy.deploymentCount} active deployment(s).
-                    Please stop all deployments before deleting.
+                    ⚠️ This strategy has {selectedStrategy.deploymentCount} active subscriber(s).
+                    Please contact subscribers to stop their deployments before deleting.
                   </p>
                 </div>
               )}
