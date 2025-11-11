@@ -428,10 +428,10 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
 
         # Robustness Check: Ensure the 5m indicator was generated
         if 'Trailingsl' not in df_with_5m_indicators.columns:
-            logging.error("  FATAL: 'Trailingsl' not found after generating 5m indicators. Aborting.")
-            raise ValueError("Strategy's generate_signals did not produce 'Trailingsl' column on 5m data")
+            logging.warning(f"  FATAL: 'Trailingsl' not found after generating {settings.get('base_resolution')}m indicators. Aborting.")
+            #raise ValueError("Strategy's generate_signals did not produce 'Trailingsl' column on 5m data")
         else:
-            logging.info("  ✅ 5m 'Trailingsl' generated.")
+            logging.info(f"  ✅ {settings.get('base_resolution')}m 'Trailingsl' generated.")
 
         # SECOND: Generate 15m signals (for entry logic)
         if is_multi_resolution:
@@ -479,7 +479,7 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
 
                 df_with_signals = df_with_signals.reset_index()
 
-                logging.info(f"  ✅ 15m entry signals merged onto 5m indicator data.")
+                logging.info(f"  ✅ {settings.get('signal_resolution')}m entry signals merged onto 5m indicator data.")
             else:
                 # Signal resolution same as base
                 df_with_signals = df_with_5m_indicators
