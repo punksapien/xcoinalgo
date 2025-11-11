@@ -111,6 +111,8 @@ export default function AdminUsersPage() {
     setUserToDelete(user);
     setConfirmEmail('');
     setDeletionImpact(null);
+    setDeleting(false); // Reset deleting state when opening new dialog
+    setError(null); // Clear any previous errors
     setDeleteDialogOpen(true);
   };
 
@@ -130,12 +132,13 @@ export default function AdminUsersPage() {
 
       setDeletionImpact(response.data.deletionImpact);
 
-      // Wait 2 seconds to show the impact, then reload users
+      // Wait 3 seconds to show the impact, then reload users
       setTimeout(() => {
         setDeleteDialogOpen(false);
         setUserToDelete(null);
         setConfirmEmail('');
         setDeletionImpact(null);
+        setDeleting(false); // Reset deleting state
         loadUsers();
       }, 3000);
     } catch (err) {
