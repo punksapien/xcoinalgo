@@ -13,7 +13,7 @@ export default function ClientLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, isAuthenticated, hasHydrated, hasClientAccess } = useAuth();
+  const { user, isAuthenticated, hasHydrated, hasClientAccess, checkAuth } = useAuth();
   const { data: session, status: sessionStatus } = useSession();
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -24,7 +24,7 @@ export default function ClientLayout({
       return;
     }
 
-    const timer = setTimeout(() => {
+    const checkClientAccess = async () => {
       const hasNextAuthSession = sessionStatus === 'authenticated' && session?.user;
       const hasZustandAuth = isAuthenticated && user;
 
@@ -34,17 +34,24 @@ export default function ClientLayout({
         return;
       }
 
-      // Check if user has client access (CLIENT or ADMIN role)
-      if (!hasClientAccess()) {
-        router.replace('/dashboard');
-        return;
-      }
+      // Refresh user data from backend to ensure we have latest role info
+      await checkAuth();
 
-      setIsChecking(false);
-    }, 1000);
+      // Wait a bit for checkAuth to complete and state to update
+      setTimeout(() => {
+        // Check if user has client access (CLIENT or ADMIN role)
+        if (!hasClientAccess()) {
+          router.replace('/dashboard');
+          return;
+        }
 
-    return () => clearTimeout(timer);
-  }, [user, isAuthenticated, session, sessionStatus, router, hasHydrated, hasClientAccess]);
+        setIsChecking(false);
+      }, 500);
+    };
+
+    checkClientAccess();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasHydrated, sessionStatus]);
 
   if (isChecking || sessionStatus === 'loading') {
     return (
