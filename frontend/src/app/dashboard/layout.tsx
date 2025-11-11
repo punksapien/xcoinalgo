@@ -13,7 +13,7 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, isAuthenticated, hasHydrated } = useAuth();
+  const { user, isAuthenticated, hasHydrated, checkAuth, startPeriodicRefresh, stopPeriodicRefresh } = useAuth();
   const { data: session, status: sessionStatus } = useSession();
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -39,6 +39,21 @@ export default function DashboardLayout({
 
     return () => clearTimeout(timer);
   }, [user, isAuthenticated, session, sessionStatus, router, hasHydrated]);
+
+  // Periodic refresh: Check auth on mount and start periodic refresh
+  useEffect(() => {
+    if (isAuthenticated) {
+      // Check auth immediately on mount to get fresh user data
+      checkAuth();
+      // Start periodic refresh (every 5 minutes)
+      startPeriodicRefresh();
+    }
+
+    // Cleanup: stop periodic refresh when component unmounts
+    return () => {
+      stopPeriodicRefresh();
+    };
+  }, [isAuthenticated, checkAuth, startPeriodicRefresh, stopPeriodicRefresh]);
 
   if (isChecking || sessionStatus === 'loading') {
     return (

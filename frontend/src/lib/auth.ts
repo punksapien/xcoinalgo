@@ -14,9 +14,12 @@ interface AuthState {
   token: string | null;
   isAuthenticated: boolean;
   hasHydrated: boolean;
+  refreshIntervalId: NodeJS.Timeout | null;
   login: (user: User, token: string) => void;
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
+  startPeriodicRefresh: () => void;
+  stopPeriodicRefresh: () => void;
   isQuant: () => boolean;
   isClient: () => boolean;
   isAdmin: () => boolean;
@@ -30,12 +33,16 @@ export const useAuth = create<AuthState>()(
       token: null,
       isAuthenticated: false,
       hasHydrated: false,
+      refreshIntervalId: null,
       login: (user: User, token: string) => set({
         user,
         token,
         isAuthenticated: true
       }),
       logout: async () => {
+        // Stop periodic refresh
+        get().stopPeriodicRefresh();
+
         try {
           // Use relative path - Next.js rewrites will proxy to backend
           await axios.post('/api/user/logout', {}, {
@@ -98,6 +105,36 @@ export const useAuth = create<AuthState>()(
       hasClientAccess: () => {
         const { user } = get();
         return user?.role === 'CLIENT' || user?.role === 'ADMIN';
+      },
+      startPeriodicRefresh: () => {
+        const state = get();
+
+        // Don't start if already running or not authenticated
+        if (state.refreshIntervalId || !state.isAuthenticated) {
+          return;
+        }
+
+        // Refresh every 5 minutes (300000ms)
+        const intervalId = setInterval(() => {
+          const currentState = get();
+          if (currentState.isAuthenticated && currentState.token) {
+            currentState.checkAuth();
+          } else {
+            // Stop if no longer authenticated
+            currentState.stopPeriodicRefresh();
+          }
+        }, 5 * 60 * 1000);
+
+        set({ refreshIntervalId: intervalId });
+        console.log('[Auth] Periodic refresh started (every 5 minutes)');
+      },
+      stopPeriodicRefresh: () => {
+        const { refreshIntervalId } = get();
+        if (refreshIntervalId) {
+          clearInterval(refreshIntervalId);
+          set({ refreshIntervalId: null });
+          console.log('[Auth] Periodic refresh stopped');
+        }
       }
     }),
     {

@@ -597,6 +597,37 @@ router.post('/google-auth', async (req, res, next) => {
   }
 });
 
+// Get current user endpoint - Returns fresh user data from database
+router.get('/user/me', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = req.userId;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    // Fetch fresh user data from database (including latest role)
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        createdAt: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({ user });
+  } catch (error) {
+    console.error('Error fetching user data:', error);
+    next(error);
+  }
+});
+
 // Google OAuth routes (Passport.js - legacy, keeping for backward compatibility)
 router.get('/google',
   passport.authenticate('google', { scope: ['profile', 'email'] })
