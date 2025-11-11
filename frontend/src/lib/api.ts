@@ -3,7 +3,7 @@ import { useAuth } from './auth';
 
 // Use environment variables for API base URL
 const API_BASE_URL = typeof window === 'undefined'
-  ? (process.env.BACKEND_URL || 'http://localhost:3001')
+  ? (process.env.NEXT_PUBLIC_BACKEND_URL || process.env.BACKEND_URL || 'http://localhost:3001')
   : (process.env.NEXT_PUBLIC_BACKEND_URL || '');
 
 // Create axios instance
