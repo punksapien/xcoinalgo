@@ -46,7 +46,7 @@ const authOptions: AuthOptions = {
           // Send Google user data to our backend for verification/creation
           // Use absolute URL for server-side fetch (rewrites don't apply to server requests)
           const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
-          const response = await fetch(`${backendUrl}/api/auth/google-auth`, {
+          const response = await fetch(`${backendUrl}/api/user/google-auth`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
