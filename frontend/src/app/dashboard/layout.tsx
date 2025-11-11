@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { Sidebar } from '@/components/layout/sidebar';
 import { useAuth } from '@/lib/auth';
@@ -16,8 +16,12 @@ export default function DashboardLayout({
   const { user, isAuthenticated, hasHydrated, checkAuth, startPeriodicRefresh, stopPeriodicRefresh } = useAuth();
   const { data: session, status: sessionStatus } = useSession();
   const router = useRouter();
+  const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
+
+  // Check if we're in a sub-dashboard (admin or client) which has its own layout
+  const isSubDashboard = pathname?.startsWith('/dashboard/admin') || pathname?.startsWith('/dashboard/client');
 
   useEffect(() => {
     // Wait for Zustand to hydrate before checking auth
@@ -69,6 +73,11 @@ export default function DashboardLayout({
 
   if (!hasNextAuthSession && !hasZustandAuth) {
     return null;
+  }
+
+  // If we're in a sub-dashboard (admin or client), just render children (they have their own layout)
+  if (isSubDashboard) {
+    return <>{children}</>;
   }
 
   return (
