@@ -12,7 +12,8 @@ import {
   BarChart3,
   Moon,
   Sun,
-  TrendingUp
+  TrendingUp,
+  LayoutDashboard
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { useTheme } from '@/lib/theme';
@@ -46,7 +47,7 @@ interface SidebarProps {
 
 export function Sidebar({ onNavigate }: SidebarProps = {}) {
   const pathname = usePathname();
-  const { logout, user } = useAuth();
+  const { logout, user, hasClientAccess } = useAuth();
   const { isDark, toggleTheme } = useTheme();
 
   const handleLogout = async () => {
@@ -103,6 +104,19 @@ export function Sidebar({ onNavigate }: SidebarProps = {}) {
       {/* User section */}
       <div className="p-4 border-t border-sidebar-border">
         <div className="space-y-3">
+          {/* Client Dashboard Button - Only show for CLIENT or ADMIN users */}
+          {hasClientAccess() && (
+            <Link
+              href="/dashboard/client"
+              onClick={onNavigate}
+              className="w-full flex items-center justify-center px-3 py-2 text-sm font-medium text-sidebar-foreground/80 bg-primary/10 hover:bg-primary/20 text-primary rounded-lg transition-all duration-200"
+              title="Manage your strategies and access requests"
+            >
+              <LayoutDashboard className="h-4 w-4 mr-2" />
+              Go to Client Dashboard
+            </Link>
+          )}
+
           <div className="flex items-center space-x-3">
             <div className="h-8 w-8 bg-primary/10 rounded-full flex items-center justify-center">
               <span className="text-sm font-medium text-primary">

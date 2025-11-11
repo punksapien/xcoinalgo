@@ -18,6 +18,9 @@ interface AuthState {
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
   isQuant: () => boolean;
+  isClient: () => boolean;
+  isAdmin: () => boolean;
+  hasClientAccess: () => boolean;
 }
 
 export const useAuth = create<AuthState>()(
@@ -83,6 +86,18 @@ export const useAuth = create<AuthState>()(
       isQuant: () => {
         const { user } = get();
         return user?.role === 'QUANT';
+      },
+      isClient: () => {
+        const { user } = get();
+        return user?.role === 'CLIENT';
+      },
+      isAdmin: () => {
+        const { user } = get();
+        return user?.role === 'ADMIN';
+      },
+      hasClientAccess: () => {
+        const { user } = get();
+        return user?.role === 'CLIENT' || user?.role === 'ADMIN';
       }
     }),
     {
