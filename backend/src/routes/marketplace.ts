@@ -42,30 +42,99 @@ router.get('/', async (req: AuthenticatedRequest, res, next) => {
     // Check if user is authenticated (optional)
     const authHeader = req.headers.authorization;
     let userId: string | null = null;
+    let userRole: string | null = null;
+
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const token = authHeader.substring(7);
       try {
         const { verifyToken } = await import('../utils/simple-jwt');
         const decoded = verifyToken(token);
         userId = decoded.userId;
+
+        // Fetch user role from database
+        const user = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { role: true }
+        });
+        userRole = user?.role || null;
       } catch (error) {
         // Token invalid or expired - proceed as unauthenticated
         userId = null;
+        userRole = null;
       }
     }
 
-    // Build filter conditions
+    // Build filter conditions based on user role
     const whereConditions: any = {
       isActive: true,      // Only active strategies
       isApproved: true,    // Only approved strategies
     };
 
-    // Search filter
-    if (search) {
+    // ROLE-BASED VISIBILITY LOGIC
+    if (!userId || userRole === 'REGULAR' || userRole === 'QUANT') {
+      // REGULAR/QUANT users: Show public strategies + private strategies they have access to
+      const userAccessRequests = userId ? await prisma.strategyAccessRequest.findMany({
+        where: {
+          userId,
+          status: { in: ['APPROVED', 'PENDING'] }
+        },
+        select: { strategyId: true }
+      }) : [];
+
+      const accessiblePrivateStrategyIds = userAccessRequests.map(req => req.strategyId);
+
+      if (accessiblePrivateStrategyIds.length > 0) {
+        // Show public strategies OR private strategies user has access to
+        whereConditions.OR = [
+          { isPublic: true },
+          { id: { in: accessiblePrivateStrategyIds } }
+        ];
+      } else {
+        // Only show public strategies
+        whereConditions.isPublic = true;
+      }
+    } else if (userRole === 'CLIENT') {
+      // CLIENTS: Show public strategies + their own private strategies + private strategies they have access to
+      const userAccessRequests = await prisma.strategyAccessRequest.findMany({
+        where: {
+          userId,
+          status: { in: ['APPROVED', 'PENDING'] }
+        },
+        select: { strategyId: true }
+      });
+
+      const accessiblePrivateStrategyIds = userAccessRequests.map(req => req.strategyId);
+
       whereConditions.OR = [
-        { name: { contains: search as string, mode: 'insensitive' } },
-        { description: { contains: search as string, mode: 'insensitive' } },
-        { author: { contains: search as string, mode: 'insensitive' } }
+        { isPublic: true },                    // Public strategies
+        { clientId: userId },                  // Their own strategies (public or private)
+        { id: { in: accessiblePrivateStrategyIds } } // Private strategies with access
+      ];
+    } else if (userRole === 'ADMIN') {
+      // ADMINS: Show all strategies (no additional filter)
+      // isActive and isApproved filters already applied above
+    } else {
+      // Unauthenticated or unknown role: Only show public strategies
+      whereConditions.isPublic = true;
+    }
+
+    // Search filter - wrap visibility conditions if search is provided
+    if (search) {
+      const visibilityConditions = whereConditions.OR || (whereConditions.isPublic !== undefined ? [{ isPublic: whereConditions.isPublic }] : []);
+      delete whereConditions.OR;
+      delete whereConditions.isPublic;
+
+      whereConditions.AND = [
+        // Visibility conditions (public/private access)
+        visibilityConditions.length > 0 ? { OR: visibilityConditions } : {},
+        // Search conditions
+        {
+          OR: [
+            { name: { contains: search as string, mode: 'insensitive' } },
+            { description: { contains: search as string, mode: 'insensitive' } },
+            { author: { contains: search as string, mode: 'insensitive' } }
+          ]
+        }
       ];
     }
 
@@ -125,6 +194,10 @@ router.get('/', async (req: AuthenticatedRequest, res, next) => {
           // Subscription info
           subscriberCount: true,
 
+          // Visibility and ownership
+          isPublic: true,
+          clientId: true,
+
           // NOTE: We do NOT include the actual strategy code!
           // Code stays private - only author can see it
         },
@@ -147,6 +220,25 @@ router.get('/', async (req: AuthenticatedRequest, res, next) => {
     // Create a set of subscribed strategy IDs for quick lookup
     const subscribedStrategyIds = new Set(userSubscriptions.map(sub => sub.strategyId));
 
+    // Get access request status for each strategy (for private strategies)
+    const accessRequestsMap = new Map<string, string>();
+    if (userId) {
+      const accessRequests = await prisma.strategyAccessRequest.findMany({
+        where: {
+          userId,
+          strategyId: { in: strategies.map(s => s.id) }
+        },
+        select: {
+          strategyId: true,
+          status: true
+        }
+      });
+
+      accessRequests.forEach(req => {
+        accessRequestsMap.set(req.strategyId, req.status);
+      });
+    }
+
     res.json({
       strategies: strategies.map(strategy => ({
         ...strategy,
@@ -155,6 +247,10 @@ router.get('/', async (req: AuthenticatedRequest, res, next) => {
         timeframes: strategy.timeframes ? JSON.parse(strategy.timeframes as string) : null,
         // Add isSubscribed flag
         isSubscribed: subscribedStrategyIds.has(strategy.id),
+        // Add access status for private strategies
+        accessStatus: accessRequestsMap.get(strategy.id) || null,
+        // Add flag for client's own strategies
+        isOwned: userId && (strategy as any).clientId === userId,
       })),
       pagination: {
         page: Number(page),
@@ -172,13 +268,41 @@ router.get('/', async (req: AuthenticatedRequest, res, next) => {
 
 /**
  * GET /api/marketplace/:id
- * Get detailed info about a specific strategy (PUBLIC - no auth required)
+ * Get detailed info about a specific strategy
+ *
+ * Access control:
+ * - Public strategies: Everyone can view
+ * - Private strategies: Only owner, approved users, and admins
  *
  * Returns everything EXCEPT the actual strategy code
  */
 router.get('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
+
+    // Check if user is authenticated (optional)
+    const authHeader = req.headers.authorization;
+    let userId: string | null = null;
+    let userRole: string | null = null;
+
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7);
+      try {
+        const { verifyToken } = await import('../utils/simple-jwt');
+        const decoded = verifyToken(token);
+        userId = decoded.userId;
+
+        // Fetch user role
+        const user = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { role: true }
+        });
+        userRole = user?.role || null;
+      } catch (error) {
+        userId = null;
+        userRole = null;
+      }
+    }
 
     const strategy = await prisma.strategy.findFirst({
       where: {
@@ -200,6 +324,7 @@ router.get('/:id', async (req, res, next) => {
         isActive: true,
         isPublic: true,
         isMarketplace: true,
+        clientId: true,
         executionConfig: true,
 
         // Performance metrics
@@ -266,6 +391,38 @@ router.get('/:id', async (req, res, next) => {
       return res.status(404).json({
         error: 'Strategy not found or not available in marketplace'
       });
+    }
+
+    // ACCESS CONTROL: Check if user has permission to view this strategy
+    if (!strategy.isPublic) {
+      // Private strategy - check access
+      const isOwner = userId && strategy.clientId === userId;
+      const isAdmin = userRole === 'ADMIN';
+
+      if (!isOwner && !isAdmin) {
+        // Check if user has APPROVED access request
+        if (userId) {
+          const accessRequest = await prisma.strategyAccessRequest.findFirst({
+            where: {
+              userId,
+              strategyId: id,
+              status: 'APPROVED'
+            }
+          });
+
+          if (!accessRequest) {
+            // User doesn't have approved access (might be pending or no request at all)
+            return res.status(404).json({
+              error: 'Strategy not found or not available in marketplace'
+            });
+          }
+        } else {
+          // Unauthenticated user trying to access private strategy
+          return res.status(404).json({
+            error: 'Strategy not found or not available in marketplace'
+          });
+        }
+      }
     }
 
     // Transform backtest data to match frontend expectations
