@@ -259,4 +259,45 @@ router.get('/access-requests', async (req: AuthenticatedRequest, res, next) => {
   }
 });
 
+/**
+ * DELETE /api/admin/strategies/:id
+ * Delete a strategy (only if no active subscribers)
+ */
+router.delete('/strategies/:id', async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const { id: strategyId } = req.params;
+
+    // Check if strategy has active subscribers
+    const strategy = await prisma.strategy.findUnique({
+      where: { id: strategyId },
+      select: {
+        subscriberCount: true,
+        name: true
+      }
+    });
+
+    if (!strategy) {
+      return res.status(404).json({ error: 'Strategy not found' });
+    }
+
+    if (strategy.subscriberCount > 0) {
+      return res.status(400).json({
+        error: 'Cannot delete strategy with active subscribers. Please wait for all subscriptions to end.'
+      });
+    }
+
+    // Delete the strategy
+    await prisma.strategy.delete({
+      where: { id: strategyId }
+    });
+
+    res.json({
+      message: 'Strategy deleted successfully',
+      strategyName: strategy.name
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 export { router as adminRoutes };

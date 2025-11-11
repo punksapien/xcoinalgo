@@ -6,7 +6,7 @@ import axios from 'axios';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { AlertCircle, Users, TrendingUp, Activity, Bell, UserCheck, UserX } from 'lucide-react';
+import { AlertCircle, Users, TrendingUp, Activity, Bell, UserCheck, UserX, Trash2 } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 interface User {
@@ -169,6 +169,28 @@ export default function AdminDashboard() {
     } catch (err) {
       const error = err as { response?: { data?: { error?: string } } };
       setError(error?.response?.data?.error || 'Failed to unassign strategy');
+    }
+  };
+
+  const deleteStrategy = async (strategyId: string, strategyName: string) => {
+    if (!token) return;
+
+    const confirmed = confirm(`Are you sure you want to delete "${strategyName}"? This action cannot be undone.`);
+    if (!confirmed) return;
+
+    try {
+      const authToken = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
+
+      await axios.delete(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/admin/strategies/${strategyId}`,
+        { headers: { Authorization: authToken } }
+      );
+
+      // Reload strategies
+      loadDashboardData();
+    } catch (err) {
+      const error = err as { response?: { data?: { error?: string } } };
+      setError(error?.response?.data?.error || 'Failed to delete strategy');
     }
   };
 
@@ -339,18 +361,19 @@ export default function AdminDashboard() {
                   className="flex flex-col gap-3 p-4 border border-border rounded-lg"
                 >
                   <div className="flex items-start justify-between">
-                    <div>
+                    <div className="flex-1">
                       <div className="flex items-center gap-3">
                         <h3 className="font-semibold text-foreground">{strategy.name}</h3>
                         <Badge variant="outline">{strategy.code}</Badge>
                         <Badge variant={strategy.isPublic ? 'default' : 'secondary'}>
                           {strategy.isPublic ? 'Public' : 'Private'}
                         </Badge>
-                        {strategy.isActive && (
-                          <Badge variant="default" className="bg-green-600">
-                            Active
-                          </Badge>
-                        )}
+                        <Badge
+                          variant={strategy.isActive ? 'default' : 'secondary'}
+                          className={strategy.isActive ? 'bg-green-600' : 'bg-gray-500'}
+                        >
+                          {strategy.isActive ? 'Active' : 'Inactive'}
+                        </Badge>
                       </div>
                       <p className="text-sm text-muted-foreground mt-1">
                         {strategy.description || 'No description provided'}
@@ -359,6 +382,15 @@ export default function AdminDashboard() {
                         Subscribers: {strategy.subscriberCount} • Pending: {strategy.pendingRequests}
                       </p>
                     </div>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => deleteStrategy(strategy.id, strategy.name)}
+                      disabled={strategy.subscriberCount > 0}
+                      title={strategy.subscriberCount > 0 ? 'Cannot delete strategy with active subscribers' : 'Delete strategy'}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
 
                   <div className="flex items-center gap-3 pt-2 border-t border-border">
