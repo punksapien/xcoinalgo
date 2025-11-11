@@ -24,7 +24,7 @@ router.get('/users', async (req: AuthenticatedRequest, res, next) => {
         _count: {
           select: {
             ownedStrategies: true,
-            subscriptions: true
+            strategySubscriptions: true
           }
         }
       },
@@ -38,7 +38,7 @@ router.get('/users', async (req: AuthenticatedRequest, res, next) => {
         role: user.role,
         createdAt: user.createdAt,
         strategiesOwned: user._count.ownedStrategies,
-        subscriptions: user._count.subscriptions
+        subscriptions: user._count.strategySubscriptions
       }))
     });
   } catch (error) {
