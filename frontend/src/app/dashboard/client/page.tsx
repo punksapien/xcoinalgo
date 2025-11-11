@@ -28,6 +28,14 @@ interface ClientStats {
   activeInviteLinks: number;
 }
 
+interface Strategy {
+  id: string;
+  name: string;
+  isPublic: boolean;
+  subscriberCount: number;
+  activeInviteLinks?: number;
+}
+
 export default function ClientDashboardPage() {
   const router = useRouter();
   const { user, hasClientAccess } = useAuth();
@@ -41,7 +49,7 @@ export default function ClientDashboardPage() {
     pendingRequests: 0,
     activeInviteLinks: 0
   });
-  const [strategies, setStrategies] = useState<any[]>([]);
+  const [strategies, setStrategies] = useState<Strategy[]>([]);
 
   useEffect(() => {
     // Check if user has client access
