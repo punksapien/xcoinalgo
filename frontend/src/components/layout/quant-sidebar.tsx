@@ -1,0 +1,142 @@
+'use client';
+
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { signOut } from 'next-auth/react';
+import { cn } from '@/lib/utils';
+import {
+  LayoutDashboard,
+  TrendingUp,
+  UploadCloud,
+  Store,
+  Moon,
+  Sun,
+  LogOut,
+  FileCode
+} from 'lucide-react';
+import { useAuth } from '@/lib/auth';
+import { useTheme } from '@/lib/theme';
+
+const navigation = [
+  {
+    name: 'My Strategies',
+    href: '/strategies',
+    icon: TrendingUp,
+  },
+  {
+    name: 'Upload Strategy',
+    href: '/strategies/upload',
+    icon: UploadCloud,
+  },
+  {
+    name: 'Marketplace',
+    href: '/dashboard',
+    icon: Store,
+    description: 'View public strategies'
+  },
+];
+
+interface QuantSidebarProps {
+  onNavigate?: () => void;
+}
+
+export function QuantSidebar({ onNavigate }: QuantSidebarProps = {}) {
+  const pathname = usePathname();
+  const { logout, user } = useAuth();
+  const { isDark, toggleTheme } = useTheme();
+
+  const handleLogout = async () => {
+    await logout();
+    await signOut({ callbackUrl: '/login' });
+  };
+
+  return (
+    <div className="flex flex-col h-full bg-sidebar border-r border-sidebar-border">
+      {/* Logo */}
+      <div className="flex items-center justify-between h-16 px-4 border-b border-sidebar-border">
+        <div className="flex items-center space-x-2">
+          <div className="h-8 w-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+            <FileCode className="h-4 w-4 text-white" />
+          </div>
+          <div>
+            <span className="text-lg font-bold text-sidebar-foreground">Quant Panel</span>
+            <p className="text-xs text-muted-foreground">Strategy Development</p>
+          </div>
+        </div>
+        <button
+          onClick={toggleTheme}
+          className="p-2 text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent rounded-lg transition-all duration-200"
+          title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+        >
+          {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+        </button>
+      </div>
+
+      {/* Navigation */}
+      <nav className="flex-1 px-4 py-6 space-y-2">
+        {navigation.map((item) => {
+          const isActive = pathname === item.href || (item.href === '/strategies' && pathname.startsWith('/strategies') && pathname !== '/strategies/upload');
+          return (
+            <Link
+              key={item.name}
+              href={item.href}
+              onClick={onNavigate}
+              className={cn(
+                'sidebar-item flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-all duration-200',
+                isActive
+                  ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-sm'
+                  : 'text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground'
+              )}
+            >
+              <item.icon className="h-5 w-5 mr-3" />
+              <div className="flex-1">
+                {item.name}
+                {item.description && !isActive && (
+                  <p className="text-xs text-muted-foreground">{item.description}</p>
+                )}
+              </div>
+            </Link>
+          );
+        })}
+      </nav>
+
+      {/* User section */}
+      <div className="p-4 border-t border-sidebar-border">
+        <div className="space-y-3">
+          {/* Go to Main Dashboard */}
+          <Link
+            href="/dashboard"
+            onClick={onNavigate}
+            className="w-full flex items-center justify-center px-3 py-2 text-sm font-medium text-sidebar-foreground/80 bg-sidebar-accent hover:bg-primary/20 hover:text-primary rounded-lg transition-all duration-200"
+            title="Back to main dashboard"
+          >
+            <LayoutDashboard className="h-4 w-4 mr-2" />
+            Go to Main Dashboard
+          </Link>
+
+          <div className="flex items-center space-x-3">
+            <div className="h-8 w-8 bg-gradient-to-br from-blue-500/10 to-purple-600/10 rounded-full flex items-center justify-center">
+              <span className="text-sm font-medium bg-gradient-to-r from-blue-500 to-purple-600 bg-clip-text text-transparent">
+                {user?.email?.charAt(0).toUpperCase()}
+              </span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-sidebar-foreground truncate">
+                {user?.email}
+              </p>
+              <p className="text-xs text-muted-foreground">Quant Developer</p>
+            </div>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center justify-center px-3 py-2 text-sm font-medium text-sidebar-foreground/80 bg-sidebar-accent hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950 dark:hover:text-red-400 rounded-lg transition-all duration-200"
+            title="Sign out"
+          >
+            <LogOut className="h-4 w-4 mr-2" />
+            Sign out
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
