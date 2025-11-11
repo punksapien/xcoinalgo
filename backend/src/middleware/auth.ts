@@ -45,7 +45,7 @@ export async function authenticate(req: AuthenticatedRequest, res: Response, nex
 }
 
 /**
- * Middleware to require QUANT role
+ * Middleware to require QUANT role (or ADMIN who has all permissions)
  * Must be used AFTER authenticate middleware
  */
 export async function requireQuantRole(req: AuthenticatedRequest, res: Response, next: NextFunction) {
@@ -67,7 +67,8 @@ export async function requireQuantRole(req: AuthenticatedRequest, res: Response,
       });
     }
 
-    if (user.role !== UserRole.QUANT) {
+    // Allow QUANT or ADMIN roles
+    if (user.role !== UserRole.QUANT && user.role !== UserRole.ADMIN) {
       return res.status(403).json({
         error: 'Access forbidden. This feature is only available to quant team members.'
       });
