@@ -29,7 +29,8 @@ const authOptions: AuthOptions = {
             return {
               id: user.id,
               email: user.email,
-              accessToken: token
+              accessToken: token,
+              role: user.role  // FIXED: Include role from backend response
             }
           }
           return null
@@ -74,11 +75,17 @@ const authOptions: AuthOptions = {
       return true
     },
     async jwt({ token, user, account }) {
+      // Initial sign in - user object is present
       if (user) {
-        token.accessToken = user.accessToken
-        token.id = user.id
-        token.role = user.role
+        token.accessToken = user.accessToken || token.accessToken
+        token.id = user.id || token.id
+        // Only update role if user has role (preserve existing if not provided)
+        if (user.role !== undefined) {
+          token.role = user.role
+        }
       }
+      // On subsequent calls (token refresh), user is undefined
+      // Token already has all fields from previous call - just return it
       return token
     },
     async session({ session, token }) {
