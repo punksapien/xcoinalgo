@@ -75,6 +75,124 @@ router.put('/users/:id/role', async (req: AuthenticatedRequest, res, next) => {
 });
 
 /**
+ * DELETE /api/admin/users/:id
+ * Delete a user account with safety checks
+ */
+router.delete('/users/:id', async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const { id: userIdToDelete } = req.params;
+    const currentAdminId = req.userId!;
+
+    // Safety Check 1: Cannot delete yourself
+    if (userIdToDelete === currentAdminId) {
+      return res.status(400).json({
+        error: 'You cannot delete your own account. Please ask another admin to delete your account if needed.'
+      });
+    }
+
+    // Fetch user to delete with all related data
+    const userToDelete = await prisma.user.findUnique({
+      where: { id: userIdToDelete },
+      include: {
+        _count: {
+          select: {
+            ownedStrategies: true,
+            strategySubscriptions: { where: { isActive: true } },
+            brokerCredentials: true,
+            apiKeys: true,
+            strategyReviews: true
+          }
+        },
+        ownedStrategies: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            subscriberCount: true
+          }
+        },
+        strategySubscriptions: {
+          where: { isActive: true },
+          select: {
+            id: true,
+            strategy: {
+              select: {
+                name: true,
+                code: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!userToDelete) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Safety Check 2: Cannot delete the last admin
+    if (userToDelete.role === 'ADMIN') {
+      const adminCount = await prisma.user.count({
+        where: { role: 'ADMIN' }
+      });
+
+      if (adminCount <= 1) {
+        return res.status(400).json({
+          error: 'Cannot delete the last admin user. Platform must have at least one admin.'
+        });
+      }
+    }
+
+    // Prepare deletion impact summary
+    const deletionImpact = {
+      email: userToDelete.email,
+      role: userToDelete.role,
+      willDelete: {
+        activeSubscriptions: userToDelete._count.strategySubscriptions,
+        brokerCredentials: userToDelete._count.brokerCredentials,
+        apiKeys: userToDelete._count.apiKeys,
+        reviews: userToDelete._count.strategyReviews
+      },
+      willUnassign: {
+        strategies: userToDelete.ownedStrategies.map(s => ({
+          name: s.name,
+          code: s.code,
+          activeSubscribers: s.subscriberCount
+        }))
+      },
+      activeSubscriptionDetails: userToDelete.strategySubscriptions.map(sub => ({
+        strategyName: sub.strategy.name,
+        strategyCode: sub.strategy.code
+      }))
+    };
+
+    // Warning if user has active subscriptions (will terminate active trades)
+    if (userToDelete._count.strategySubscriptions > 0) {
+      console.warn(`[ADMIN DELETE] User ${userToDelete.email} has ${userToDelete._count.strategySubscriptions} active subscriptions that will be terminated`);
+    }
+
+    // Warning if user owns strategies (will become unassigned)
+    if (userToDelete._count.ownedStrategies > 0) {
+      console.warn(`[ADMIN DELETE] User ${userToDelete.email} owns ${userToDelete._count.ownedStrategies} strategies that will become unassigned`);
+    }
+
+    // Perform deletion (Prisma cascade will handle related records)
+    await prisma.user.delete({
+      where: { id: userIdToDelete }
+    });
+
+    console.log(`[ADMIN DELETE] User ${userToDelete.email} (${userToDelete.role}) deleted by admin ${currentAdminId}`);
+
+    res.json({
+      message: 'User deleted successfully',
+      deletionImpact
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
  * GET /api/admin/strategies
  * Get all strategies in the system
  */

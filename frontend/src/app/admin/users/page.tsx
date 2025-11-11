@@ -5,8 +5,18 @@ import { useAuth } from '@/lib/auth';
 import axios from 'axios';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { AlertCircle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { AlertCircle, Trash2, AlertTriangle } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 interface User {
   id: string;
@@ -17,11 +27,38 @@ interface User {
   subscriptions: number;
 }
 
+interface DeletionImpact {
+  email: string;
+  role: string;
+  willDelete: {
+    activeSubscriptions: number;
+    brokerCredentials: number;
+    apiKeys: number;
+    reviews: number;
+  };
+  willUnassign: {
+    strategies: Array<{
+      name: string;
+      code: string;
+      activeSubscribers: number;
+    }>;
+  };
+  activeSubscriptionDetails: Array<{
+    strategyName: string;
+    strategyCode: string;
+  }>;
+}
+
 export default function AdminUsersPage() {
-  const { token } = useAuth();
+  const { token, user: currentUser } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [users, setUsers] = useState<User[]>([]);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const [confirmEmail, setConfirmEmail] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [deletionImpact, setDeletionImpact] = useState<DeletionImpact | null>(null);
 
   useEffect(() => {
     loadUsers();
@@ -68,6 +105,48 @@ export default function AdminUsersPage() {
       const error = err as { response?: { data?: { error?: string } } };
       setError(error?.response?.data?.error || 'Failed to update user role');
     }
+  };
+
+  const handleDeleteClick = (user: User) => {
+    setUserToDelete(user);
+    setConfirmEmail('');
+    setDeletionImpact(null);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!token || !userToDelete || confirmEmail !== userToDelete.email) return;
+
+    setDeleting(true);
+    setError(null);
+
+    try {
+      const authToken = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
+
+      const response = await axios.delete(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/admin/users/${userToDelete.id}`,
+        { headers: { Authorization: authToken } }
+      );
+
+      setDeletionImpact(response.data.deletionImpact);
+
+      // Wait 2 seconds to show the impact, then reload users
+      setTimeout(() => {
+        setDeleteDialogOpen(false);
+        setUserToDelete(null);
+        setConfirmEmail('');
+        setDeletionImpact(null);
+        loadUsers();
+      }, 3000);
+    } catch (err) {
+      const error = err as { response?: { data?: { error?: string } } };
+      setError(error?.response?.data?.error || 'Failed to delete user');
+      setDeleting(false);
+    }
+  };
+
+  const isCurrentUser = (userId: string) => {
+    return currentUser?.id === userId;
   };
 
   if (loading) {
@@ -144,6 +223,15 @@ export default function AdminUsersPage() {
                       <option value="CLIENT">CLIENT</option>
                       <option value="ADMIN">ADMIN</option>
                     </select>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => handleDeleteClick(user)}
+                      disabled={isCurrentUser(user.id)}
+                      title={isCurrentUser(user.id) ? 'Cannot delete your own account' : 'Delete user'}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -151,6 +239,143 @@ export default function AdminUsersPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" />
+              Delete User Account
+            </DialogTitle>
+            <DialogDescription>
+              This action is permanent and cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          {deletionImpact ? (
+            // Success state - show what was deleted
+            <div className="space-y-4 py-4">
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>User Deleted Successfully</AlertTitle>
+                <AlertDescription>
+                  <strong>{deletionImpact.email}</strong> ({deletionImpact.role}) has been removed from the platform.
+                </AlertDescription>
+              </Alert>
+
+              <div className="bg-muted p-4 rounded-lg space-y-3 text-sm">
+                <p className="font-semibold">Deletion Summary:</p>
+                <ul className="space-y-1 list-disc list-inside">
+                  <li>Active subscriptions terminated: {deletionImpact.willDelete.activeSubscriptions}</li>
+                  <li>Broker credentials deleted: {deletionImpact.willDelete.brokerCredentials}</li>
+                  <li>API keys deleted: {deletionImpact.willDelete.apiKeys}</li>
+                  <li>Reviews deleted: {deletionImpact.willDelete.reviews}</li>
+                  {deletionImpact.willUnassign.strategies.length > 0 && (
+                    <li>
+                      Strategies unassigned: {deletionImpact.willUnassign.strategies.length}
+                      <ul className="ml-6 mt-1 text-xs text-muted-foreground">
+                        {deletionImpact.willUnassign.strategies.map((s, i) => (
+                          <li key={i}>
+                            {s.name} ({s.code}) - {s.activeSubscribers} active subscribers
+                          </li>
+                        ))}
+                      </ul>
+                    </li>
+                  )}
+                </ul>
+              </div>
+
+              <p className="text-sm text-muted-foreground">
+                This dialog will close automatically...
+              </p>
+            </div>
+          ) : (
+            // Confirmation state
+            <div className="space-y-4 py-4">
+              {userToDelete && (
+                <>
+                  <Alert variant="destructive">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertTitle>Warning: Irreversible Action</AlertTitle>
+                    <AlertDescription>
+                      You are about to delete <strong>{userToDelete.email}</strong> ({userToDelete.role})
+                    </AlertDescription>
+                  </Alert>
+
+                  <div className="bg-muted p-4 rounded-lg space-y-3 text-sm">
+                    <p className="font-semibold">This will permanently delete:</p>
+                    <ul className="space-y-1 list-disc list-inside">
+                      <li>User account and authentication data</li>
+                      <li>All active subscriptions ({userToDelete.subscriptions}) and related trades</li>
+                      <li>All broker credentials and API keys</li>
+                      <li>All reviews and ratings</li>
+                      <li>All invite links created by this user</li>
+                    </ul>
+
+                    {userToDelete.strategiesOwned > 0 && (
+                      <div className="mt-3 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded">
+                        <p className="font-semibold text-yellow-600 dark:text-yellow-500 flex items-center gap-2">
+                          <AlertTriangle className="h-4 w-4" />
+                          Strategy Ownership Warning
+                        </p>
+                        <p className="text-xs mt-1">
+                          This user owns <strong>{userToDelete.strategiesOwned} strategy(ies)</strong>.
+                          These strategies will become unassigned but remain in the system.
+                          Their active subscribers will continue to run.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">
+                      To confirm deletion, type the user&apos;s email address:
+                    </p>
+                    <Input
+                      type="text"
+                      placeholder={userToDelete.email}
+                      value={confirmEmail}
+                      onChange={(e) => setConfirmEmail(e.target.value)}
+                      className="font-mono"
+                      disabled={deleting}
+                    />
+                  </div>
+
+                  {error && (
+                    <Alert variant="destructive">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertTitle>Error</AlertTitle>
+                      <AlertDescription>{error}</AlertDescription>
+                    </Alert>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            {!deletionImpact && (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => setDeleteDialogOpen(false)}
+                  disabled={deleting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={handleDeleteConfirm}
+                  disabled={!userToDelete || confirmEmail !== userToDelete.email || deleting}
+                >
+                  {deleting ? 'Deleting...' : 'Delete User Permanently'}
+                </Button>
+              </>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
