@@ -25,6 +25,10 @@ export interface Strategy {
   };
   timeframes?: string[];
   supportedPairs?: string[];
+  // Visibility and access control
+  isPublic?: boolean;
+  accessStatus?: 'APPROVED' | 'PENDING' | 'REJECTED' | null;
+  isOwned?: boolean;
 }
 
 interface CachedData {

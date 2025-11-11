@@ -259,9 +259,34 @@ function DashboardContent() {
                     </div>
                     <p className="text-sm text-muted-foreground font-mono">{strategy.code}</p>
                   </div>
-                  <Badge variant="outline" className="text-xs border-primary/30 text-primary">
-                    {strategy.instrument}
-                  </Badge>
+                  <div className="flex flex-col gap-1 items-end">
+                    <Badge variant="outline" className="text-xs border-primary/30 text-primary">
+                      {strategy.instrument}
+                    </Badge>
+                    {/* Visibility Badge */}
+                    {strategy.isPublic === false && (
+                      <Badge variant="secondary" className="text-xs">
+                        Private
+                      </Badge>
+                    )}
+                    {/* Owner Badge */}
+                    {strategy.isOwned && (
+                      <Badge variant="default" className="text-xs bg-blue-600">
+                        Your Strategy
+                      </Badge>
+                    )}
+                    {/* Access Status Badge */}
+                    {strategy.accessStatus === 'PENDING' && (
+                      <Badge variant="outline" className="text-xs border-yellow-600 text-yellow-600">
+                        Access Pending
+                      </Badge>
+                    )}
+                    {strategy.accessStatus === 'APPROVED' && strategy.isPublic === false && (
+                      <Badge variant="outline" className="text-xs border-green-600 text-green-600">
+                        Access Granted
+                      </Badge>
+                    )}
+                  </div>
                 </div>
                 <p className="text-sm text-muted-foreground line-clamp-2 mt-2">
                   {strategy.description}
