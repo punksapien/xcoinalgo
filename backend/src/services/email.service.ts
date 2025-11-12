@@ -1,5 +1,6 @@
 import { Resend } from 'resend';
 import crypto from 'crypto';
+import prisma from '../utils/database';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const EMAIL_FROM = process.env.EMAIL_FROM || 'XcoinAlgo Platform <noreply@xcoinalgo.com>';
@@ -30,8 +31,27 @@ export function getPasswordResetExpiry(): Date {
 /**
  * Send verification OTP email
  */
-export async function sendVerificationEmail(email: string, otp: string): Promise<void> {
+export async function sendVerificationEmail(
+  email: string,
+  otp: string,
+  userId?: string
+): Promise<void> {
+  let emailLogId: string | undefined;
+
   try {
+    // Create email log entry
+    const emailLog = await prisma.emailLog.create({
+      data: {
+        userId,
+        email,
+        emailType: 'VERIFICATION',
+        subject: 'Verify your XcoinAlgo account',
+        otpCode: otp,
+        status: 'PENDING',
+      },
+    });
+    emailLogId = emailLog.id;
+
     const { data, error } = await resend.emails.send({
       from: EMAIL_FROM,
       to: email,
@@ -80,12 +100,41 @@ export async function sendVerificationEmail(email: string, otp: string): Promise
     });
 
     if (error) {
+      // Update log with failure
+      await prisma.emailLog.update({
+        where: { id: emailLogId },
+        data: {
+          status: 'FAILED',
+          statusMessage: JSON.stringify(error),
+        },
+      });
+
       console.error('Failed to send verification email:', error);
       throw new Error('Failed to send verification email');
     }
 
+    // Update log with success
+    await prisma.emailLog.update({
+      where: { id: emailLogId },
+      data: {
+        status: 'SENT',
+        resendEmailId: data?.id,
+      },
+    });
+
     console.log('Verification email sent successfully:', data?.id);
   } catch (error) {
+    // Ensure log is updated on any error
+    if (emailLogId) {
+      await prisma.emailLog.update({
+        where: { id: emailLogId },
+        data: {
+          status: 'FAILED',
+          statusMessage: error instanceof Error ? error.message : 'Unknown error',
+        },
+      }).catch(err => console.error('Failed to update email log:', err));
+    }
+
     console.error('Error in sendVerificationEmail:', error);
     throw error;
   }
@@ -94,8 +143,27 @@ export async function sendVerificationEmail(email: string, otp: string): Promise
 /**
  * Send password reset OTP email
  */
-export async function sendPasswordResetEmail(email: string, otp: string): Promise<void> {
+export async function sendPasswordResetEmail(
+  email: string,
+  otp: string,
+  userId?: string
+): Promise<void> {
+  let emailLogId: string | undefined;
+
   try {
+    // Create email log entry
+    const emailLog = await prisma.emailLog.create({
+      data: {
+        userId,
+        email,
+        emailType: 'PASSWORD_RESET',
+        subject: 'Reset your XcoinAlgo password',
+        otpCode: otp,
+        status: 'PENDING',
+      },
+    });
+    emailLogId = emailLog.id;
+
     const { data, error } = await resend.emails.send({
       from: EMAIL_FROM,
       to: email,
@@ -144,12 +212,41 @@ export async function sendPasswordResetEmail(email: string, otp: string): Promis
     });
 
     if (error) {
+      // Update log with failure
+      await prisma.emailLog.update({
+        where: { id: emailLogId },
+        data: {
+          status: 'FAILED',
+          statusMessage: JSON.stringify(error),
+        },
+      });
+
       console.error('Failed to send password reset email:', error);
       throw new Error('Failed to send password reset email');
     }
 
+    // Update log with success
+    await prisma.emailLog.update({
+      where: { id: emailLogId },
+      data: {
+        status: 'SENT',
+        resendEmailId: data?.id,
+      },
+    });
+
     console.log('Password reset email sent successfully:', data?.id);
   } catch (error) {
+    // Ensure log is updated on any error
+    if (emailLogId) {
+      await prisma.emailLog.update({
+        where: { id: emailLogId },
+        data: {
+          status: 'FAILED',
+          statusMessage: error instanceof Error ? error.message : 'Unknown error',
+        },
+      }).catch(err => console.error('Failed to update email log:', err));
+    }
+
     console.error('Error in sendPasswordResetEmail:', error);
     throw error;
   }
@@ -158,9 +255,27 @@ export async function sendPasswordResetEmail(email: string, otp: string): Promis
 /**
  * Send welcome email (optional - can be used after email verification)
  */
-export async function sendWelcomeEmail(email: string, name?: string): Promise<void> {
+export async function sendWelcomeEmail(
+  email: string,
+  name?: string,
+  userId?: string
+): Promise<void> {
+  let emailLogId: string | undefined;
+
   try {
-    const { data, error } = await resend.emails.send({
+    // Create email log entry
+    const emailLog = await prisma.emailLog.create({
+      data: {
+        userId,
+        email,
+        emailType: 'WELCOME',
+        subject: 'Welcome to XcoinAlgo! 🎉',
+        status: 'PENDING',
+      },
+    });
+    emailLogId = emailLog.id;
+
+    const { data, error} = await resend.emails.send({
       from: EMAIL_FROM,
       to: email,
       subject: 'Welcome to XcoinAlgo! 🎉',
@@ -214,13 +329,42 @@ export async function sendWelcomeEmail(email: string, name?: string): Promise<vo
     });
 
     if (error) {
+      // Update log with failure
+      await prisma.emailLog.update({
+        where: { id: emailLogId },
+        data: {
+          status: 'FAILED',
+          statusMessage: JSON.stringify(error),
+        },
+      });
+
       console.error('Failed to send welcome email:', error);
       // Don't throw - welcome email is optional
       return;
     }
 
+    // Update log with success
+    await prisma.emailLog.update({
+      where: { id: emailLogId },
+      data: {
+        status: 'SENT',
+        resendEmailId: data?.id,
+      },
+    });
+
     console.log('Welcome email sent successfully:', data?.id);
   } catch (error) {
+    // Ensure log is updated on any error
+    if (emailLogId) {
+      await prisma.emailLog.update({
+        where: { id: emailLogId },
+        data: {
+          status: 'FAILED',
+          statusMessage: error instanceof Error ? error.message : 'Unknown error',
+        },
+      }).catch(err => console.error('Failed to update email log:', err));
+    }
+
     console.error('Error in sendWelcomeEmail:', error);
     // Don't throw - welcome email is optional
   }

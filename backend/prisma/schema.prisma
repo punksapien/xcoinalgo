@@ -43,6 +43,9 @@ model User {
   accessRequests     StrategyAccessRequest[] @relation("RequestedByUser") // Access requests made by user
   approvedRequests   StrategyAccessRequest[] @relation("ApprovedByUser") // Access requests approved by client
 
+  // Email monitoring
+  emailLogs EmailLog[]
+
   @@map("users")
 }
 
@@ -574,4 +577,64 @@ enum AccessRequestStatus {
   PENDING
   APPROVED
   REJECTED
+}
+
+// ============================================
+// Email Monitoring & Logging
+// ============================================
+
+model EmailLog {
+  id        String @id @default(cuid())
+  userId    String?
+  email     String
+  emailType EmailType
+
+  // Resend integration
+  resendEmailId String? // ID returned by Resend API
+
+  // Email content metadata
+  subject   String?
+  otpCode   String? // Store OTP for debugging (encrypted in production)
+
+  // Delivery tracking
+  status        EmailStatus @default(PENDING)
+  statusMessage String? // Error message or delivery info
+
+  // Timestamps
+  sentAt      DateTime  @default(now())
+  deliveredAt DateTime? // Updated by webhook
+  bouncedAt   DateTime? // Updated by webhook
+  openedAt    DateTime? // Updated by webhook (if tracking enabled)
+
+  // Metadata
+  ipAddress  String? // IP of user who triggered email
+  userAgent  String? // User agent of requester
+  retryCount Int     @default(0)
+
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, emailType])
+  @@index([email, emailType])
+  @@index([status, sentAt])
+  @@index([resendEmailId])
+  @@map("email_logs")
+}
+
+enum EmailType {
+  VERIFICATION
+  PASSWORD_RESET
+  WELCOME
+  NOTIFICATION
+}
+
+enum EmailStatus {
+  PENDING    // Email queued/sending
+  SENT       // Accepted by Resend
+  DELIVERED  // Confirmed delivered
+  BOUNCED    // Hard bounce (invalid email)
+  FAILED     // Send failed
+  OPENED     // User opened email
 }

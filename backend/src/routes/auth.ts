@@ -126,7 +126,7 @@ router.post('/register', registerLimiter, async (req, res, next) => {
     });
 
     // Send verification email
-    await sendVerificationEmail(email, otp);
+    await sendVerificationEmail(email, otp, user.id);
 
     // Don't return token yet - user must verify email first
     res.status(201).json({
@@ -331,7 +331,7 @@ router.post('/verify-otp', async (req, res, next) => {
 
     // Send welcome email (optional)
     try {
-      await sendWelcomeEmail(email);
+      await sendWelcomeEmail(email, verifiedUser.name || undefined, verifiedUser.id);
     } catch (emailError) {
       console.error('Failed to send welcome email:', emailError);
       // Don't fail the verification if welcome email fails
@@ -396,7 +396,7 @@ router.post('/resend-otp', otpLimiter, async (req, res, next) => {
     });
 
     // Send new verification email
-    await sendVerificationEmail(email, otp);
+    await sendVerificationEmail(email, otp, user.id);
 
     res.json({
       message: 'Verification code sent! Please check your email.'
@@ -450,7 +450,7 @@ router.post('/forgot-password', passwordResetLimiter, async (req, res, next) => 
     });
 
     // Send password reset email
-    await sendPasswordResetEmail(email, otp);
+    await sendPasswordResetEmail(email, otp, user.id);
 
     res.json({
       message: 'If an account exists with this email, you will receive a password reset code.'

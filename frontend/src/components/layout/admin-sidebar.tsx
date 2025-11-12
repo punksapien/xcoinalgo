@@ -12,7 +12,8 @@ import {
   Moon,
   Sun,
   LogOut,
-  LayoutDashboard
+  LayoutDashboard,
+  Mail
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { useTheme } from '@/lib/theme';
@@ -32,6 +33,11 @@ const navigation = [
     name: 'Strategies',
     href: '/admin/strategies',
     icon: TrendingUp,
+  },
+  {
+    name: 'Email Monitoring',
+    href: '/admin/email-monitoring',
+    icon: Mail,
   },
   {
     name: 'Access Requests',

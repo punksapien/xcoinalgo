@@ -418,4 +418,266 @@ router.delete('/strategies/:id', async (req: AuthenticatedRequest, res, next) =>
   }
 });
 
+// ============================================
+// Email Monitoring Endpoints
+// ============================================
+
+/**
+ * GET /api/admin/email-logs
+ * Get email delivery logs with filtering
+ */
+router.get('/email-logs', async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const {
+      status,
+      emailType,
+      limit = '50',
+      offset = '0',
+      email,
+      userId
+    } = req.query;
+
+    const where: any = {};
+    if (status) where.status = status;
+    if (emailType) where.emailType = emailType;
+    if (email) where.email = { contains: email as string };
+    if (userId) where.userId = userId;
+
+    const [logs, total] = await Promise.all([
+      prisma.emailLog.findMany({
+        where,
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              name: true
+            }
+          }
+        },
+        orderBy: { sentAt: 'desc' },
+        take: parseInt(limit as string),
+        skip: parseInt(offset as string)
+      }),
+      prisma.emailLog.count({ where })
+    ]);
+
+    res.json({
+      logs,
+      pagination: {
+        total,
+        limit: parseInt(limit as string),
+        offset: parseInt(offset as string)
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/admin/email-stats
+ * Get email delivery statistics
+ */
+router.get('/email-stats', async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const { days = '7' } = req.query;
+    const daysAgo = new Date();
+    daysAgo.setDate(daysAgo.getDate() - parseInt(days as string));
+
+    const [
+      totalSent,
+      byStatus,
+      byType,
+      failedEmails
+    ] = await Promise.all([
+      // Total emails sent in period
+      prisma.emailLog.count({
+        where: { sentAt: { gte: daysAgo } }
+      }),
+
+      // Group by status
+      prisma.emailLog.groupBy({
+        by: ['status'],
+        where: { sentAt: { gte: daysAgo } },
+        _count: true
+      }),
+
+      // Group by type
+      prisma.emailLog.groupBy({
+        by: ['emailType'],
+        where: { sentAt: { gte: daysAgo } },
+        _count: true
+      }),
+
+      // Failed emails with details
+      prisma.emailLog.findMany({
+        where: {
+          status: 'FAILED',
+          sentAt: { gte: daysAgo }
+        },
+        select: {
+          id: true,
+          email: true,
+          emailType: true,
+          statusMessage: true,
+          sentAt: true
+        },
+        orderBy: { sentAt: 'desc' },
+        take: 10
+      })
+    ]);
+
+    res.json({
+      period: `Last ${days} days`,
+      totalSent,
+      byStatus: byStatus.reduce((acc, item) => {
+        acc[item.status] = item._count;
+        return acc;
+      }, {} as Record<string, number>),
+      byType: byType.reduce((acc, item) => {
+        acc[item.emailType] = item._count;
+        return acc;
+      }, {} as Record<string, number>),
+      recentFailures: failedEmails
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/admin/unverified-users
+ * Get users who haven't verified their email
+ */
+router.get('/unverified-users', async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const users = await prisma.user.findMany({
+      where: {
+        emailVerified: null,
+        password: { not: null } // Only email/password users
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        createdAt: true,
+        verificationToken: true,
+        verificationTokenExpiry: true,
+        emailLogs: {
+          where: { emailType: 'VERIFICATION' },
+          orderBy: { sentAt: 'desc' },
+          take: 1,
+          select: {
+            status: true,
+            statusMessage: true,
+            sentAt: true,
+            resendEmailId: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    res.json({
+      total: users.length,
+      users: users.map(user => ({
+        ...user,
+        lastEmailStatus: user.emailLogs[0] || null,
+        isExpired: user.verificationTokenExpiry
+          ? user.verificationTokenExpiry < new Date()
+          : true
+      }))
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/admin/resend-verification
+ * Manually resend verification email to a user
+ */
+router.post('/resend-verification', async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const { userId } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId }
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (user.emailVerified) {
+      return res.status(400).json({ error: 'User email is already verified' });
+    }
+
+    // Generate new OTP (copy logic from email.service.ts)
+    const crypto = require('crypto');
+    const otp = crypto.randomInt(100000, 999999).toString();
+    const otpExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    // Update user with new OTP
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        verificationToken: otp,
+        verificationTokenExpiry: otpExpiry
+      }
+    });
+
+    // Send email
+    const { sendVerificationEmail } = require('../services/email.service');
+    await sendVerificationEmail(user.email, otp, user.id);
+
+    res.json({
+      message: 'Verification email resent successfully',
+      email: user.email
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/admin/verify-user-manually
+ * Manually verify a user's email (bypass verification)
+ */
+router.post('/verify-user-manually', async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const { userId } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        emailVerified: new Date(),
+        verificationToken: null,
+        verificationTokenExpiry: null
+      },
+      select: {
+        id: true,
+        email: true,
+        emailVerified: true
+      }
+    });
+
+    res.json({
+      message: 'User verified successfully',
+      user
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 export { router as adminRoutes };
