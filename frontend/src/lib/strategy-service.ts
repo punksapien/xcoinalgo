@@ -50,7 +50,7 @@ interface FilterOptions {
 
 class StrategyService {
   private cache: CachedData | null = null;
-  private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+  private readonly CACHE_DURATION = 10 * 1000; // 10 seconds - hot reload for marketplace
   private searchIndex: Map<string, Set<number>> = new Map();
   private strategies: Strategy[] = [];
   private fetchPromise: Promise<void> | null = null;
@@ -343,6 +343,13 @@ class StrategyService {
 
     const strategy = this.strategies.find(s => s.id === id);
     return strategy || null;
+  }
+
+  // Force cache invalidation (for manual refresh)
+  invalidateCache(): void {
+    this.cache = null;
+    this.strategies = [];
+    this.searchIndex.clear();
   }
 
   // Performance monitoring

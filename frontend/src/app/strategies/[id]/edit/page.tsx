@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Editor from '@monaco-editor/react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,8 +17,12 @@ import {
   FileCode,
   FileText,
   Loader2,
+  CheckCircle,
+  AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ValidationPanel, ValidationResult } from '@/components/ValidationPanel';
+import type { editor } from 'monaco-editor';
 
 type FileType = 'code' | 'requirements';
 
@@ -46,6 +50,10 @@ export default function StrategyCodeEditorPage() {
   const [saving, setSaving] = useState(false);
   const [runningBacktest, setRunningBacktest] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [validating, setValidating] = useState(false);
+  const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
+  const [showValidation, setShowValidation] = useState(false);
+  const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
 
   // Fetch strategy code and requirements
   useEffect(() => {
@@ -159,6 +167,99 @@ export default function StrategyCodeEditorPage() {
     }
   };
 
+  const handleValidate = async () => {
+    try {
+      setValidating(true);
+      setShowValidation(true);
+
+      const response = await apiClient.post<{
+        success: boolean;
+        validation: ValidationResult;
+      }>(`/api/strategy-upload/${strategyId}/validate-quick`, {
+        code: editorData.code
+      });
+
+      setValidationResult(response.validation);
+
+      // Update Monaco editor markers
+      if (editorRef.current && response.validation) {
+        const monaco = await import('monaco-editor');
+        const model = editorRef.current.getModel();
+        if (model) {
+          const markers: editor.IMarkerData[] = [];
+
+          // Add error markers
+          response.validation.syntaxErrors.forEach((error) => {
+            if (error.line) {
+              markers.push({
+                severity: monaco.MarkerSeverity.Error,
+                message: error.message,
+                startLineNumber: error.line,
+                startColumn: error.column || 1,
+                endLineNumber: error.line,
+                endColumn: error.column ? error.column + 1 : 100,
+              });
+            }
+          });
+
+          // Add dangerous import markers
+          response.validation.dangerousImports.forEach((error) => {
+            if (error.line) {
+              markers.push({
+                severity: monaco.MarkerSeverity.Error,
+                message: error.message,
+                startLineNumber: error.line,
+                startColumn: 1,
+                endLineNumber: error.line,
+                endColumn: 100,
+              });
+            }
+          });
+
+          // Add warning markers
+          response.validation.warnings.forEach((warning) => {
+            if (warning.line) {
+              markers.push({
+                severity: monaco.MarkerSeverity.Warning,
+                message: warning.message,
+                startLineNumber: warning.line,
+                startColumn: 1,
+                endLineNumber: warning.line,
+                endColumn: 100,
+              });
+            }
+          });
+
+          monaco.editor.setModelMarkers(model, 'validation', markers);
+        }
+      }
+
+      if (response.validation.valid) {
+        showSuccessToast('Success', 'Code validation passed!');
+      }
+    } catch (error) {
+      if (error instanceof ApiError) {
+        showErrorToast('Error', error.message);
+      } else {
+        showErrorToast('Error', 'Failed to validate code');
+      }
+    } finally {
+      setValidating(false);
+    }
+  };
+
+  const handleEditorDidMount = (editor: editor.IStandaloneCodeEditor) => {
+    editorRef.current = editor;
+  };
+
+  const handleJumpToLine = (line: number) => {
+    if (editorRef.current) {
+      editorRef.current.revealLineInCenter(line);
+      editorRef.current.setPosition({ lineNumber: line, column: 1 });
+      editorRef.current.focus();
+    }
+  };
+
   const getCurrentFileContent = () => {
     return currentFile === 'code' ? editorData.code : editorData.requirements;
   };
@@ -208,6 +309,28 @@ export default function StrategyCodeEditorPage() {
               </Badge>
             )}
 
+            {validationResult && !validating && (
+              <Badge
+                variant="outline"
+                className={validationResult.valid
+                  ? "bg-green-500/10 text-green-500 border-green-500/50"
+                  : "bg-red-500/10 text-red-500 border-red-500/50"
+                }
+              >
+                {validationResult.valid ? (
+                  <>
+                    <CheckCircle className="h-3 w-3 mr-1" />
+                    Valid
+                  </>
+                ) : (
+                  <>
+                    <AlertCircle className="h-3 w-3 mr-1" />
+                    Has Errors
+                  </>
+                )}
+              </Badge>
+            )}
+
             <Button
               variant="outline"
               size="sm"
@@ -222,6 +345,26 @@ export default function StrategyCodeEditorPage() {
                 <>
                   <EditIcon className="h-4 w-4 mr-2" />
                   Edit Mode
+                </>
+              )}
+            </Button>
+
+            <Button
+              onClick={handleValidate}
+              disabled={validating || currentFile !== 'code'}
+              size="sm"
+              variant="outline"
+              className="border-blue-500/50 text-blue-500 hover:bg-blue-500/10"
+            >
+              {validating ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Validating...
+                </>
+              ) : (
+                <>
+                  <CheckCircle className="h-4 w-4 mr-2" />
+                  Validate Syntax
                 </>
               )}
             </Button>
@@ -268,7 +411,7 @@ export default function StrategyCodeEditorPage() {
       </div>
 
       {/* Main Content */}
-      <div className="max-w-[1800px] mx-auto">
+      <div className="max-w-[1800px] mx-auto space-y-4">
         <Card className="border-2">
           <CardContent className="p-0">
             <div className="flex h-[calc(100vh-200px)]">
@@ -335,6 +478,7 @@ export default function StrategyCodeEditorPage() {
                   language={getLanguage()}
                   value={getCurrentFileContent()}
                   onChange={handleEditorChange}
+                  onMount={handleEditorDidMount}
                   theme="vs-dark"
                   options={{
                     readOnly: !isEditing,
@@ -352,6 +496,15 @@ export default function StrategyCodeEditorPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Validation Panel */}
+        {showValidation && currentFile === 'code' && (
+          <ValidationPanel
+            result={validationResult}
+            isValidating={validating}
+            onJumpToLine={handleJumpToLine}
+          />
+        )}
       </div>
     </div>
   );

@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useAuth } from '@/lib/auth';
 import { strategyService, Strategy } from '@/lib/strategy-service';
 import { SubscribeModal } from '@/components/strategy/subscribe-modal';
-import { Search, Filter, TrendingUp, Users, Bot, Clock, Target, TrendingDown, Zap } from 'lucide-react';
+import { Search, Filter, TrendingUp, Users, Bot, Clock, Target, TrendingDown, Zap, RefreshCw } from 'lucide-react';
 
 function DashboardContent() {
   const [strategies, setStrategies] = useState<Strategy[]>([]);
@@ -111,6 +111,15 @@ function DashboardContent() {
   const handleLoadMore = () => {
     setDisplayedCount(prev => Math.min(prev + itemsPerPage, strategies.length));
   };
+
+  // Manual refresh handler - forces cache invalidation
+  const handleRefresh = useCallback(async () => {
+    setLoading(true);
+    // Force re-fetch by clearing the service cache
+    strategyService.invalidateCache();
+    await fetchStrategies();
+    setLoading(false);
+  }, [fetchStrategies]);
 
   const toggleTag = useCallback((tag: string) => {
     setSelectedTags(prev =>
@@ -253,9 +262,21 @@ function DashboardContent() {
           <p className="text-sm text-muted-foreground">
             {loading ? 'Searching...' : `Found ${strategies.length} strategies${strategies.length !== displayedStrategies.length ? ` (Showing ${displayedStrategies.length})` : ''}`}
           </p>
-          {loading && (
-            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
-          )}
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={loading}
+              className="gap-2"
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+            {loading && (
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+            )}
+          </div>
         </div>
 
         {/* Strategy Grid */}
