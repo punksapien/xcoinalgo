@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { Sidebar } from '@/components/layout/sidebar';
 import { useAuth } from '@/lib/auth';
+import { useProfileCompletion } from '@/lib/hooks/useProfileCompletion';
 import { Menu, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -19,6 +20,9 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
+
+  // Check if user needs to complete their profile
+  useProfileCompletion();
 
   // Check if we're in a sub-dashboard (admin or client) which has its own layout
   const isSubDashboard = pathname?.startsWith('/dashboard/admin') || pathname?.startsWith('/dashboard/client');

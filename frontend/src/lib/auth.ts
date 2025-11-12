@@ -5,6 +5,11 @@ import axios from 'axios';
 interface User {
   id: string;
   email: string;
+  name?: string; // Full name from profile or Google OAuth
+  phoneNumber?: string; // Optional phone number
+  image?: string; // Profile image URL (mainly for Google OAuth users)
+  emailVerified?: string; // DateTime string of when email was verified
+  canChangePassword?: boolean; // False for OAuth users, true for email/password users
   createdAt: string;
   role?: string;
 }

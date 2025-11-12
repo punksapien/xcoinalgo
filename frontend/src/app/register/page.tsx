@@ -9,13 +9,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Chrome, TrendingUp, Mail, Lock, AlertCircle, Loader2 } from 'lucide-react';
+import { Chrome, TrendingUp, Mail, Lock, AlertCircle, Loader2, User } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 
 export default function RegisterPage() {
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -41,8 +42,13 @@ export default function RegisterPage() {
     setError('');
 
     // Basic validation
-    if (!email || !password) {
-      setError('Please enter both email and password');
+    if (!name || !email || !password) {
+      setError('Please enter your full name, email, and password');
+      return;
+    }
+
+    if (name.length < 2) {
+      setError('Please enter your full name (at least 2 characters)');
       return;
     }
 
@@ -57,7 +63,7 @@ export default function RegisterPage() {
       const response = await fetch('/api/user/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ name, email, password }),
       });
 
       const data = await response.json();
@@ -122,6 +128,27 @@ export default function RegisterPage() {
             <form onSubmit={handleEmailSignup} className="space-y-4">
               {/* Email/Password Form */}
               <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="name">Full Name</Label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                    <Input
+                      id="name"
+                      type="text"
+                      placeholder="John Doe"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      className="pl-10"
+                      disabled={isSubmitting}
+                      required
+                      minLength={2}
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Your full name will be displayed on strategies you create
+                  </p>
+                </div>
+
                 <div className="space-y-2">
                   <Label htmlFor="email">Email address</Label>
                   <div className="relative">

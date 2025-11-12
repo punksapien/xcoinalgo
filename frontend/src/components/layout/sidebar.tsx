@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { signOut } from 'next-auth/react';
 import { cn } from '@/lib/utils';
 import {
@@ -15,10 +15,20 @@ import {
   TrendingUp,
   LayoutDashboard,
   Shield,
-  Code2
+  Code2,
+  User as UserIcon,
+  ChevronDown
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { useTheme } from '@/lib/theme';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 const navigation = [
   {
@@ -49,6 +59,7 @@ interface SidebarProps {
 
 export function Sidebar({ onNavigate }: SidebarProps = {}) {
   const pathname = usePathname();
+  const router = useRouter();
   const { logout, user, hasClientAccess, isAdmin, hasQuantAccess } = useAuth();
   const { isDark, toggleTheme } = useTheme();
 
@@ -145,26 +156,62 @@ export function Sidebar({ onNavigate }: SidebarProps = {}) {
             </Link>
           )}
 
-          <div className="flex items-center space-x-3">
-            <div className="h-8 w-8 bg-primary/10 rounded-full flex items-center justify-center">
-              <span className="text-sm font-medium text-primary">
-                {user?.email?.charAt(0).toUpperCase()}
-              </span>
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-sidebar-foreground truncate">
-                {user?.email}
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={handleLogout}
-            className="w-full flex items-center justify-center px-3 py-2 text-sm font-medium text-sidebar-foreground/80 bg-sidebar-accent hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950 dark:hover:text-red-400 rounded-lg transition-all duration-200"
-            title="Sign out"
-          >
-            <LogOut className="h-4 w-4 mr-2" />
-            Sign out
-          </button>
+          {/* Profile Dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger className="w-full outline-none focus:outline-none">
+              <div className="flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-sidebar-accent transition-all duration-200 cursor-pointer">
+                <Avatar className="h-8 w-8">
+                  <AvatarImage src={user?.image} alt={user?.name || user?.email} />
+                  <AvatarFallback className="bg-primary/10 text-primary">
+                    {user?.name ? user.name.charAt(0).toUpperCase() : user?.email?.charAt(0).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex-1 min-w-0 text-left">
+                  <p className="text-sm font-medium text-sidebar-foreground truncate">
+                    {user?.name || user?.email?.split('@')[0]}
+                  </p>
+                  <p className="text-xs text-sidebar-foreground/60 truncate">
+                    {user?.email}
+                  </p>
+                </div>
+                <ChevronDown className="h-4 w-4 text-sidebar-foreground/60" />
+              </div>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              className="w-56"
+              sideOffset={5}
+            >
+              <DropdownMenuItem
+                onClick={() => {
+                  router.push('/dashboard');
+                  onNavigate?.();
+                }}
+                className="cursor-pointer"
+              >
+                <LayoutDashboard className="h-4 w-4 mr-2" />
+                Dashboard
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  router.push('/dashboard/settings/profile');
+                  onNavigate?.();
+                }}
+                className="cursor-pointer"
+              >
+                <UserIcon className="h-4 w-4 mr-2" />
+                Profile
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={handleLogout}
+                className="cursor-pointer text-red-600 dark:text-red-400 focus:text-red-600 dark:focus:text-red-400"
+              >
+                <LogOut className="h-4 w-4 mr-2" />
+                Sign Out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
     </div>

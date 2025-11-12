@@ -53,7 +53,7 @@ interface BacktestMetrics {
 
 export default function StrategyUploadPage() {
   const router = useRouter();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const { isAuthorized, isChecking } = useRoleGuard('QUANT');
 
   const [file, setFile] = useState<File | null>(null);
@@ -63,7 +63,6 @@ export default function StrategyUploadPage() {
     description: '',
     pair: '',  // Don't hardcode - will be populated from STRATEGY_CONFIG
     resolution: '',  // Don't hardcode - will be populated from STRATEGY_CONFIG
-    author: '',
     tags: '',
   });
 
@@ -172,7 +171,6 @@ export default function StrategyUploadPage() {
                 ...prev,
                 pair: data.extractedConfig.pair || prev.pair,
                 resolution: data.extractedConfig.resolution || prev.resolution,
-                author: data.extractedConfig.author || prev.author,
                 description: data.extractedConfig.description || prev.description,
                 tags: Array.isArray(data.extractedConfig.tags)
                   ? data.extractedConfig.tags.join(', ')
@@ -284,7 +282,8 @@ export default function StrategyUploadPage() {
         description: config.description,
         pair: config.pair,
         resolution: config.resolution,
-        author: config.author || 'Quant Team',
+        author: user?.name || 'Quant Team',
+        authorId: user?.id,
         tags: config.tags.split(',').map(t => t.trim()).filter(t => t),
       }));
 
@@ -691,11 +690,13 @@ export default function StrategyUploadPage() {
             <Label htmlFor="author">Author</Label>
             <Input
               id="author"
-              value={config.author}
-              onChange={(e) => setConfig({ ...config, author: e.target.value })}
-              placeholder="Your name or team"
-              disabled={uploading || backtestRunning}
+              value={user?.name || 'Quant Team'}
+              disabled={true}
+              className="bg-muted cursor-not-allowed"
             />
+            <p className="text-xs text-muted-foreground mt-1">
+              ✅ Automatically set from your profile
+            </p>
           </div>
 
           <div>
