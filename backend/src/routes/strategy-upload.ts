@@ -2288,6 +2288,100 @@ router.put('/:id/code', authenticate, requireQuantRole, async (req: Authenticate
   }
 });
 
+// Quick validate strategy code (syntax + AST checks, no execution)
+router.post('/:id/validate-quick', authenticate, requireQuantRole, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const strategyId = req.params.id;
+    const { code } = req.body;
+
+    if (!code || typeof code !== 'string') {
+      return res.status(400).json({
+        error: 'Code is required and must be a string'
+      });
+    }
+
+    // Check if strategy exists
+    const strategy = await prisma.strategy.findUnique({
+      where: { id: strategyId },
+      select: { id: true, name: true }
+    });
+
+    if (!strategy) {
+      return res.status(404).json({
+        error: 'Strategy not found'
+      });
+    }
+
+    logger.info(`Running quick validation for strategy: ${strategyId}`);
+
+    // Execute quick validator
+    const validatorScript = path.join(__dirname, '../../python/quick_validator.py');
+
+    const validationPromise = new Promise<any>((resolve, reject) => {
+      const pythonProcess = spawn('python3', [validatorScript], {
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+
+      let stdout = '';
+      let stderr = '';
+      const timeout = setTimeout(() => {
+        pythonProcess.kill();
+        reject(new Error('Validation timeout after 10 seconds'));
+      }, 10000);
+
+      pythonProcess.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      pythonProcess.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      pythonProcess.on('close', (code) => {
+        clearTimeout(timeout);
+
+        if (stderr && !stdout) {
+          return reject(new Error(`Validation error: ${stderr}`));
+        }
+
+        try {
+          const result = JSON.parse(stdout);
+          resolve(result);
+        } catch (parseError) {
+          reject(new Error(`Failed to parse validation results: ${stdout}`));
+        }
+      });
+
+      pythonProcess.on('error', (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      });
+
+      // Send code to validator via stdin
+      pythonProcess.stdin.write(code);
+      pythonProcess.stdin.end();
+    });
+
+    const validationResult = await validationPromise;
+
+    logger.info(`Quick validation completed for ${strategyId}: ${validationResult.valid ? 'PASS' : 'FAIL'}`);
+
+    res.json({
+      success: true,
+      validation: validationResult,
+      strategyId,
+      strategyName: strategy.name
+    });
+
+  } catch (error) {
+    logger.error('Failed to validate strategy code:', error);
+    res.status(500).json({
+      error: 'Validation failed',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
 // Get requirements.txt
 router.get('/:id/requirements', authenticate, requireQuantRole, async (req: AuthenticatedRequest, res, next) => {
   try {
