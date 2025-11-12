@@ -17,15 +17,8 @@ import {
   FileCode,
   FileText,
   Loader2,
-  CheckCircle,
-  AlertCircle,
-  Terminal as TerminalIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ValidationPanel, ValidationResult } from '@/components/ValidationPanel';
-import { SandboxOutputPanel, SandboxValidationResult } from '@/components/SandboxOutputPanel';
-import { SandboxTerminal } from '@/components/SandboxTerminal';
-import type { editor } from 'monaco-editor';
 
 type FileType = 'code' | 'requirements';
 
@@ -53,34 +46,10 @@ export default function StrategyCodeEditorPage() {
   const [saving, setSaving] = useState(false);
   const [runningBacktest, setRunningBacktest] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [validating, setValidating] = useState(false);
-  const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
-  const [showValidation, setShowValidation] = useState(false);
-  const [runningSandbox, setRunningSandbox] = useState(false);
-  const [sandboxResult, setSandboxResult] = useState<SandboxValidationResult | null>(null);
-  const [showSandbox, setShowSandbox] = useState(false);
-  const [showTerminal, setShowTerminal] = useState(false);
-  const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
 
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      // Cmd/Ctrl + K: Quick validation
-      if ((event.metaKey || event.ctrlKey) && event.key === 'k' && currentFile === 'code') {
-        event.preventDefault();
-        if (!validating) {
-          handleValidate();
-        }
-      }
-
-      // Cmd/Ctrl + Shift + K: Sandbox execution
-      if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key === 'K' && currentFile === 'code') {
-        event.preventDefault();
-        if (!runningSandbox) {
-          handleRunSandbox();
-        }
-      }
-
       // Cmd/Ctrl + S: Save
       if ((event.metaKey || event.ctrlKey) && event.key === 's') {
         event.preventDefault();
@@ -88,17 +57,11 @@ export default function StrategyCodeEditorPage() {
           handleSave();
         }
       }
-
-      // Cmd/Ctrl + `: Toggle terminal
-      if ((event.metaKey || event.ctrlKey) && event.key === '`' && currentFile === 'code') {
-        event.preventDefault();
-        setShowTerminal(!showTerminal);
-      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [validating, runningSandbox, isEditing, hasUnsavedChanges, saving, showTerminal, currentFile]);
+  }, [isEditing, hasUnsavedChanges, saving]);
 
   // Fetch strategy code and requirements
   useEffect(() => {
@@ -212,148 +175,6 @@ export default function StrategyCodeEditorPage() {
     }
   };
 
-  const handleValidate = async () => {
-    try {
-      setValidating(true);
-      setShowValidation(true);
-
-      const response = await apiClient.post<{
-        success: boolean;
-        validation: ValidationResult;
-      }>(`/api/strategy-upload/${strategyId}/validate-quick`, {
-        code: editorData.code
-      });
-
-      setValidationResult(response.validation);
-
-      // Update Monaco editor markers
-      if (editorRef.current && response.validation) {
-        const monaco = await import('monaco-editor');
-        const model = editorRef.current.getModel();
-        if (model) {
-          const markers: editor.IMarkerData[] = [];
-
-          // Add error markers
-          response.validation.syntaxErrors.forEach((error) => {
-            if (error.line) {
-              markers.push({
-                severity: monaco.MarkerSeverity.Error,
-                message: error.message,
-                startLineNumber: error.line,
-                startColumn: error.column || 1,
-                endLineNumber: error.line,
-                endColumn: error.column ? error.column + 1 : 100,
-              });
-            }
-          });
-
-          // Add dangerous import markers
-          response.validation.dangerousImports.forEach((error) => {
-            if (error.line) {
-              markers.push({
-                severity: monaco.MarkerSeverity.Error,
-                message: error.message,
-                startLineNumber: error.line,
-                startColumn: 1,
-                endLineNumber: error.line,
-                endColumn: 100,
-              });
-            }
-          });
-
-          // Add warning markers
-          response.validation.warnings.forEach((warning) => {
-            if (warning.line) {
-              markers.push({
-                severity: monaco.MarkerSeverity.Warning,
-                message: warning.message,
-                startLineNumber: warning.line,
-                startColumn: 1,
-                endLineNumber: warning.line,
-                endColumn: 100,
-              });
-            }
-          });
-
-          monaco.editor.setModelMarkers(model, 'validation', markers);
-        }
-      }
-
-      if (response.validation.valid) {
-        showSuccessToast('Success', 'Code validation passed!');
-      }
-    } catch (error) {
-      if (error instanceof ApiError) {
-        showErrorToast('Error', error.message);
-      } else {
-        showErrorToast('Error', 'Failed to validate code');
-      }
-    } finally {
-      setValidating(false);
-    }
-  };
-
-  const handleEditorDidMount = (editor: editor.IStandaloneCodeEditor) => {
-    editorRef.current = editor;
-  };
-
-  const handleJumpToLine = (line: number) => {
-    if (editorRef.current) {
-      editorRef.current.revealLineInCenter(line);
-      editorRef.current.setPosition({ lineNumber: line, column: 1 });
-      editorRef.current.focus();
-    }
-  };
-
-  const handleRunSandbox = async () => {
-    try {
-      setRunningSandbox(true);
-      setShowSandbox(true);
-
-      const response = await apiClient.post<{
-        success: boolean;
-        validation: SandboxValidationResult;
-      }>(`/api/strategy-upload/${strategyId}/validate-sandbox`, {
-        code: editorData.code,
-        requirements: editorData.requirements
-      });
-
-      setSandboxResult(response.validation);
-
-      if (response.validation.success) {
-        showSuccessToast('Success', 'Code executed successfully in sandbox!');
-      } else if (response.validation.timedOut) {
-        showErrorToast('Timeout', 'Sandbox execution timed out after 30 seconds');
-      } else {
-        showErrorToast('Failed', 'Sandbox execution failed - check errors below');
-      }
-    } catch (error) {
-      if (error instanceof ApiError) {
-        if (error.message.includes('Docker not available')) {
-          showErrorToast('Docker Required', 'Please ensure Docker is running to use sandbox validation');
-        } else {
-          showErrorToast('Error', error.message);
-        }
-      } else {
-        showErrorToast('Error', 'Failed to run sandbox validation');
-      }
-    } finally {
-      setRunningSandbox(false);
-    }
-  };
-
-  const handleOpenTerminal = () => {
-    setShowTerminal(true);
-  };
-
-  const handleCloseTerminal = () => {
-    setShowTerminal(false);
-  };
-
-  const getAuthToken = (): string => {
-    // Get token from localStorage (adjust based on your auth implementation)
-    return localStorage.getItem('authToken') || '';
-  };
 
   const getCurrentFileContent = () => {
     return currentFile === 'code' ? editorData.code : editorData.requirements;
@@ -404,28 +225,6 @@ export default function StrategyCodeEditorPage() {
               </Badge>
             )}
 
-            {validationResult && !validating && (
-              <Badge
-                variant="outline"
-                className={validationResult.valid
-                  ? "bg-green-500/10 text-green-500 border-green-500/50"
-                  : "bg-red-500/10 text-red-500 border-red-500/50"
-                }
-              >
-                {validationResult.valid ? (
-                  <>
-                    <CheckCircle className="h-3 w-3 mr-1" />
-                    Valid
-                  </>
-                ) : (
-                  <>
-                    <AlertCircle className="h-3 w-3 mr-1" />
-                    Has Errors
-                  </>
-                )}
-              </Badge>
-            )}
-
             <Button
               variant="outline"
               size="sm"
@@ -442,57 +241,6 @@ export default function StrategyCodeEditorPage() {
                   Edit Mode
                 </>
               )}
-            </Button>
-
-            <Button
-              onClick={handleValidate}
-              disabled={validating || currentFile !== 'code'}
-              size="sm"
-              variant="outline"
-              className="border-blue-500/50 text-blue-500 hover:bg-blue-500/10"
-            >
-              {validating ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Validating...
-                </>
-              ) : (
-                <>
-                  <CheckCircle className="h-4 w-4 mr-2" />
-                  Validate Syntax
-                </>
-              )}
-            </Button>
-
-            <Button
-              onClick={handleRunSandbox}
-              disabled={runningSandbox || currentFile !== 'code'}
-              size="sm"
-              variant="outline"
-              className="border-purple-500/50 text-purple-500 hover:bg-purple-500/10"
-            >
-              {runningSandbox ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Running...
-                </>
-              ) : (
-                <>
-                  <Play className="h-4 w-4 mr-2" />
-                  Run in Sandbox
-                </>
-              )}
-            </Button>
-
-            <Button
-              onClick={handleOpenTerminal}
-              disabled={showTerminal || currentFile !== 'code'}
-              size="sm"
-              variant="outline"
-              className="border-cyan-500/50 text-cyan-500 hover:bg-cyan-500/10"
-            >
-              <TerminalIcon className="h-4 w-4 mr-2" />
-              Open Terminal
             </Button>
 
             <Button
@@ -604,7 +352,6 @@ export default function StrategyCodeEditorPage() {
                   language={getLanguage()}
                   value={getCurrentFileContent()}
                   onChange={handleEditorChange}
-                  onMount={handleEditorDidMount}
                   theme="vs-dark"
                   options={{
                     readOnly: !isEditing,
@@ -622,34 +369,6 @@ export default function StrategyCodeEditorPage() {
             </div>
           </CardContent>
         </Card>
-
-        {/* Validation Panel */}
-        {showValidation && currentFile === 'code' && (
-          <ValidationPanel
-            result={validationResult}
-            isValidating={validating}
-            onJumpToLine={handleJumpToLine}
-          />
-        )}
-
-        {/* Sandbox Output Panel */}
-        {showSandbox && currentFile === 'code' && (
-          <SandboxOutputPanel
-            result={sandboxResult}
-            isRunning={runningSandbox}
-          />
-        )}
-
-        {/* Interactive Terminal */}
-        {showTerminal && currentFile === 'code' && (
-          <SandboxTerminal
-            strategyId={strategyId}
-            code={editorData.code}
-            requirements={editorData.requirements}
-            token={getAuthToken()}
-            onClose={handleCloseTerminal}
-          />
-        )}
       </div>
     </div>
   );

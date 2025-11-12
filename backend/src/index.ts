@@ -26,7 +26,8 @@ import { strategyInviteRoutes } from './routes/strategy-invite';
 import { errorHandler } from './middleware/errorHandler';
 import { startHealthCheckMonitoring } from './services/strategyExecutor';
 import { startOrderMonitoring } from './workers/order-monitor';
-import { terminalSessionManager } from './services/terminal-session-manager';
+// COMMENTED OUT: Terminal session manager - removed until PM2 log viewer is implemented
+// import { terminalSessionManager } from './services/terminal-session-manager';
 import './config/passport'; // Initialize passport configuration
 // Import prisma (with cache sync extension applied)
 import './utils/database';
@@ -141,15 +142,15 @@ app.use(errorHandler);
 // Create HTTP server
 const httpServer = http.createServer(app);
 
-// Initialize WebSocket server for terminal sessions
-terminalSessionManager.initialize(httpServer);
+// COMMENTED OUT: WebSocket server for terminal sessions - removed until PM2 log viewer is implemented
+// terminalSessionManager.initialize(httpServer);
 
 // Start server
 httpServer.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV}`);
   console.log(`🔒 CORS enabled for: ${process.env.FRONTEND_URL}`);
-  console.log(`🔌 WebSocket server initialized for terminal sessions`);
+  // console.log(`🔌 WebSocket server initialized for terminal sessions`);
 
   // Start health check monitoring for strategy executor
   startHealthCheckMonitoring();

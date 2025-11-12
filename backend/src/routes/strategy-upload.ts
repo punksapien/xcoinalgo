@@ -5,7 +5,8 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { authenticate, requireQuantRole } from '../middleware/auth';
-import { quickValidationLimiter, sandboxValidationLimiter } from '../middleware/validation-rate-limiter';
+// COMMENTED OUT: Rate limiters for validation endpoints - removed until PM2 log viewer is implemented
+// import { quickValidationLimiter, sandboxValidationLimiter } from '../middleware/validation-rate-limiter';
 import { strategyService } from '../services/strategy-service';
 import { AuthenticatedRequest } from '../types';
 import prisma from '../utils/database';
@@ -2331,8 +2332,9 @@ router.put('/:id/code', authenticate, requireQuantRole, async (req: Authenticate
   }
 });
 
-// Quick validate strategy code (syntax + AST checks, no execution)
-router.post('/:id/validate-quick', authenticate, requireQuantRole, quickValidationLimiter, async (req: AuthenticatedRequest, res, next) => {
+// COMMENTED OUT: Quick validate strategy code (syntax + AST checks, no execution)
+// Removed temporarily until PM2 log viewer is implemented
+/* router.post('/:id/validate-quick', authenticate, requireQuantRole, quickValidationLimiter, async (req: AuthenticatedRequest, res, next) => {
   try {
     const strategyId = req.params.id;
     const { code } = req.body;
@@ -2424,9 +2426,11 @@ router.post('/:id/validate-quick', authenticate, requireQuantRole, quickValidati
     });
   }
 });
+*/
 
-// Full sandbox validation (executes code in Docker container)
-router.post('/:id/validate-sandbox', authenticate, requireQuantRole, sandboxValidationLimiter, async (req: AuthenticatedRequest, res, next) => {
+// COMMENTED OUT: Full sandbox validation (executes code in Docker container)
+// Removed temporarily until PM2 log viewer is implemented
+/* router.post('/:id/validate-sandbox', authenticate, requireQuantRole, sandboxValidationLimiter, async (req: AuthenticatedRequest, res, next) => {
   try {
     const strategyId = req.params.id;
     const { code, requirements } = req.body;
@@ -2585,6 +2589,7 @@ router.post('/:id/validate-sandbox', authenticate, requireQuantRole, sandboxVali
     });
   }
 });
+*/
 
 // Get requirements.txt
 router.get('/:id/requirements', authenticate, requireQuantRole, async (req: AuthenticatedRequest, res, next) => {
