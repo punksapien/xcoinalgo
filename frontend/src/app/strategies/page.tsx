@@ -29,6 +29,7 @@ import {
   Power,
   PowerOff,
   Eye,
+  EyeOff,
   Loader2,
   FileCode,
   Calendar,
@@ -55,6 +56,7 @@ interface Strategy {
   version: string;
   isActive: boolean;
   isMarketplace: boolean;
+  isPublic: boolean;
   tags: string;
   instrument: string;
   createdAt: string;
@@ -192,6 +194,33 @@ export default function StrategyManagementPage() {
         showErrorToast('Action Failed', error.message);
       } else if (!(error instanceof ApiError)) {
         showErrorToast('Action Failed', 'Failed to update strategy status');
+      }
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleToggleVisibility = async (strategy: Strategy) => {
+    if (!token) return;
+
+    setActionLoading(strategy.id);
+
+    try {
+      const data = await apiClient.patch<{ message?: string; isPublic: boolean }>(
+        `/api/strategy-upload/${strategy.id}/toggle-visibility`
+      );
+
+      showSuccessToast(
+        'Visibility Updated',
+        data.message || `Strategy is now ${data.isPublic ? 'PUBLIC' : 'PRIVATE'}`
+      );
+      fetchStrategies();
+    } catch (error) {
+      console.error('Toggle visibility failed:', error);
+      if (error instanceof ApiError && error.status !== 401) {
+        showErrorToast('Action Failed', error.message);
+      } else if (!(error instanceof ApiError)) {
+        showErrorToast('Action Failed', 'Failed to update strategy visibility');
       }
     } finally {
       setActionLoading(null);
@@ -456,7 +485,15 @@ export default function StrategyManagementPage() {
                         </div>
                       </td>
                       <td className="py-4 px-4">
-                        {getBacktestStatusBadge(strategy)}
+                        <div className="flex flex-col gap-1">
+                          {getBacktestStatusBadge(strategy)}
+                          <Badge
+                            variant={strategy.isPublic ? 'default' : 'secondary'}
+                            className="text-xs w-fit"
+                          >
+                            {strategy.isPublic ? 'Public' : 'Private'}
+                          </Badge>
+                        </div>
                       </td>
                       <td className="py-4 px-4">
                         <div className="space-y-1 text-sm">
@@ -510,6 +547,22 @@ export default function StrategyManagementPage() {
                               <PowerOff className="h-4 w-4 text-yellow-500" />
                             ) : (
                               <Power className="h-4 w-4 text-green-500" />
+                            )}
+                          </Button>
+
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleToggleVisibility(strategy)}
+                            disabled={actionLoading === strategy.id}
+                            title={strategy.isPublic ? 'Make Private' : 'Make Public'}
+                          >
+                            {actionLoading === strategy.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : strategy.isPublic ? (
+                              <Eye className="h-4 w-4 text-blue-500" />
+                            ) : (
+                              <EyeOff className="h-4 w-4 text-gray-500" />
                             )}
                           </Button>
 

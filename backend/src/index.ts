@@ -1,4 +1,5 @@
 import express from 'express';
+import http from 'http';
 import cors from 'cors';
 import helmet from 'helmet';
 import session from 'express-session';
@@ -25,6 +26,7 @@ import { strategyInviteRoutes } from './routes/strategy-invite';
 import { errorHandler } from './middleware/errorHandler';
 import { startHealthCheckMonitoring } from './services/strategyExecutor';
 import { startOrderMonitoring } from './workers/order-monitor';
+import { terminalSessionManager } from './services/terminal-session-manager';
 import './config/passport'; // Initialize passport configuration
 // Import prisma (with cache sync extension applied)
 import './utils/database';
@@ -136,11 +138,18 @@ app.use('/api/admin', adminRoutes); // Admin dashboard routes
 // Error handling middleware
 app.use(errorHandler);
 
+// Create HTTP server
+const httpServer = http.createServer(app);
+
+// Initialize WebSocket server for terminal sessions
+terminalSessionManager.initialize(httpServer);
+
 // Start server
-app.listen(PORT, () => {
+httpServer.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV}`);
   console.log(`🔒 CORS enabled for: ${process.env.FRONTEND_URL}`);
+  console.log(`🔌 WebSocket server initialized for terminal sessions`);
 
   // Start health check monitoring for strategy executor
   startHealthCheckMonitoring();

@@ -19,9 +19,12 @@ import {
   Loader2,
   CheckCircle,
   AlertCircle,
+  Terminal as TerminalIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ValidationPanel, ValidationResult } from '@/components/ValidationPanel';
+import { SandboxOutputPanel, SandboxValidationResult } from '@/components/SandboxOutputPanel';
+import { SandboxTerminal } from '@/components/SandboxTerminal';
 import type { editor } from 'monaco-editor';
 
 type FileType = 'code' | 'requirements';
@@ -53,6 +56,10 @@ export default function StrategyCodeEditorPage() {
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
   const [showValidation, setShowValidation] = useState(false);
+  const [runningSandbox, setRunningSandbox] = useState(false);
+  const [sandboxResult, setSandboxResult] = useState<SandboxValidationResult | null>(null);
+  const [showSandbox, setShowSandbox] = useState(false);
+  const [showTerminal, setShowTerminal] = useState(false);
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
 
   // Fetch strategy code and requirements
@@ -260,6 +267,43 @@ export default function StrategyCodeEditorPage() {
     }
   };
 
+  const handleRunSandbox = async () => {
+    try {
+      setRunningSandbox(true);
+      setShowSandbox(true);
+
+      const response = await apiClient.post<{
+        success: boolean;
+        validation: SandboxValidationResult;
+      }>(`/api/strategy-upload/${strategyId}/validate-sandbox`, {
+        code: editorData.code,
+        requirements: editorData.requirements
+      });
+
+      setSandboxResult(response.validation);
+
+      if (response.validation.success) {
+        showSuccessToast('Success', 'Code executed successfully in sandbox!');
+      } else if (response.validation.timedOut) {
+        showErrorToast('Timeout', 'Sandbox execution timed out after 30 seconds');
+      } else {
+        showErrorToast('Failed', 'Sandbox execution failed - check errors below');
+      }
+    } catch (error) {
+      if (error instanceof ApiError) {
+        if (error.message.includes('Docker not available')) {
+          showErrorToast('Docker Required', 'Please ensure Docker is running to use sandbox validation');
+        } else {
+          showErrorToast('Error', error.message);
+        }
+      } else {
+        showErrorToast('Error', 'Failed to run sandbox validation');
+      }
+    } finally {
+      setRunningSandbox(false);
+    }
+  };
+
   const getCurrentFileContent = () => {
     return currentFile === 'code' ? editorData.code : editorData.requirements;
   };
@@ -365,6 +409,26 @@ export default function StrategyCodeEditorPage() {
                 <>
                   <CheckCircle className="h-4 w-4 mr-2" />
                   Validate Syntax
+                </>
+              )}
+            </Button>
+
+            <Button
+              onClick={handleRunSandbox}
+              disabled={runningSandbox || currentFile !== 'code'}
+              size="sm"
+              variant="outline"
+              className="border-purple-500/50 text-purple-500 hover:bg-purple-500/10"
+            >
+              {runningSandbox ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Running...
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4 mr-2" />
+                  Run in Sandbox
                 </>
               )}
             </Button>
@@ -503,6 +567,14 @@ export default function StrategyCodeEditorPage() {
             result={validationResult}
             isValidating={validating}
             onJumpToLine={handleJumpToLine}
+          />
+        )}
+
+        {/* Sandbox Output Panel */}
+        {showSandbox && currentFile === 'code' && (
+          <SandboxOutputPanel
+            result={sandboxResult}
+            isRunning={runningSandbox}
           />
         )}
       </div>

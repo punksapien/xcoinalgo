@@ -298,6 +298,7 @@ router.post('/upload', authenticate, requireQuantRole, upload.single('strategyFi
         isActive: false,
         isApproved: false,
         isMarketplace: false,
+        isPublic: true, // Default to PUBLIC for new strategies
         winRate: parsedConfig.winRate,
         riskReward: parsedConfig.riskReward,
         maxDrawdown: parsedConfig.maxDrawdown,
@@ -966,6 +967,44 @@ router.patch('/:id/activate', authenticate, async (req: AuthenticatedRequest, re
   }
 });
 
+// Toggle strategy visibility (public/private)
+router.patch('/:id/toggle-visibility', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = req.userId!;
+    const strategyId = req.params.id;
+
+    // Get current strategy
+    const strategy = await prisma.strategy.findUnique({
+      where: { id: strategyId }
+    });
+
+    if (!strategy) {
+      return res.status(404).json({
+        error: 'Strategy not found'
+      });
+    }
+
+    // Toggle isPublic
+    const newVisibility = !strategy.isPublic;
+    await prisma.strategy.update({
+      where: { id: strategyId },
+      data: { isPublic: newVisibility }
+    });
+
+    logger.info(`Strategy visibility toggled: ${strategyId} -> ${newVisibility ? 'PUBLIC' : 'PRIVATE'} by user ${userId}`);
+
+    res.json({
+      success: true,
+      isPublic: newVisibility,
+      message: `Strategy is now ${newVisibility ? 'PUBLIC' : 'PRIVATE'}`
+    });
+
+  } catch (error) {
+    logger.error('Strategy visibility toggle failed:', error);
+    next(error);
+  }
+});
+
 // CLI-friendly upload: accepts JSON payload with file contents (no multipart)
 router.post('/cli-upload', authenticate, requireQuantRole, async (req: AuthenticatedRequest, res, next) => {
   try {
@@ -1068,6 +1107,7 @@ router.post('/cli-upload', authenticate, requireQuantRole, async (req: Authentic
           isActive: false,
           isApproved: false,
           isMarketplace: false,
+          isPublic: true, // Default to PUBLIC for new strategies
           winRate: parsedConfig.winRate,
           riskReward: parsedConfig.riskReward,
           maxDrawdown: parsedConfig.maxDrawdown,
@@ -1870,6 +1910,7 @@ router.post('/upload-simple', authenticate, requireQuantRole, upload.fields([
           isActive: false, // Will be activated after backtest
           isApproved: false,
           isMarketplace: false,
+          isPublic: true, // Default to PUBLIC for new strategies
           supportedPairs: mergedConfig.supportedPairs ? JSON.stringify(mergedConfig.supportedPairs) : null,
           timeframes: mergedConfig.timeframes ? JSON.stringify(mergedConfig.timeframes) : null,
           executionConfig: mergedConfig, // ✅ Store extracted + user config for live trading
@@ -2377,6 +2418,116 @@ router.post('/:id/validate-quick', authenticate, requireQuantRole, async (req: A
     logger.error('Failed to validate strategy code:', error);
     res.status(500).json({
       error: 'Validation failed',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+// Full sandbox validation (executes code in Docker container)
+router.post('/:id/validate-sandbox', authenticate, requireQuantRole, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const strategyId = req.params.id;
+    const { code, requirements } = req.body;
+
+    if (!code || typeof code !== 'string') {
+      return res.status(400).json({
+        error: 'Code is required and must be a string'
+      });
+    }
+
+    // Check if strategy exists
+    const strategy = await prisma.strategy.findUnique({
+      where: { id: strategyId },
+      select: { id: true, name: true }
+    });
+
+    if (!strategy) {
+      return res.status(404).json({
+        error: 'Strategy not found'
+      });
+    }
+
+    logger.info(`Running sandbox validation for strategy: ${strategyId}`);
+
+    // Import docker sandbox service
+    const { dockerSandbox } = await import('../services/docker-sandbox');
+
+    // Check if Docker is available
+    const dockerAvailable = await dockerSandbox.isDockerAvailable();
+    if (!dockerAvailable) {
+      return res.status(503).json({
+        error: 'Docker not available',
+        message: 'Sandbox validation requires Docker to be running'
+      });
+    }
+
+    // Execute in sandbox
+    const result = await dockerSandbox.executeCode(code, requirements || '', {
+      memoryLimit: 512,
+      cpuLimit: 0.5,
+      timeout: 30000,
+      networkDisabled: true
+    });
+
+    // Parse sandbox executor output
+    let validationResult = {
+      success: result.success,
+      errors: [],
+      warnings: [],
+      info: [],
+      classesFound: [],
+      methodsFound: {},
+      executionTime: result.executionTime,
+      resourceUsage: result.resourceUsage,
+      timedOut: result.timedOut
+    };
+
+    if (result.success && result.stdout) {
+      try {
+        const parsed = JSON.parse(result.stdout);
+        validationResult = {
+          ...validationResult,
+          success: parsed.success,
+          errors: parsed.errors || [],
+          warnings: parsed.warnings || [],
+          info: parsed.info || [],
+          classesFound: parsed.classes_found || [],
+          methodsFound: parsed.methods_found || {}
+        };
+      } catch (parseError) {
+        logger.error('Failed to parse sandbox output:', parseError);
+        validationResult.errors.push({
+          severity: 'error',
+          message: 'Failed to parse sandbox output',
+          details: result.stdout
+        });
+      }
+    } else if (result.error) {
+      validationResult.errors.push({
+        severity: 'error',
+        message: result.error
+      });
+    } else if (result.stderr) {
+      validationResult.errors.push({
+        severity: 'error',
+        message: 'Execution error',
+        details: result.stderr
+      });
+    }
+
+    logger.info(`Sandbox validation completed for ${strategyId}: ${validationResult.success ? 'PASS' : 'FAIL'}`);
+
+    res.json({
+      success: true,
+      validation: validationResult,
+      strategyId,
+      strategyName: strategy.name
+    });
+
+  } catch (error) {
+    logger.error('Failed to run sandbox validation:', error);
+    res.status(500).json({
+      error: 'Sandbox validation failed',
       message: error instanceof Error ? error.message : 'Unknown error'
     });
   }
