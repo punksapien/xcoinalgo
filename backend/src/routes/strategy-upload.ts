@@ -473,6 +473,7 @@ router.get('/strategies', authenticate, requireQuantRole, async (req: Authentica
           version: true,
           isActive: true,
           isMarketplace: true,
+          isPublic: true,
           tags: true,
           instrument: true,
           createdAt: true,
