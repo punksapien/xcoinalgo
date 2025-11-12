@@ -13,6 +13,10 @@ model User {
   password String? // Nullable for OAuth-only users
   googleId String? @unique // Google OAuth ID
 
+  // Profile information
+  name        String? // Full name (nullable for existing users, but required in frontend)
+  phoneNumber String? // Phone number (optional)
+
   // Email verification
   emailVerified           DateTime?
   verificationToken       String?   @unique
@@ -33,7 +37,8 @@ model User {
   apiKeys               ApiKey[]
 
   // Client dashboard relations
-  ownedStrategies    Strategy[] // Strategies owned by client
+  ownedStrategies    Strategy[] @relation("OwnedStrategies") // Strategies owned by client
+  authoredStrategies Strategy[] @relation("AuthoredStrategies") // Strategies authored/created by this user
   createdInviteLinks StrategyInviteLink[] // Invite links created by client
   accessRequests     StrategyAccessRequest[] @relation("RequestedByUser") // Access requests made by user
   approvedRequests   StrategyAccessRequest[] @relation("ApprovedByUser") // Access requests approved by client
@@ -90,7 +95,8 @@ model Strategy {
   code                String  @db.VarChar(100)
   description         String?
   detailedDescription String?
-  author              String
+  author              String  // Display name (kept for backward compatibility)
+  authorId            String? // Link to User who created the strategy
   version             String  @default("1.0.0")
   instrument          String
   tags                String  @default("") @db.Text
@@ -171,12 +177,14 @@ model Strategy {
   executions      StrategyExecution[] // Execution history
 
   // Client dashboard relations
-  client         User?                   @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  client         User?                   @relation("OwnedStrategies", fields: [clientId], references: [id], onDelete: SetNull)
+  authorUser     User?                   @relation("AuthoredStrategies", fields: [authorId], references: [id], onDelete: SetNull)
   inviteLinks    StrategyInviteLink[] // Invite links for private access
   accessRequests StrategyAccessRequest[] // Access requests for private strategies
 
   @@unique([code, version])
   @@index([clientId])
+  @@index([authorId])
   @@map("strategies")
 }
 

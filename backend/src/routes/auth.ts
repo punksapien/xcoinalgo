@@ -6,6 +6,7 @@ import { generateToken } from '../utils/simple-jwt';
 import prisma from '../utils/database';
 import { authenticate } from '../middleware/auth';
 import { AuthenticatedRequest } from '../types';
+import { Logger } from '../utils/logger';
 import {
   generateOTP,
   getOTPExpiry,
@@ -16,6 +17,7 @@ import {
 } from '../services/email.service';
 
 const router = Router();
+const logger = new Logger('AuthRoutes');
 
 // Rate limiters for auth endpoints
 const loginLimiter = rateLimit({
@@ -57,13 +59,16 @@ const passwordResetLimiter = rateLimit({
 // Register new user with email verification
 router.post('/register', registerLimiter, async (req, res, next) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, name, phoneNumber } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({
         error: 'Email and password are required'
       });
     }
+
+    // Note: name is optional at backend level but will be enforced by frontend
+    // This allows flexibility for existing API consumers
 
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -103,6 +108,8 @@ router.post('/register', registerLimiter, async (req, res, next) => {
     const user = await prisma.user.create({
       data: {
         email,
+        name: name || null, // Optional name from signup form
+        phoneNumber: phoneNumber || null, // Optional phone number
         password: hashedPassword,
         verificationToken: otp,
         verificationTokenExpiry: otpExpiry,
@@ -111,6 +118,8 @@ router.post('/register', registerLimiter, async (req, res, next) => {
       select: {
         id: true,
         email: true,
+        name: true,
+        phoneNumber: true,
         emailVerified: true,
         createdAt: true
       }
@@ -125,6 +134,8 @@ router.post('/register', registerLimiter, async (req, res, next) => {
       user: {
         id: user.id,
         email: user.email,
+        name: user.name,
+        phoneNumber: user.phoneNumber,
         emailVerified: user.emailVerified
       },
       requiresVerification: true
@@ -531,6 +542,7 @@ router.post('/google-auth', async (req, res, next) => {
       select: {
         id: true,
         email: true,
+        name: true,
         role: true,
         googleId: true,
         emailVerified: true,
@@ -543,6 +555,7 @@ router.post('/google-auth', async (req, res, next) => {
       user = await prisma.user.create({
         data: {
           email,
+          name, // Save name from Google profile
           googleId,
           password: null, // OAuth users don't have passwords
           emailVerified: new Date(), // Google emails are pre-verified
@@ -550,6 +563,7 @@ router.post('/google-auth', async (req, res, next) => {
         select: {
           id: true,
           email: true,
+          name: true,
           role: true,
           googleId: true,
           emailVerified: true,
@@ -562,11 +576,13 @@ router.post('/google-auth', async (req, res, next) => {
         where: { email },
         data: {
           googleId,
+          name: name || user.name, // Update name if provided, keep existing otherwise
           emailVerified: user.emailVerified || new Date(), // Verify email if not already
         },
         select: {
           id: true,
           email: true,
+          name: true,
           role: true,
           googleId: true,
           emailVerified: true,
@@ -586,6 +602,7 @@ router.post('/google-auth', async (req, res, next) => {
       user: {
         id: user.id,
         email: user.email,
+        name: user.name,
         role: user.role,
         emailVerified: user.emailVerified,
         createdAt: user.createdAt
@@ -648,5 +665,213 @@ router.get('/google/callback',
     }
   }
 );
+
+// ============================================
+// User Profile Management Routes
+// ============================================
+
+/**
+ * GET /api/user/profile
+ * Get current user's profile information
+ */
+router.get('/profile', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = req.userId!;
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        phoneNumber: true,
+        role: true,
+        googleId: true, // To check if OAuth user
+        emailVerified: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        error: 'User not found'
+      });
+    }
+
+    // Check if user can change password (only non-OAuth users)
+    const canChangePassword = !user.googleId;
+
+    res.json({
+      success: true,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        phoneNumber: user.phoneNumber,
+        role: user.role,
+        emailVerified: user.emailVerified,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+        canChangePassword
+      }
+    });
+  } catch (error) {
+    logger.error('Failed to fetch user profile:', error);
+    next(error);
+  }
+});
+
+/**
+ * PUT /api/user/profile
+ * Update user profile (name, phoneNumber)
+ * Email cannot be changed
+ */
+router.put('/profile', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = req.userId!;
+    const { name, phoneNumber } = req.body;
+
+    // Validate inputs
+    if (name !== undefined && typeof name !== 'string') {
+      return res.status(400).json({
+        error: 'Name must be a string'
+      });
+    }
+
+    if (phoneNumber !== undefined && phoneNumber !== null && typeof phoneNumber !== 'string') {
+      return res.status(400).json({
+        error: 'Phone number must be a string'
+      });
+    }
+
+    // Build update data
+    const updateData: any = {};
+    if (name !== undefined) updateData.name = name || null;
+    if (phoneNumber !== undefined) updateData.phoneNumber = phoneNumber || null;
+
+    // Update user
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: updateData,
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        phoneNumber: true,
+        role: true,
+        googleId: true,
+        emailVerified: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    });
+
+    logger.info(`User ${userId} updated profile`);
+
+    res.json({
+      success: true,
+      message: 'Profile updated successfully',
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        phoneNumber: user.phoneNumber,
+        role: user.role,
+        emailVerified: user.emailVerified,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+        canChangePassword: !user.googleId
+      }
+    });
+  } catch (error) {
+    logger.error('Failed to update user profile:', error);
+    next(error);
+  }
+});
+
+/**
+ * PUT /api/user/change-password
+ * Change user password (only for email/password users, not OAuth)
+ */
+router.put('/change-password', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = req.userId!;
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        error: 'Current password and new password are required'
+      });
+    }
+
+    // Validate new password strength
+    if (newPassword.length < 8) {
+      return res.status(400).json({
+        error: 'New password must be at least 8 characters long'
+      });
+    }
+
+    // Get user with password field
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        password: true,
+        googleId: true
+      }
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        error: 'User not found'
+      });
+    }
+
+    // Check if user is OAuth user (no password)
+    if (user.googleId && !user.password) {
+      return res.status(400).json({
+        error: 'Cannot change password for OAuth users. You signed in with Google.'
+      });
+    }
+
+    if (!user.password) {
+      return res.status(400).json({
+        error: 'No password set for this account'
+      });
+    }
+
+    // Verify current password
+    const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
+    if (!isPasswordValid) {
+      return res.status(401).json({
+        error: 'Current password is incorrect'
+      });
+    }
+
+    // Hash new password
+    const saltRounds = 12;
+    const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
+
+    // Update password
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        password: hashedPassword
+      }
+    });
+
+    logger.info(`User ${userId} changed password`);
+
+    res.json({
+      success: true,
+      message: 'Password changed successfully'
+    });
+  } catch (error) {
+    logger.error('Failed to change password:', error);
+    next(error);
+  }
+});
 
 export { router as authRoutes };
