@@ -11,6 +11,15 @@ import { useAuth } from '@/lib/auth';
 import { strategyService, Strategy } from '@/lib/strategy-service';
 import { SubscribeModal } from '@/components/strategy/subscribe-modal';
 import { Search, Filter, TrendingUp, Users, Bot, Clock, Target, TrendingDown, Zap } from 'lucide-react';
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 
 function DashboardContent() {
   const [strategies, setStrategies] = useState<Strategy[]>([]);
@@ -22,6 +31,8 @@ function DashboardContent() {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [subscribeModalOpen, setSubscribeModalOpen] = useState(false);
   const [selectedStrategy, setSelectedStrategy] = useState<Strategy | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(12);
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -95,6 +106,18 @@ function DashboardContent() {
       }, 150); // 150ms debounce for very fast response
     };
   }, [debouncedSearch]);
+
+  // Calculate pagination
+  const totalPages = Math.ceil(strategies.length / itemsPerPage);
+  const paginatedStrategies = strategies.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedTags, sortBy, sortOrder]);
 
   const toggleTag = useCallback((tag: string) => {
     setSelectedTags(prev =>
@@ -235,7 +258,7 @@ function DashboardContent() {
         {/* Results Counter */}
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
-            {loading ? 'Searching...' : `Found ${strategies.length} strategies`}
+            {loading ? 'Searching...' : `Found ${strategies.length} strategies (Showing ${paginatedStrategies.length} on page ${currentPage} of ${totalPages})`}
           </p>
           {loading && (
             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
@@ -244,7 +267,7 @@ function DashboardContent() {
 
         {/* Strategy Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {strategies.map((strategy) => (
+          {paginatedStrategies.map((strategy) => (
             <Card
               key={strategy.id}
               className="card-hover cursor-pointer border-border/50 hover:border-primary/30 transition-all duration-200"
@@ -401,6 +424,69 @@ function DashboardContent() {
             </Card>
           ))}
         </div>
+
+        {/* Pagination */}
+        {strategies.length > itemsPerPage && (
+          <Pagination className="mt-8">
+            <PaginationContent>
+              <PaginationItem>
+                <PaginationPrevious
+                  href="#"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    if (currentPage > 1) setCurrentPage(currentPage - 1);
+                  }}
+                  className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                />
+              </PaginationItem>
+
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+                // Show first page, last page, current page, and pages around current page
+                if (
+                  page === 1 ||
+                  page === totalPages ||
+                  (page >= currentPage - 1 && page <= currentPage + 1)
+                ) {
+                  return (
+                    <PaginationItem key={page}>
+                      <PaginationLink
+                        href="#"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setCurrentPage(page);
+                        }}
+                        isActive={currentPage === page}
+                        className="cursor-pointer"
+                      >
+                        {page}
+                      </PaginationLink>
+                    </PaginationItem>
+                  );
+                }
+                // Show ellipsis
+                if (page === currentPage - 2 || page === currentPage + 2) {
+                  return (
+                    <PaginationItem key={page}>
+                      <PaginationEllipsis />
+                    </PaginationItem>
+                  );
+                }
+                return null;
+              })}
+
+              <PaginationItem>
+                <PaginationNext
+                  href="#"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    if (currentPage < totalPages) setCurrentPage(currentPage + 1);
+                  }}
+                  className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                />
+              </PaginationItem>
+            </PaginationContent>
+          </Pagination>
+        )}
 
         {/* Empty State */}
         {strategies.length === 0 && !loading && (

@@ -44,6 +44,8 @@ interface FilterOptions {
   author?: string;
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
+  page?: number;
+  limit?: number;
 }
 
 class StrategyService {
@@ -68,9 +70,9 @@ class StrategyService {
     this.fetchPromise = null;
   }
 
-  private async fetchStrategiesFromAPI() {
+  private async fetchStrategiesFromAPI(page: number = 1, limit: number = 1000) {
     try {
-      const response = await fetch('/api/marketplace');
+      const response = await fetch(`/api/marketplace?page=${page}&limit=${limit}`);
       if (!response.ok) {
         console.error('Failed to fetch strategies from API');
         this.strategies = [];

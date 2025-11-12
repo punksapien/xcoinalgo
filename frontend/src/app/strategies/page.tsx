@@ -36,6 +36,15 @@ import {
   AlertCircle,
   CheckCircle2
 } from "lucide-react";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 
 interface Strategy {
   id: string;
@@ -73,6 +82,8 @@ export default function StrategyManagementPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [logViewerOpen, setLogViewerOpen] = useState(false);
   const [logViewerStrategy, setLogViewerStrategy] = useState<Strategy | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(10);
 
   const fetchStrategies = useCallback(async () => {
     try {
@@ -210,6 +221,18 @@ export default function StrategyManagementPage() {
 
     return matchesSearch && matchesStatus;
   });
+
+  // Calculate pagination
+  const totalPages = Math.ceil(filteredStrategies.length / itemsPerPage);
+  const paginatedStrategies = filteredStrategies.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter]);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -379,7 +402,7 @@ export default function StrategyManagementPage() {
         <CardHeader>
           <CardTitle>All Strategies</CardTitle>
           <CardDescription>
-            {filteredStrategies.length} {filteredStrategies.length === 1 ? 'strategy' : 'strategies'} found
+            {filteredStrategies.length} {filteredStrategies.length === 1 ? 'strategy' : 'strategies'} found (Page {currentPage} of {totalPages || 1})
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -416,7 +439,7 @@ export default function StrategyManagementPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredStrategies.map((strategy) => (
+                  {paginatedStrategies.map((strategy) => (
                     <tr key={strategy.id} className="border-b hover:bg-secondary/20">
                       <td className="py-4 px-4">
                         <div>
@@ -509,6 +532,67 @@ export default function StrategyManagementPage() {
                   ))}
                 </tbody>
               </table>
+
+              {/* Pagination */}
+              {filteredStrategies.length > itemsPerPage && (
+                <Pagination className="mt-6">
+                  <PaginationContent>
+                    <PaginationItem>
+                      <PaginationPrevious
+                        href="#"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          if (currentPage > 1) setCurrentPage(currentPage - 1);
+                        }}
+                        className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                      />
+                    </PaginationItem>
+
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+                      if (
+                        page === 1 ||
+                        page === totalPages ||
+                        (page >= currentPage - 1 && page <= currentPage + 1)
+                      ) {
+                        return (
+                          <PaginationItem key={page}>
+                            <PaginationLink
+                              href="#"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                setCurrentPage(page);
+                              }}
+                              isActive={currentPage === page}
+                              className="cursor-pointer"
+                            >
+                              {page}
+                            </PaginationLink>
+                          </PaginationItem>
+                        );
+                      }
+                      if (page === currentPage - 2 || page === currentPage + 2) {
+                        return (
+                          <PaginationItem key={page}>
+                            <PaginationEllipsis />
+                          </PaginationItem>
+                        );
+                      }
+                      return null;
+                    })}
+
+                    <PaginationItem>
+                      <PaginationNext
+                        href="#"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          if (currentPage < totalPages) setCurrentPage(currentPage + 1);
+                        }}
+                        className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                      />
+                    </PaginationItem>
+                  </PaginationContent>
+                </Pagination>
+              )}
             </div>
           )}
         </CardContent>
