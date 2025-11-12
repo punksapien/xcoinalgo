@@ -548,14 +548,20 @@ router.get('/email-stats', async (req: AuthenticatedRequest, res, next) => {
 
 /**
  * GET /api/admin/unverified-users
- * Get users who haven't verified their email
+ * Get users who requested verification emails but haven't verified yet
+ * Only shows users who actually have email logs (requested emails from system)
  */
 router.get('/unverified-users', async (req: AuthenticatedRequest, res, next) => {
   try {
     const users = await prisma.user.findMany({
       where: {
         emailVerified: null,
-        password: { not: null } // Only email/password users
+        password: { not: null }, // Only email/password users
+        emailLogs: {
+          some: {
+            emailType: 'VERIFICATION' // Only users who actually requested verification emails
+          }
+        }
       },
       select: {
         id: true,
