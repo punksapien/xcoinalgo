@@ -22,10 +22,6 @@ export const quickValidationLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  // Use user ID as key if available
-  keyGenerator: (req) => {
-    return (req as any).userId || req.ip || 'anonymous';
-  },
   handler: (req, res) => {
     logger.warn(`Rate limit exceeded for quick validation: ${(req as any).userId || req.ip}`);
     res.status(429).json({
@@ -50,9 +46,6 @@ export const sandboxValidationLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => {
-    return (req as any).userId || req.ip || 'anonymous';
-  },
   handler: (req, res) => {
     logger.warn(`Rate limit exceeded for sandbox validation: ${(req as any).userId || req.ip}`);
     res.status(429).json({
@@ -77,9 +70,6 @@ export const terminalSessionLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => {
-    return (req as any).userId || req.ip || 'anonymous';
-  },
   handler: (req, res) => {
     logger.warn(`Rate limit exceeded for terminal sessions: ${(req as any).userId || req.ip}`);
     res.status(429).json({
