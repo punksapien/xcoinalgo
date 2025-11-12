@@ -62,6 +62,44 @@ export default function StrategyCodeEditorPage() {
   const [showTerminal, setShowTerminal] = useState(false);
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Cmd/Ctrl + K: Quick validation
+      if ((event.metaKey || event.ctrlKey) && event.key === 'k' && currentFile === 'code') {
+        event.preventDefault();
+        if (!validating) {
+          handleValidate();
+        }
+      }
+
+      // Cmd/Ctrl + Shift + K: Sandbox execution
+      if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key === 'K' && currentFile === 'code') {
+        event.preventDefault();
+        if (!runningSandbox) {
+          handleRunSandbox();
+        }
+      }
+
+      // Cmd/Ctrl + S: Save
+      if ((event.metaKey || event.ctrlKey) && event.key === 's') {
+        event.preventDefault();
+        if (isEditing && hasUnsavedChanges && !saving) {
+          handleSave();
+        }
+      }
+
+      // Cmd/Ctrl + `: Toggle terminal
+      if ((event.metaKey || event.ctrlKey) && event.key === '`' && currentFile === 'code') {
+        event.preventDefault();
+        setShowTerminal(!showTerminal);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [validating, runningSandbox, isEditing, hasUnsavedChanges, saving, showTerminal, currentFile]);
+
   // Fetch strategy code and requirements
   useEffect(() => {
     const fetchData = async () => {
@@ -304,6 +342,19 @@ export default function StrategyCodeEditorPage() {
     }
   };
 
+  const handleOpenTerminal = () => {
+    setShowTerminal(true);
+  };
+
+  const handleCloseTerminal = () => {
+    setShowTerminal(false);
+  };
+
+  const getAuthToken = (): string => {
+    // Get token from localStorage (adjust based on your auth implementation)
+    return localStorage.getItem('authToken') || '';
+  };
+
   const getCurrentFileContent = () => {
     return currentFile === 'code' ? editorData.code : editorData.requirements;
   };
@@ -431,6 +482,17 @@ export default function StrategyCodeEditorPage() {
                   Run in Sandbox
                 </>
               )}
+            </Button>
+
+            <Button
+              onClick={handleOpenTerminal}
+              disabled={showTerminal || currentFile !== 'code'}
+              size="sm"
+              variant="outline"
+              className="border-cyan-500/50 text-cyan-500 hover:bg-cyan-500/10"
+            >
+              <TerminalIcon className="h-4 w-4 mr-2" />
+              Open Terminal
             </Button>
 
             <Button
@@ -575,6 +637,17 @@ export default function StrategyCodeEditorPage() {
           <SandboxOutputPanel
             result={sandboxResult}
             isRunning={runningSandbox}
+          />
+        )}
+
+        {/* Interactive Terminal */}
+        {showTerminal && currentFile === 'code' && (
+          <SandboxTerminal
+            strategyId={strategyId}
+            code={editorData.code}
+            requirements={editorData.requirements}
+            token={getAuthToken()}
+            onClose={handleCloseTerminal}
           />
         )}
       </div>

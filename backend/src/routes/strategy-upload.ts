@@ -5,6 +5,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { authenticate, requireQuantRole } from '../middleware/auth';
+import { quickValidationLimiter, sandboxValidationLimiter } from '../middleware/validation-rate-limiter';
 import { strategyService } from '../services/strategy-service';
 import { AuthenticatedRequest } from '../types';
 import prisma from '../utils/database';
@@ -2330,7 +2331,7 @@ router.put('/:id/code', authenticate, requireQuantRole, async (req: Authenticate
 });
 
 // Quick validate strategy code (syntax + AST checks, no execution)
-router.post('/:id/validate-quick', authenticate, requireQuantRole, async (req: AuthenticatedRequest, res, next) => {
+router.post('/:id/validate-quick', authenticate, requireQuantRole, quickValidationLimiter, async (req: AuthenticatedRequest, res, next) => {
   try {
     const strategyId = req.params.id;
     const { code } = req.body;
@@ -2424,7 +2425,7 @@ router.post('/:id/validate-quick', authenticate, requireQuantRole, async (req: A
 });
 
 // Full sandbox validation (executes code in Docker container)
-router.post('/:id/validate-sandbox', authenticate, requireQuantRole, async (req: AuthenticatedRequest, res, next) => {
+router.post('/:id/validate-sandbox', authenticate, requireQuantRole, sandboxValidationLimiter, async (req: AuthenticatedRequest, res, next) => {
   try {
     const strategyId = req.params.id;
     const { code, requirements } = req.body;
@@ -2517,6 +2518,34 @@ router.post('/:id/validate-sandbox', authenticate, requireQuantRole, async (req:
 
     logger.info(`Sandbox validation completed for ${strategyId}: ${validationResult.success ? 'PASS' : 'FAIL'}`);
 
+    // Audit log: Record sandbox execution
+    try {
+      await prisma.sandboxExecutionLog.create({
+        data: {
+          userId: req.userId!,
+          strategyId,
+          executionType: 'VALIDATION',
+          success: validationResult.success,
+          executionTime: validationResult.executionTime,
+          memoryUsed: validationResult.resourceUsage?.memoryUsedMB || null,
+          cpuUsage: validationResult.resourceUsage?.cpuPercent || null,
+          timedOut: validationResult.timedOut,
+          errorCount: validationResult.errors.length,
+          warningCount: validationResult.warnings.length,
+          classesFound: validationResult.classesFound.join(','),
+          metadata: JSON.stringify({
+            errors: validationResult.errors,
+            warnings: validationResult.warnings
+          })
+        }
+      }).catch(err => {
+        // Don't fail the request if audit logging fails
+        logger.error('Failed to create audit log:', err);
+      });
+    } catch (auditError) {
+      logger.error('Audit logging error:', auditError);
+    }
+
     res.json({
       success: true,
       validation: validationResult,
@@ -2526,6 +2555,29 @@ router.post('/:id/validate-sandbox', authenticate, requireQuantRole, async (req:
 
   } catch (error) {
     logger.error('Failed to run sandbox validation:', error);
+
+    // Audit log: Record failed attempt
+    try {
+      await prisma.sandboxExecutionLog.create({
+        data: {
+          userId: req.userId!,
+          strategyId: req.params.id,
+          executionType: 'VALIDATION',
+          success: false,
+          executionTime: 0,
+          errorCount: 1,
+          warningCount: 0,
+          metadata: JSON.stringify({
+            error: error instanceof Error ? error.message : 'Unknown error'
+          })
+        }
+      }).catch(() => {
+        // Silently fail audit logging
+      });
+    } catch (auditError) {
+      // Ignore audit logging errors
+    }
+
     res.status(500).json({
       error: 'Sandbox validation failed',
       message: error instanceof Error ? error.message : 'Unknown error'
