@@ -151,10 +151,10 @@ router.post('/:id/subscribe', authenticate, async (req: AuthenticatedRequest, re
           return balance - (locked + crossOrder + crossUser);
         };
 
-        // Find which wallet user has (prefer USDT, fallback to INR)
+        // Find which wallet user has (prefer INR for Indian users, fallback to USDT)
         const usdtWallet = wallets.find(w => (w as any).currency_short_name === 'USDT');
         const inrWallet = wallets.find(w => (w as any).currency_short_name === 'INR');
-        const primaryWallet = usdtWallet || inrWallet;
+        const primaryWallet = inrWallet || usdtWallet;
 
         if (!primaryWallet) {
           return res.status(400).json({
