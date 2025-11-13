@@ -63,6 +63,7 @@ export default function StrategyUploadPage() {
     description: '',
     pair: '',  // Don't hardcode - will be populated from STRATEGY_CONFIG
     resolution: '',  // Don't hardcode - will be populated from STRATEGY_CONFIG
+    author: '',  // Allow manual input for author name
     tags: '',
   });
 
@@ -282,7 +283,7 @@ export default function StrategyUploadPage() {
         description: config.description,
         pair: config.pair,
         resolution: config.resolution,
-        author: user?.name || 'Quant Team',
+        author: config.author.trim() || user?.name || 'Quant Team',
         authorId: user?.id,
         tags: config.tags.split(',').map(t => t.trim()).filter(t => t),
       }));
@@ -690,12 +691,13 @@ export default function StrategyUploadPage() {
             <Label htmlFor="author">Author</Label>
             <Input
               id="author"
-              value={user?.name || 'Quant Team'}
-              disabled={true}
-              className="bg-muted cursor-not-allowed"
+              value={config.author}
+              onChange={(e) => setConfig({ ...config, author: e.target.value })}
+              placeholder={user?.name || 'Quant Team'}
+              disabled={uploading || backtestRunning}
             />
             <p className="text-xs text-muted-foreground mt-1">
-              ✅ Automatically set from your profile
+              Enter the author name for this strategy
             </p>
           </div>
 
