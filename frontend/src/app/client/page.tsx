@@ -258,7 +258,7 @@ export default function ClientDashboardPage() {
                   <p className="text-sm">
                     You have {stats.pendingRequests} pending access request{stats.pendingRequests !== 1 ? 's' : ''} waiting for your review.
                   </p>
-                  <Link href="/dashboard/client/requests">
+                  <Link href="/client/requests">
                     <Button className="w-full">
                       Review Requests
                     </Button>
