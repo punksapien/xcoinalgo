@@ -421,7 +421,10 @@ function DashboardContent() {
                     variant="outline"
                     size="sm"
                     className="flex-1 hover:bg-primary/5 hover:border-primary/50 transition-all"
-                    onClick={(e) => handleViewDetails(strategy.id, e)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      router.push(`/dashboard/strategy/${strategy.id}`);
+                    }}
                   >
                     View Details
                   </Button>
