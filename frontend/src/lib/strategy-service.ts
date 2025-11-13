@@ -59,20 +59,24 @@ class StrategyService {
     // Don't initialize synchronously - fetch on demand
   }
 
-  private async initializeData() {
+  private async initializeData(token?: string) {
     // Prevent multiple simultaneous fetches
     if (this.fetchPromise) {
       return this.fetchPromise;
     }
 
-    this.fetchPromise = this.fetchStrategiesFromAPI();
+    this.fetchPromise = this.fetchStrategiesFromAPI(1, 1000, token);
     await this.fetchPromise;
     this.fetchPromise = null;
   }
 
-  private async fetchStrategiesFromAPI(page: number = 1, limit: number = 1000) {
+  private async fetchStrategiesFromAPI(page: number = 1, limit: number = 1000, token?: string) {
     try {
-      const response = await fetch(`/api/marketplace?page=${page}&limit=${limit}`);
+      const headers: HeadersInit = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      const response = await fetch(`/api/marketplace?page=${page}&limit=${limit}`, { headers });
       if (!response.ok) {
         console.error('Failed to fetch strategies from API');
         this.strategies = [];
@@ -96,6 +100,7 @@ class StrategyService {
         marginRequired: s.marginRequired as number | undefined,
         deploymentCount: (s.subscriberCount as number) || 0,
         subscriberCount: (s.subscriberCount as number) || 0,
+        isSubscribed: s.isSubscribed as boolean | undefined,
         createdAt: s.createdAt as string,
         timeframes: (s.timeframes as string[]) || [],
         supportedPairs: (s.supportedPairs as string[]) || [],
@@ -285,13 +290,13 @@ class StrategyService {
   }
 
   // Public API methods
-  async getStrategies(options: FilterOptions = {}): Promise<{
+  async getStrategies(options: FilterOptions = {}, token?: string): Promise<{
     strategies: Strategy[];
     total: number;
   }> {
     // Ensure data is loaded
     if (this.strategies.length === 0 || !this.isCacheValid()) {
-      await this.initializeData();
+      await this.initializeData(token);
     }
 
     let matchingIndices = this.fastSearch(options.search || '');

@@ -27,7 +27,7 @@ function DashboardContent() {
 
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { login } = useAuth();
+  const { login, token } = useAuth();
 
   // Handle OAuth callback
   useEffect(() => {
@@ -58,14 +58,14 @@ function DashboardContent() {
         tags: selectedTags.join(','),
         sortBy,
         sortOrder
-      });
+      }, token || undefined);
       setStrategies(result.strategies);
     } catch (error) {
       console.error('Error fetching strategies:', error);
     } finally {
       setLoading(false);
     }
-  }, [searchTerm, selectedTags, sortBy, sortOrder]);
+  }, [searchTerm, selectedTags, sortBy, sortOrder, token]);
 
   // Fetch tags
   const fetchTags = useCallback(async () => {
