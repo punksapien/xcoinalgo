@@ -412,4 +412,149 @@ router.post('/access-requests/:id/reject', async (req: AuthenticatedRequest, res
   }
 });
 
+/**
+ * GET /api/client/subscribers
+ * Get all subscribers across client's strategies
+ */
+router.get('/subscribers', async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = req.userId!;
+    const { strategyId, status } = req.query;
+
+    // Build filter conditions
+    const whereConditions: any = {
+      strategy: { clientId: userId }
+    };
+
+    // Filter by specific strategy
+    if (strategyId) {
+      whereConditions.strategyId = strategyId;
+    }
+
+    // Filter by subscription status
+    if (status === 'active') {
+      whereConditions.isActive = true;
+      whereConditions.isPaused = false;
+    } else if (status === 'paused') {
+      whereConditions.isPaused = true;
+    } else if (status === 'inactive') {
+      whereConditions.isActive = false;
+    }
+
+    const subscriptions = await prisma.strategySubscription.findMany({
+      where: whereConditions,
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            createdAt: true
+          }
+        },
+        strategy: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            isPublic: true
+          }
+        }
+      },
+      orderBy: { subscribedAt: 'desc' }
+    });
+
+    res.json({
+      subscribers: subscriptions.map(sub => ({
+        id: sub.id,
+        user: sub.user,
+        strategy: sub.strategy,
+        // Subscription config
+        capital: sub.capital,
+        riskPerTrade: sub.riskPerTrade,
+        leverage: sub.leverage,
+        maxPositions: sub.maxPositions,
+        maxDailyLoss: sub.maxDailyLoss,
+        tradingType: sub.tradingType,
+        marginCurrency: sub.marginCurrency,
+        // Status
+        isActive: sub.isActive,
+        isPaused: sub.isPaused,
+        subscribedAt: sub.subscribedAt,
+        pausedAt: sub.pausedAt,
+        unsubscribedAt: sub.unsubscribedAt,
+        // Performance
+        totalTrades: sub.totalTrades,
+        winningTrades: sub.winningTrades,
+        losingTrades: sub.losingTrades,
+        totalPnl: sub.totalPnl,
+        winRate: sub.totalTrades > 0 ? (sub.winningTrades / sub.totalTrades) * 100 : 0
+      }))
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * PUT /api/client/subscribers/:id/parameters
+ * Update individual subscriber's trading parameters
+ */
+router.put('/subscribers/:id/parameters', async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = req.userId!;
+    const { id: subscriptionId } = req.params;
+    const { capital, riskPerTrade, leverage, maxPositions, maxDailyLoss } = req.body;
+
+    // Get subscription and verify ownership through strategy
+    const subscription = await prisma.strategySubscription.findUnique({
+      where: { id: subscriptionId },
+      include: { strategy: true }
+    });
+
+    if (!subscription) {
+      return res.status(404).json({
+        error: 'Subscription not found'
+      });
+    }
+
+    if (subscription.strategy.clientId !== userId) {
+      return res.status(403).json({
+        error: 'You do not have permission to modify this subscription'
+      });
+    }
+
+    // Update parameters
+    const updateData: any = {};
+    if (capital !== undefined) updateData.capital = parseFloat(capital);
+    if (riskPerTrade !== undefined) updateData.riskPerTrade = parseFloat(riskPerTrade);
+    if (leverage !== undefined) updateData.leverage = parseInt(leverage);
+    if (maxPositions !== undefined) updateData.maxPositions = parseInt(maxPositions);
+    if (maxDailyLoss !== undefined) updateData.maxDailyLoss = parseFloat(maxDailyLoss);
+
+    const updated = await prisma.strategySubscription.update({
+      where: { id: subscriptionId },
+      data: updateData,
+      include: {
+        user: { select: { name: true, email: true } }
+      }
+    });
+
+    res.json({
+      message: 'Subscription parameters updated successfully',
+      subscription: {
+        id: updated.id,
+        userName: updated.user.name || updated.user.email,
+        capital: updated.capital,
+        riskPerTrade: updated.riskPerTrade,
+        leverage: updated.leverage,
+        maxPositions: updated.maxPositions,
+        maxDailyLoss: updated.maxDailyLoss
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 export { router as clientRoutes };

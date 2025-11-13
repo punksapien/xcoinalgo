@@ -11,7 +11,8 @@ import {
   Bell,
   Moon,
   Sun,
-  LogOut
+  LogOut,
+  Users
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { useTheme } from '@/lib/theme';
@@ -26,6 +27,11 @@ const navigation = [
     name: 'My Strategies',
     href: '/client/strategies',
     icon: TrendingUp,
+  },
+  {
+    name: 'Subscribers',
+    href: '/client/subscribers',
+    icon: Users,
   },
   {
     name: 'Invite Links',
