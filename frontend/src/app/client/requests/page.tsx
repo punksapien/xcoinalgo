@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog,
   DialogContent,
@@ -24,11 +25,13 @@ import {
   UserX,
   Mail,
   Calendar,
-  Link as LinkIcon
+  Link as LinkIcon,
+  Clock,
+  User
 } from 'lucide-react';
 import axios from 'axios';
 import { toast } from 'sonner';
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow, format } from 'date-fns';
 
 interface AccessRequest {
   id: string;
@@ -47,6 +50,13 @@ interface AccessRequest {
   inviteLinkType: 'ONE_TIME' | 'PERMANENT';
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
   requestedAt: string;
+  respondedAt: string | null;
+  respondedBy: {
+    id: string;
+    name: string | null;
+    email: string;
+  } | null;
+  rejectionReason: string | null;
 }
 
 export default function ClientAccessRequestsPage() {
@@ -55,6 +65,7 @@ export default function ClientAccessRequestsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [requests, setRequests] = useState<AccessRequest[]>([]);
+  const [activeTab, setActiveTab] = useState<string>('all');
   const [processingRequestId, setProcessingRequestId] = useState<string | null>(null);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<AccessRequest | null>(null);
@@ -69,7 +80,7 @@ export default function ClientAccessRequestsPage() {
     loadRequests();
   }, [hasClientAccess, router]);
 
-  const loadRequests = async () => {
+  const loadRequests = async (status?: string) => {
     try {
       setIsLoading(true);
       setError('');
@@ -82,7 +93,12 @@ export default function ClientAccessRequestsPage() {
         throw new Error('No authentication token found');
       }
 
-      const response = await axios.get('/api/client/access-requests', {
+      const params = new URLSearchParams();
+      if (status && status !== 'all') {
+        params.append('status', status.toUpperCase());
+      }
+
+      const response = await axios.get(`/api/client/access-requests?${params.toString()}`, {
         headers: { Authorization: `Bearer ${authToken}` }
       });
 
@@ -94,6 +110,11 @@ export default function ClientAccessRequestsPage() {
       setError(error.response?.data?.error || 'Failed to load access requests');
       setIsLoading(false);
     }
+  };
+
+  const handleTabChange = (value: string) => {
+    setActiveTab(value);
+    loadRequests(value);
   };
 
   const approveRequest = async (requestId: string) => {
@@ -114,8 +135,8 @@ export default function ClientAccessRequestsPage() {
         { headers: { Authorization: `Bearer ${authToken}` } }
       );
 
-      // Remove from list
-      setRequests(requests.filter(r => r.id !== requestId));
+      // Reload requests
+      await loadRequests(activeTab);
       toast.success('Access request approved');
       setProcessingRequestId(null);
     } catch (err) {
@@ -152,8 +173,8 @@ export default function ClientAccessRequestsPage() {
         { headers: { Authorization: `Bearer ${authToken}` } }
       );
 
-      // Remove from list
-      setRequests(requests.filter(r => r.id !== selectedRequest.id));
+      // Reload requests
+      await loadRequests(activeTab);
       toast.success('Access request rejected');
       setRejectDialogOpen(false);
       setSelectedRequest(null);
@@ -165,6 +186,143 @@ export default function ClientAccessRequestsPage() {
       setProcessingRequestId(null);
     }
   };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'PENDING':
+        return <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">Pending</Badge>;
+      case 'APPROVED':
+        return <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">Approved</Badge>;
+      case 'REJECTED':
+        return <Badge variant="secondary" className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">Rejected</Badge>;
+      default:
+        return <Badge variant="secondary">{status}</Badge>;
+    }
+  };
+
+  const renderRequest = (request: AccessRequest) => (
+    <Card key={request.id} className="hover:shadow-lg transition-shadow">
+      <CardHeader>
+        <div className="flex items-start justify-between">
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <CardTitle className="text-lg">
+                {request.user.name || request.user.email}
+              </CardTitle>
+              {getStatusBadge(request.status)}
+            </div>
+            <CardDescription className="mt-1">
+              Requested access to <span className="font-semibold">{request.strategy.name}</span> ({request.strategy.code})
+            </CardDescription>
+          </div>
+          <Badge variant="outline">
+            {request.inviteLinkType === 'ONE_TIME' ? 'One-Time Link' : 'Permanent Link'}
+          </Badge>
+        </div>
+      </CardHeader>
+
+      <CardContent>
+        <div className="space-y-4">
+          {/* User Info */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+            <div className="flex items-center gap-2">
+              <Mail className="h-4 w-4 text-muted-foreground" />
+              <span className="text-muted-foreground">Email:</span>
+              <span className="font-medium">{request.user.email}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Calendar className="h-4 w-4 text-muted-foreground" />
+              <span className="text-muted-foreground">Requested:</span>
+              <span className="font-medium">
+                {formatDistanceToNow(new Date(request.requestedAt), { addSuffix: true })}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <LinkIcon className="h-4 w-4 text-muted-foreground" />
+              <span className="text-muted-foreground">Invite Code:</span>
+              <span className="font-mono text-sm">{request.inviteCode}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <UserCheck className="h-4 w-4 text-muted-foreground" />
+              <span className="text-muted-foreground">Member Since:</span>
+              <span className="font-medium">
+                {format(new Date(request.user.createdAt), 'MMM d, yyyy')}
+              </span>
+            </div>
+          </div>
+
+          {/* Response Info - Show for approved/rejected requests */}
+          {request.status !== 'PENDING' && request.respondedAt && (
+            <div className="pt-3 border-t space-y-2">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                <div className="flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-muted-foreground">Responded:</span>
+                  <span className="font-medium">
+                    {formatDistanceToNow(new Date(request.respondedAt), { addSuffix: true })}
+                  </span>
+                </div>
+                {request.respondedBy && (
+                  <div className="flex items-center gap-2">
+                    <User className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-muted-foreground">Responded By:</span>
+                    <span className="font-medium">
+                      {request.respondedBy.name || request.respondedBy.email}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {request.status === 'REJECTED' && request.rejectionReason && (
+                <div className="pt-2">
+                  <p className="text-sm text-muted-foreground mb-1">Rejection Reason:</p>
+                  <div className="bg-muted p-3 rounded-md">
+                    <p className="text-sm">{request.rejectionReason}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Actions - Only show for pending requests */}
+          {request.status === 'PENDING' && (
+            <div className="flex items-center gap-2 pt-4 border-t">
+              <Button
+                onClick={() => approveRequest(request.id)}
+                disabled={processingRequestId === request.id}
+                className="flex-1"
+              >
+                {processingRequestId === request.id ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <UserCheck className="h-4 w-4 mr-2" />
+                )}
+                Approve
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => openRejectDialog(request)}
+                disabled={processingRequestId === request.id}
+                className="flex-1"
+              >
+                <UserX className="h-4 w-4 mr-2" />
+                Reject
+              </Button>
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  const filteredRequests = requests.filter(request => {
+    if (activeTab === 'all') return true;
+    return request.status === activeTab.toUpperCase();
+  });
+
+  const pendingCount = requests.filter(r => r.status === 'PENDING').length;
+  const approvedCount = requests.filter(r => r.status === 'APPROVED').length;
+  const rejectedCount = requests.filter(r => r.status === 'REJECTED').length;
 
   if (isLoading) {
     return (
@@ -185,7 +343,7 @@ export default function ClientAccessRequestsPage() {
             Access Requests
           </h1>
           <p className="mt-2 text-gray-600 dark:text-gray-400">
-            Review and approve access requests for your private strategies
+            Manage access requests for your private strategies
           </p>
         </div>
 
@@ -196,94 +354,77 @@ export default function ClientAccessRequestsPage() {
           </Alert>
         )}
 
-        {requests.length === 0 ? (
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card>
-            <CardContent className="pt-6">
-              <p className="text-center text-muted-foreground">
-                No pending access requests at the moment.
-              </p>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Total Requests
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{requests.length}</div>
             </CardContent>
           </Card>
-        ) : (
-          <div className="grid grid-cols-1 gap-4">
-            {requests.map((request) => (
-              <Card key={request.id} className="hover:shadow-lg transition-shadow">
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <CardTitle className="text-lg">
-                        {request.user.name || request.user.email}
-                      </CardTitle>
-                      <CardDescription className="mt-1">
-                        Requesting access to <span className="font-semibold">{request.strategy.name}</span>
-                      </CardDescription>
-                    </div>
-                    <Badge variant="secondary">
-                      {request.inviteLinkType === 'ONE_TIME' ? 'One-Time Link' : 'Permanent Link'}
-                    </Badge>
-                  </div>
-                </CardHeader>
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Pending
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-yellow-600">{pendingCount}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Approved
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-green-600">{approvedCount}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Rejected
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-red-600">{rejectedCount}</div>
+            </CardContent>
+          </Card>
+        </div>
 
-                <CardContent>
-                  <div className="space-y-4">
-                    {/* User Info */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                      <div className="flex items-center gap-2">
-                        <Mail className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-muted-foreground">Email:</span>
-                        <span className="font-medium">{request.user.email}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Calendar className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-muted-foreground">Requested:</span>
-                        <span className="font-medium">
-                          {formatDistanceToNow(new Date(request.requestedAt), { addSuffix: true })}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <LinkIcon className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-muted-foreground">Invite Code:</span>
-                        <span className="font-mono text-sm">{request.inviteCode}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <UserCheck className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-muted-foreground">Member Since:</span>
-                        <span className="font-medium">
-                          {formatDistanceToNow(new Date(request.user.createdAt), { addSuffix: true })}
-                        </span>
-                      </div>
-                    </div>
+        {/* Tabs */}
+        <Tabs value={activeTab} onValueChange={handleTabChange}>
+          <TabsList>
+            <TabsTrigger value="all">All ({requests.length})</TabsTrigger>
+            <TabsTrigger value="pending">Pending ({pendingCount})</TabsTrigger>
+            <TabsTrigger value="approved">Approved ({approvedCount})</TabsTrigger>
+            <TabsTrigger value="rejected">Rejected ({rejectedCount})</TabsTrigger>
+          </TabsList>
 
-                    {/* Actions */}
-                    <div className="flex items-center gap-2 pt-4 border-t">
-                      <Button
-                        onClick={() => approveRequest(request.id)}
-                        disabled={processingRequestId === request.id}
-                        className="flex-1"
-                      >
-                        {processingRequestId === request.id ? (
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        ) : (
-                          <UserCheck className="h-4 w-4 mr-2" />
-                        )}
-                        Approve
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        onClick={() => openRejectDialog(request)}
-                        disabled={processingRequestId === request.id}
-                        className="flex-1"
-                      >
-                        <UserX className="h-4 w-4 mr-2" />
-                        Reject
-                      </Button>
-                    </div>
-                  </div>
+          <TabsContent value={activeTab} className="mt-6">
+            {filteredRequests.length === 0 ? (
+              <Card>
+                <CardContent className="pt-6">
+                  <p className="text-center text-muted-foreground">
+                    {activeTab === 'all'
+                      ? 'No access requests yet.'
+                      : `No ${activeTab} requests.`}
+                  </p>
                 </CardContent>
               </Card>
-            ))}
-          </div>
-        )}
+            ) : (
+              <div className="grid grid-cols-1 gap-4">
+                {filteredRequests.map(renderRequest)}
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
       </div>
 
       {/* Reject Dialog */}

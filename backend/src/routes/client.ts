@@ -244,17 +244,25 @@ router.delete('/invite-links/:id', async (req: AuthenticatedRequest, res, next) 
 
 /**
  * GET /api/client/access-requests
- * Get all pending access requests for client's strategies
+ * Get access requests for client's strategies (with optional status filter)
  */
 router.get('/access-requests', async (req: AuthenticatedRequest, res, next) => {
   try {
     const userId = req.userId!;
+    const { status } = req.query;
+
+    // Build where conditions
+    const whereConditions: any = {
+      strategy: { clientId: userId }
+    };
+
+    // Filter by status if provided
+    if (status && ['PENDING', 'APPROVED', 'REJECTED'].includes(status as string)) {
+      whereConditions.status = status;
+    }
 
     const requests = await prisma.strategyAccessRequest.findMany({
-      where: {
-        strategy: { clientId: userId },
-        status: 'PENDING'
-      },
+      where: whereConditions,
       include: {
         strategy: {
           select: { id: true, name: true, code: true }
@@ -264,6 +272,9 @@ router.get('/access-requests', async (req: AuthenticatedRequest, res, next) => {
         },
         inviteLink: {
           select: { inviteCode: true, type: true }
+        },
+        respondedBy: {
+          select: { id: true, name: true, email: true }
         }
       },
       orderBy: { requestedAt: 'desc' }
@@ -277,7 +288,10 @@ router.get('/access-requests', async (req: AuthenticatedRequest, res, next) => {
         inviteCode: req.inviteLink.inviteCode,
         inviteLinkType: req.inviteLink.type,
         status: req.status,
-        requestedAt: req.requestedAt
+        requestedAt: req.requestedAt,
+        respondedAt: req.respondedAt,
+        respondedBy: req.respondedBy,
+        rejectionReason: req.rejectionReason
       }))
     });
   } catch (error) {
