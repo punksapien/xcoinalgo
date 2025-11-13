@@ -516,9 +516,10 @@ model Trade {
 // ============================================
 
 model StrategyInviteLink {
-  id         String @id @default(cuid())
+  id         String           @id @default(cuid())
   strategyId String
-  inviteCode String @unique // URL-safe random code (e.g., "abc123xyz")
+  inviteCode String           @unique // URL-safe random code (e.g., "abc123xyz")
+  type       InviteLinkType   @default(PERMANENT) // ONE_TIME or PERMANENT
 
   // Ownership and management
   createdByUserId String
@@ -541,6 +542,11 @@ model StrategyInviteLink {
   @@index([strategyId])
   @@index([inviteCode])
   @@map("strategy_invite_links")
+}
+
+enum InviteLinkType {
+  ONE_TIME
+  PERMANENT
 }
 
 model StrategyAccessRequest {

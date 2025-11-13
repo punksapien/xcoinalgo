@@ -17,7 +17,8 @@ import {
   Shield,
   Code2,
   User as UserIcon,
-  ChevronDown
+  ChevronDown,
+  Lock
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { useTheme } from '@/lib/theme';
@@ -50,6 +51,11 @@ const navigation = [
     name: 'Positions & Orders',
     href: '/dashboard/positions',
     icon: BarChart3,
+  },
+  {
+    name: 'My Access Requests',
+    href: '/dashboard/access-requests',
+    icon: Lock,
   },
 ];
 

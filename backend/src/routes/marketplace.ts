@@ -198,6 +198,14 @@ router.get('/', async (req: AuthenticatedRequest, res, next) => {
           isPublic: true,
           clientId: true,
 
+          // Client information (to display client name as author)
+          client: {
+            select: {
+              name: true,
+              email: true
+            }
+          },
+
           // NOTE: We do NOT include the actual strategy code!
           // Code stays private - only author can see it
         },
@@ -240,18 +248,27 @@ router.get('/', async (req: AuthenticatedRequest, res, next) => {
     }
 
     res.json({
-      strategies: strategies.map(strategy => ({
-        ...strategy,
-        // Parse JSON fields
-        supportedPairs: strategy.supportedPairs ? JSON.parse(strategy.supportedPairs as string) : null,
-        timeframes: strategy.timeframes ? JSON.parse(strategy.timeframes as string) : null,
-        // Add isSubscribed flag
-        isSubscribed: subscribedStrategyIds.has(strategy.id),
-        // Add access status for private strategies
-        accessStatus: accessRequestsMap.get(strategy.id) || null,
-        // Add flag for client's own strategies
-        isOwned: userId && (strategy as any).clientId === userId,
-      })),
+      strategies: strategies.map(strategy => {
+        // Use client name as author if strategy is assigned to a client
+        const displayAuthor = (strategy as any).client?.name || (strategy as any).client?.email || strategy.author;
+
+        return {
+          ...strategy,
+          // Override author with client name if available
+          author: displayAuthor,
+          // Remove client object from response
+          client: undefined,
+          // Parse JSON fields
+          supportedPairs: strategy.supportedPairs ? JSON.parse(strategy.supportedPairs as string) : null,
+          timeframes: strategy.timeframes ? JSON.parse(strategy.timeframes as string) : null,
+          // Add isSubscribed flag
+          isSubscribed: subscribedStrategyIds.has(strategy.id),
+          // Add access status for private strategies
+          accessStatus: accessRequestsMap.get(strategy.id) || null,
+          // Add flag for client's own strategies
+          isOwned: userId && (strategy as any).clientId === userId,
+        };
+      }),
       pagination: {
         page: Number(page),
         limit: Number(limit),
@@ -326,6 +343,14 @@ router.get('/:id', async (req, res, next) => {
         isMarketplace: true,
         clientId: true,
         executionConfig: true,
+
+        // Client information (to display client name as author)
+        client: {
+          select: {
+            name: true,
+            email: true
+          }
+        },
 
         // Performance metrics
         winRate: true,
@@ -495,9 +520,16 @@ router.get('/:id', async (req, res, next) => {
         : []
     } : null;
 
+    // Use client name as author if strategy is assigned to a client
+    const displayAuthor = (strategy as any).client?.name || (strategy as any).client?.email || strategy.author;
+
     res.json({
       strategy: {
         ...strategy,
+        // Override author with client name if available
+        author: displayAuthor,
+        // Remove client object from response
+        client: undefined,
         supportedPairs: strategy.supportedPairs ? JSON.parse(strategy.supportedPairs as string) : null,
         timeframes: strategy.timeframes ? JSON.parse(strategy.timeframes as string) : null,
         latestVersion: strategy.versions[0] || null,

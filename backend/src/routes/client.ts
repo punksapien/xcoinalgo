@@ -101,6 +101,7 @@ router.post('/strategies/:id/invite-links', async (req: AuthenticatedRequest, re
   try {
     const userId = req.userId!;
     const { id: strategyId } = req.params;
+    const { type } = req.body; // ONE_TIME or PERMANENT
 
     // Verify ownership
     const strategy = await prisma.strategy.findFirst({
@@ -113,6 +114,13 @@ router.post('/strategies/:id/invite-links', async (req: AuthenticatedRequest, re
       });
     }
 
+    // Validate type
+    if (type && !['ONE_TIME', 'PERMANENT'].includes(type)) {
+      return res.status(400).json({
+        error: 'Invalid invite link type. Must be ONE_TIME or PERMANENT'
+      });
+    }
+
     // Generate unique invite code (12 characters, URL-safe)
     const inviteCode = crypto.randomBytes(9).toString('base64url').substring(0, 12);
 
@@ -120,6 +128,7 @@ router.post('/strategies/:id/invite-links', async (req: AuthenticatedRequest, re
       data: {
         strategyId,
         inviteCode,
+        type: type || 'PERMANENT',
         createdByUserId: userId
       }
     });
@@ -129,6 +138,7 @@ router.post('/strategies/:id/invite-links', async (req: AuthenticatedRequest, re
       inviteLink: {
         id: inviteLink.id,
         inviteCode: inviteLink.inviteCode,
+        type: inviteLink.type,
         inviteUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/invite/${inviteLink.inviteCode}`,
         isActive: inviteLink.isActive,
         usageCount: inviteLink.usageCount,
@@ -174,6 +184,7 @@ router.get('/strategies/:id/invite-links', async (req: AuthenticatedRequest, res
       inviteLinks: inviteLinks.map(link => ({
         id: link.id,
         inviteCode: link.inviteCode,
+        type: link.type,
         inviteUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/invite/${link.inviteCode}`,
         isActive: link.isActive,
         usageCount: link.usageCount,
@@ -249,10 +260,10 @@ router.get('/access-requests', async (req: AuthenticatedRequest, res, next) => {
           select: { id: true, name: true, code: true }
         },
         user: {
-          select: { id: true, email: true, createdAt: true }
+          select: { id: true, name: true, email: true, createdAt: true }
         },
         inviteLink: {
-          select: { inviteCode: true }
+          select: { inviteCode: true, type: true }
         }
       },
       orderBy: { requestedAt: 'desc' }
@@ -264,6 +275,7 @@ router.get('/access-requests', async (req: AuthenticatedRequest, res, next) => {
         strategy: req.strategy,
         user: req.user,
         inviteCode: req.inviteLink.inviteCode,
+        inviteLinkType: req.inviteLink.type,
         status: req.status,
         requestedAt: req.requestedAt
       }))

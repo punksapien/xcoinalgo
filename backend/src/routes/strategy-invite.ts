@@ -61,6 +61,7 @@ router.get('/join/:inviteCode', async (req, res, next) => {
 
     res.json({
       inviteCode: inviteLink.inviteCode,
+      linkType: inviteLink.type,
       strategy: inviteLink.strategy,
       message: 'Valid invite link. You can request access to this private strategy.'
     });
@@ -165,10 +166,18 @@ router.post('/join/:inviteCode', authenticate, async (req: AuthenticatedRequest,
 
     // Create the access request
     const accessRequest = await prisma.$transaction(async (tx) => {
-      // Increment usage count on invite link
+      // Increment usage count and deactivate if ONE_TIME
+      const updateData: any = { usageCount: { increment: 1 } };
+
+      // If it's a ONE_TIME link, deactivate it after first use
+      if (inviteLink.type === 'ONE_TIME') {
+        updateData.isActive = false;
+        updateData.revokedAt = new Date();
+      }
+
       await tx.strategyInviteLink.update({
         where: { id: inviteLink.id },
-        data: { usageCount: { increment: 1 } }
+        data: updateData
       });
 
       // Create access request
