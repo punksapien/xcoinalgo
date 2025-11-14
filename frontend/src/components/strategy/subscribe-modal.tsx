@@ -485,13 +485,33 @@ export function SubscribeModal({
                     <span className="text-sm text-blue-700">Loading balance...</span>
                   </div>
                 ) : availableBalance !== null ? (
-                  <div className="p-4 bg-blue-50 border-2 border-blue-300 rounded-lg">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium text-blue-800">Available Balance:</span>
-                      <span className="text-2xl font-bold text-blue-900">
+                  <div className="p-4 bg-blue-50 border-2 border-blue-300 rounded-lg space-y-3">
+                    {/* Total Wallet Balance */}
+                    <div className="flex items-center justify-between pb-2">
+                      <span className="text-sm font-medium text-blue-700">Total Wallet Balance:</span>
+                      <span className="text-lg font-semibold text-blue-900">
+                        {balanceCurrency === 'INR' ? '₹' : '$'}{availableBalance.toFixed(2)}
+                      </span>
+                    </div>
+
+                    {/* Already Allocated (if any) */}
+                    {allocatedCapital > 0 && (
+                      <div className="flex items-center justify-between pb-2 border-t border-blue-200 pt-2">
+                        <span className="text-sm font-medium text-orange-700">Already Allocated ({subscriptions.length} {subscriptions.length === 1 ? 'bot' : 'bots'}):</span>
+                        <span className="text-lg font-semibold text-orange-900">
+                          - {balanceCurrency === 'INR' ? '₹' : '$'}{allocatedCapital.toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Available for This Strategy */}
+                    <div className="flex items-center justify-between pt-2 border-t-2 border-blue-300">
+                      <span className="text-sm font-bold text-green-800">Available for This Strategy:</span>
+                      <span className="text-2xl font-bold text-green-900">
                         {balanceCurrency === 'INR' ? '₹' : '$'}{availableForNewSubscription.toFixed(2)}
                       </span>
                     </div>
+
                     <Alert className="mt-2 bg-blue-100 border-blue-300">
                       <Info className="h-4 w-4 text-blue-700" />
                       <AlertDescription className="text-xs text-blue-800">
