@@ -378,6 +378,47 @@ router.get('/access-requests', async (req: AuthenticatedRequest, res, next) => {
 });
 
 /**
+ * PUT /api/admin/strategies/:id
+ * Update strategy metadata (name, code, description, author)
+ */
+router.put('/strategies/:id', async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const { id: strategyId } = req.params;
+    const { name, code, description, author } = req.body;
+
+    // Validate required fields
+    if (!name || !code || !author) {
+      return res.status(400).json({ error: 'Name, code, and author are required' });
+    }
+
+    // Update the strategy
+    const strategy = await prisma.strategy.update({
+      where: { id: strategyId },
+      data: {
+        name,
+        code,
+        description: description || null,
+        author
+      },
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        description: true,
+        author: true
+      }
+    });
+
+    res.json({
+      message: 'Strategy updated successfully',
+      strategy
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
  * DELETE /api/admin/strategies/:id
  * Delete a strategy (only if no active subscribers)
  */

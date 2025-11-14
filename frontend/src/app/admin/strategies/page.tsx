@@ -6,8 +6,12 @@ import axios from 'axios';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { AlertCircle, UserCheck, UserX, Trash2 } from 'lucide-react';
+import { AlertCircle, UserCheck, UserX, Trash2, Edit } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Pagination,
   PaginationContent,
@@ -50,6 +54,16 @@ export default function AdminStrategiesPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
+
+  // Edit modal state
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editingStrategy, setEditingStrategy] = useState<Strategy | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: '',
+    code: '',
+    description: '',
+    author: ''
+  });
 
   // Calculate pagination
   const totalPages = Math.ceil(strategies.length / itemsPerPage);
@@ -149,6 +163,38 @@ export default function AdminStrategiesPage() {
     }
   };
 
+  const openEditModal = (strategy: Strategy) => {
+    setEditingStrategy(strategy);
+    setEditForm({
+      name: strategy.name,
+      code: strategy.code,
+      description: strategy.description || '',
+      author: strategy.author
+    });
+    setEditModalOpen(true);
+  };
+
+  const updateStrategy = async () => {
+    if (!token || !editingStrategy) return;
+
+    try {
+      const authToken = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
+
+      await axios.put(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/admin/strategies/${editingStrategy.id}`,
+        editForm,
+        { headers: { Authorization: authToken } }
+      );
+
+      setEditModalOpen(false);
+      setEditingStrategy(null);
+      loadData();
+    } catch (err) {
+      const error = err as { response?: { data?: { error?: string } } };
+      setError(error?.response?.data?.error || 'Failed to update strategy');
+    }
+  };
+
   if (loading) {
     return (
       <div className="container max-w-7xl mx-auto p-4 md:p-6 space-y-6">
@@ -222,15 +268,25 @@ export default function AdminStrategiesPage() {
                         Subscribers: {strategy.subscriberCount} • Pending: {strategy.pendingRequests}
                       </p>
                     </div>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => deleteStrategy(strategy.id, strategy.name)}
-                      disabled={strategy.subscriberCount > 0}
-                      title={strategy.subscriberCount > 0 ? 'Cannot delete strategy with active subscribers' : 'Delete strategy'}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => openEditModal(strategy)}
+                        title="Edit strategy metadata"
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => deleteStrategy(strategy.id, strategy.name)}
+                        disabled={strategy.subscriberCount > 0}
+                        title={strategy.subscriberCount > 0 ? 'Cannot delete strategy with active subscribers' : 'Delete strategy'}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-3 pt-2 border-t border-border">
@@ -341,6 +397,66 @@ export default function AdminStrategiesPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Edit Strategy Modal */}
+      <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
+        <DialogContent className="sm:max-w-[525px]">
+          <DialogHeader>
+            <DialogTitle>Edit Strategy</DialogTitle>
+            <DialogDescription>
+              Update strategy metadata. These changes will be reflected on the marketplace cards.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="name">Strategy Name</Label>
+              <Input
+                id="name"
+                value={editForm.name}
+                onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                placeholder="e.g., ETH Scalper by Manish"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="code">Strategy Code</Label>
+              <Input
+                id="code"
+                value={editForm.code}
+                onChange={(e) => setEditForm({ ...editForm, code: e.target.value })}
+                placeholder="e.g., ETH_SCALPER_BY_MANISH_V1"
+                className="font-mono"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="author">Author Name</Label>
+              <Input
+                id="author"
+                value={editForm.author}
+                onChange={(e) => setEditForm({ ...editForm, author: e.target.value })}
+                placeholder="e.g., Manish"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="description">Description</Label>
+              <Textarea
+                id="description"
+                value={editForm.description}
+                onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                placeholder="Brief description of the strategy..."
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={updateStrategy}>
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
