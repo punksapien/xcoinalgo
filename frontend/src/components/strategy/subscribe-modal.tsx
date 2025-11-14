@@ -61,10 +61,10 @@ export function SubscribeModal({
   const [allocatedCapital, setAllocatedCapital] = useState<number>(0);
 
   // Form state
-  const [capital, setCapital] = useState('10000');
+  const [capital, setCapital] = useState('');
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
-  const [riskPerTrade, setRiskPerTrade] = useState('0.4'); // Default from strategy config
-  const [leverage, setLeverage] = useState('10'); // Default from strategy config
+  const [riskPerTrade, setRiskPerTrade] = useState(''); // No default - will use strategy config default (0.4)
+  const [leverage, setLeverage] = useState(''); // No default - will use strategy config default (10)
   const [selectedCredentialId, setSelectedCredentialId] = useState<string>('');
 
   const fetchBrokerCredentials = useCallback(async () => {
@@ -175,10 +175,11 @@ export function SubscribeModal({
       setValidationErrors({});
 
       // Prepare config for validation
+      // Use strategy config defaults if advanced settings not provided
       const configData = {
         capital: parseFloat(capital),
-        riskPerTrade: parseFloat(riskPerTrade),
-        leverage: parseInt(leverage),
+        riskPerTrade: riskPerTrade ? parseFloat(riskPerTrade) : 0.4, // Default from strategy config
+        leverage: leverage ? parseInt(leverage) : 10, // Default from strategy config
         brokerCredentialId: selectedCredentialId,
       };
 
@@ -438,12 +439,10 @@ export function SubscribeModal({
                   <Label htmlFor="capital">Investment Amount (₹):</Label>
                   <Input
                     id="capital"
-                    type="number"
-                    min="10000"
-                    step="1000"
+                    type="text"
                     value={capital}
                     onChange={(e) => setCapital(e.target.value)}
-                    placeholder="10000"
+                    placeholder="Enter amount (minimum ₹10,000)"
                     className={validationErrors.capital ? 'border-red-500 text-lg font-semibold' : 'text-lg font-semibold'}
                   />
                   {validationErrors.capital ? (
@@ -489,13 +488,10 @@ export function SubscribeModal({
                         </Label>
                         <Input
                           id="leverage"
-                          type="number"
-                          min="1"
-                          max="100"
-                          step="1"
+                          type="text"
                           value={leverage}
                           onChange={(e) => setLeverage(e.target.value)}
-                          placeholder="10"
+                          placeholder="Leave empty to use default (10x)"
                           className={validationErrors.leverage ? 'border-red-500' : ''}
                         />
                         {validationErrors.leverage ? (
@@ -504,7 +500,7 @@ export function SubscribeModal({
                             {validationErrors.leverage}
                           </p>
                         ) : (
-                          <p className="text-xs text-muted-foreground">Default: 10x</p>
+                          <p className="text-xs text-muted-foreground">Default from strategy config: 10x</p>
                         )}
                       </div>
 
@@ -512,17 +508,14 @@ export function SubscribeModal({
                       <div className="space-y-2">
                         <Label htmlFor="riskPerTrade" className="flex items-center gap-2">
                           <Percent className="h-4 w-4" />
-                          Risk Per Trade (0.1 to 1):
+                          Risk Per Trade (0.1 to 0.55):
                         </Label>
                         <Input
                           id="riskPerTrade"
-                          type="number"
-                          min="0.1"
-                          max="1"
-                          step="0.1"
+                          type="text"
                           value={riskPerTrade}
                           onChange={(e) => setRiskPerTrade(e.target.value)}
-                          placeholder="0.5"
+                          placeholder="Leave empty to use default (0.4)"
                           className={validationErrors.riskPerTrade ? 'border-red-500' : ''}
                         />
                         {validationErrors.riskPerTrade ? (
@@ -532,7 +525,7 @@ export function SubscribeModal({
                           </p>
                         ) : (
                           <p className="text-xs text-muted-foreground">
-                            Max percent of total capital to risk per trade. Default: 0.4 (40%)
+                            Max: 0.55 (55%). Default from strategy config: 0.4 (40%)
                           </p>
                         )}
                       </div>
