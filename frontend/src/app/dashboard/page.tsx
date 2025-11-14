@@ -312,6 +312,12 @@ function DashboardContent() {
               onClick={() => handleStrategyClick(strategy.id)}
             >
               <CardHeader className="pb-3">
+                {/* Strategy Code Badge at Top */}
+                <div className="mb-3">
+                  <Badge className="text-xs px-2 py-1 bg-primary/10 text-primary border border-primary/30 font-mono uppercase">
+                    {strategy.code}
+                  </Badge>
+                </div>
                 <div className="flex justify-between items-start">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-2">
