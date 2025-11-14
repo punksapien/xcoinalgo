@@ -104,6 +104,9 @@ class StrategyService {
         createdAt: s.createdAt as string,
         timeframes: (s.timeframes as string[]) || [],
         supportedPairs: (s.supportedPairs as string[]) || [],
+        isPublic: s.isPublic as boolean | undefined,
+        accessStatus: s.accessStatus as 'APPROVED' | 'PENDING' | 'REJECTED' | null | undefined,
+        isOwned: s.isOwned as boolean | undefined,
       }));
 
       this.buildSearchIndex();

@@ -457,7 +457,7 @@ function DashboardContent() {
                       className="flex-1 bg-muted text-muted-foreground cursor-not-allowed"
                       disabled
                     >
-                      This bot is already deployed
+                      Deployed
                     </Button>
                   ) : (
                     <Button
