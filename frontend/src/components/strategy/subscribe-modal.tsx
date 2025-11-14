@@ -157,6 +157,70 @@ export function SubscribeModal({
     }
   }, [open, token, fetchBrokerCredentials, fetchUserBalance, fetchUserSubscriptions]);
 
+  // Real-time validation for capital
+  const validateCapital = (value: string) => {
+    const errors = { ...validationErrors };
+
+    if (!value || value.trim() === '') {
+      errors.capital = 'Investment amount is required';
+    } else if (isNaN(Number(value))) {
+      errors.capital = 'Please enter a valid number';
+    } else {
+      const amount = parseFloat(value);
+      if (amount < 10000) {
+        errors.capital = 'Minimum investment amount is ₹10,000';
+      } else if (amount > 10000000) {
+        errors.capital = 'Maximum investment amount is ₹10,000,000';
+      } else {
+        delete errors.capital;
+      }
+    }
+
+    setValidationErrors(errors);
+  };
+
+  const handleCapitalChange = (value: string) => {
+    // Only allow numbers and decimal point
+    const sanitized = value.replace(/[^0-9.]/g, '');
+    setCapital(sanitized);
+    validateCapital(sanitized);
+  };
+
+  // Validation for leverage
+  const handleLeverageChange = (value: string) => {
+    // Only allow numbers
+    const sanitized = value.replace(/[^0-9]/g, '');
+    setLeverage(sanitized);
+
+    const errors = { ...validationErrors };
+    if (sanitized && (isNaN(Number(sanitized)) || Number(sanitized) < 1 || Number(sanitized) > 100)) {
+      errors.leverage = 'Leverage must be between 1x and 100x';
+    } else {
+      delete errors.leverage;
+    }
+    setValidationErrors(errors);
+  };
+
+  // Validation for risk per trade
+  const handleRiskPerTradeChange = (value: string) => {
+    // Only allow numbers and decimal point
+    const sanitized = value.replace(/[^0-9.]/g, '');
+    setRiskPerTrade(sanitized);
+
+    const errors = { ...validationErrors };
+    if (sanitized) {
+      const risk = parseFloat(sanitized);
+      if (isNaN(risk) || risk < 0.1 || risk > 0.55) {
+        errors.riskPerTrade = 'Risk per trade must be between 0.1 and 0.55';
+      } else {
+        delete errors.riskPerTrade;
+      }
+    } else {
+      delete errors.riskPerTrade;
+    }
+    setValidationErrors(errors);
+  };
+
   const handleSubscribe = async () => {
     if (!token) {
       showErrorToast('Authentication Required', 'Please login to subscribe to strategies');
@@ -169,6 +233,26 @@ export function SubscribeModal({
       return;
     }
 
+    // Validate capital before proceeding
+    if (!capital || capital.trim() === '') {
+      setValidationErrors({ ...validationErrors, capital: 'Investment amount is required' });
+      showErrorToast('Investment Amount Required', 'Please enter an investment amount');
+      return;
+    }
+
+    const capitalAmount = parseFloat(capital);
+    if (isNaN(capitalAmount)) {
+      setValidationErrors({ ...validationErrors, capital: 'Please enter a valid number' });
+      showErrorToast('Invalid Amount', 'Please enter a valid investment amount');
+      return;
+    }
+
+    if (capitalAmount < 10000) {
+      setValidationErrors({ ...validationErrors, capital: 'Minimum investment amount is ₹10,000' });
+      showErrorToast('Amount Too Low', 'Minimum investment amount is ₹10,000');
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
@@ -177,7 +261,7 @@ export function SubscribeModal({
       // Prepare config for validation
       // Use strategy config defaults if advanced settings not provided
       const configData = {
-        capital: parseFloat(capital),
+        capital: capitalAmount,
         riskPerTrade: riskPerTrade ? parseFloat(riskPerTrade) : 0.4, // Default from strategy config
         leverage: leverage ? parseInt(leverage) : 10, // Default from strategy config
         brokerCredentialId: selectedCredentialId,
@@ -441,7 +525,8 @@ export function SubscribeModal({
                     id="capital"
                     type="text"
                     value={capital}
-                    onChange={(e) => setCapital(e.target.value)}
+                    onChange={(e) => handleCapitalChange(e.target.value)}
+                    onBlur={() => validateCapital(capital)}
                     placeholder="Enter amount (minimum ₹10,000)"
                     className={validationErrors.capital ? 'border-red-500 text-lg font-semibold' : 'text-lg font-semibold'}
                   />
@@ -490,7 +575,7 @@ export function SubscribeModal({
                           id="leverage"
                           type="text"
                           value={leverage}
-                          onChange={(e) => setLeverage(e.target.value)}
+                          onChange={(e) => handleLeverageChange(e.target.value)}
                           placeholder="Leave empty to use default (10x)"
                           className={validationErrors.leverage ? 'border-red-500' : ''}
                         />
@@ -500,7 +585,7 @@ export function SubscribeModal({
                             {validationErrors.leverage}
                           </p>
                         ) : (
-                          <p className="text-xs text-muted-foreground">Default from strategy config: 10x</p>
+                          <p className="text-xs text-muted-foreground">Range: 1-100x. Default from strategy config: 10x</p>
                         )}
                       </div>
 
@@ -514,7 +599,7 @@ export function SubscribeModal({
                           id="riskPerTrade"
                           type="text"
                           value={riskPerTrade}
-                          onChange={(e) => setRiskPerTrade(e.target.value)}
+                          onChange={(e) => handleRiskPerTradeChange(e.target.value)}
                           placeholder="Leave empty to use default (0.4)"
                           className={validationErrors.riskPerTrade ? 'border-red-500' : ''}
                         />
@@ -525,7 +610,7 @@ export function SubscribeModal({
                           </p>
                         ) : (
                           <p className="text-xs text-muted-foreground">
-                            Max: 0.55 (55%). Default from strategy config: 0.4 (40%)
+                            Range: 0.1-0.55. Default from strategy config: 0.4 (40%)
                           </p>
                         )}
                       </div>
