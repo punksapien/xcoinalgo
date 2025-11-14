@@ -26,6 +26,8 @@ interface SubscribeModalProps {
     roi?: number;
     riskReward?: number;
     maxDrawdown?: number;
+    defaultLeverage?: number;
+    defaultRiskPerTrade?: number;
   };
   onSuccess?: () => void;
 }
@@ -60,11 +62,16 @@ export function SubscribeModal({
   const [loadingSubscriptions, setLoadingSubscriptions] = useState(false);
   const [allocatedCapital, setAllocatedCapital] = useState<number>(0);
 
+  // Get strategy config defaults
+  const defaultLeverage = strategyMetrics?.defaultLeverage || 10;
+  const defaultRiskPerTrade = strategyMetrics?.defaultRiskPerTrade || 0.4;
+  const minMargin = strategyMetrics?.minMargin || 10000;
+
   // Form state
   const [capital, setCapital] = useState('');
   const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
-  const [riskPerTrade, setRiskPerTrade] = useState(''); // No default - will use strategy config default (0.4)
-  const [leverage, setLeverage] = useState(''); // No default - will use strategy config default (10)
+  const [riskPerTrade, setRiskPerTrade] = useState(''); // No default - will use strategy config default
+  const [leverage, setLeverage] = useState(''); // No default - will use strategy config default
   const [selectedCredentialId, setSelectedCredentialId] = useState<string>('');
 
   const fetchBrokerCredentials = useCallback(async () => {
@@ -167,8 +174,8 @@ export function SubscribeModal({
       errors.capital = 'Please enter a valid number';
     } else {
       const amount = parseFloat(value);
-      if (amount < 10000) {
-        errors.capital = 'Minimum investment amount is ₹10,000';
+      if (amount < minMargin) {
+        errors.capital = `Minimum investment amount is ₹${minMargin.toLocaleString()}`;
       } else if (amount > 10000000) {
         errors.capital = 'Maximum investment amount is ₹10,000,000';
       } else {
@@ -247,9 +254,9 @@ export function SubscribeModal({
       return;
     }
 
-    if (capitalAmount < 10000) {
-      setValidationErrors({ ...validationErrors, capital: 'Minimum investment amount is ₹10,000' });
-      showErrorToast('Amount Too Low', 'Minimum investment amount is ₹10,000');
+    if (capitalAmount < minMargin) {
+      setValidationErrors({ ...validationErrors, capital: `Minimum investment amount is ₹${minMargin.toLocaleString()}` });
+      showErrorToast('Amount Too Low', `Minimum investment amount is ₹${minMargin.toLocaleString()}`);
       return;
     }
 
@@ -262,8 +269,8 @@ export function SubscribeModal({
       // Use strategy config defaults if advanced settings not provided
       const configData = {
         capital: capitalAmount,
-        riskPerTrade: riskPerTrade ? parseFloat(riskPerTrade) : 0.4, // Default from strategy config
-        leverage: leverage ? parseInt(leverage) : 10, // Default from strategy config
+        riskPerTrade: riskPerTrade ? parseFloat(riskPerTrade) : defaultRiskPerTrade, // Default from strategy config
+        leverage: leverage ? parseInt(leverage) : defaultLeverage, // Default from strategy config
         brokerCredentialId: selectedCredentialId,
       };
 
@@ -373,7 +380,7 @@ export function SubscribeModal({
                       <DollarSign className="h-4 w-4" />
                       <p className="text-xs font-medium">Min Margin</p>
                     </div>
-                    <p className="text-2xl font-bold text-purple-900">₹{strategyMetrics?.minMargin || 10000}</p>
+                    <p className="text-2xl font-bold text-purple-900">₹{minMargin}</p>
                   </div>
 
                   {/* Win Rate */}
@@ -527,7 +534,7 @@ export function SubscribeModal({
                     value={capital}
                     onChange={(e) => handleCapitalChange(e.target.value)}
                     onBlur={() => validateCapital(capital)}
-                    placeholder="Enter amount (minimum ₹10,000)"
+                    placeholder={`Enter amount (minimum ₹${minMargin.toLocaleString()})`}
                     className={validationErrors.capital ? 'border-red-500 text-lg font-semibold' : 'text-lg font-semibold'}
                   />
                   {validationErrors.capital ? (
@@ -536,7 +543,7 @@ export function SubscribeModal({
                       {validationErrors.capital}
                     </p>
                   ) : (
-                    <p className="text-xs text-muted-foreground">Minimum required: ₹10,000</p>
+                    <p className="text-xs text-muted-foreground">Minimum required: ₹{minMargin.toLocaleString()}</p>
                   )}
                 </div>
 
@@ -576,7 +583,7 @@ export function SubscribeModal({
                           type="text"
                           value={leverage}
                           onChange={(e) => handleLeverageChange(e.target.value)}
-                          placeholder="Leave empty to use default (10x)"
+                          placeholder={`Leave empty to use default (${defaultLeverage}x)`}
                           className={validationErrors.leverage ? 'border-red-500' : ''}
                         />
                         {validationErrors.leverage ? (
@@ -585,7 +592,7 @@ export function SubscribeModal({
                             {validationErrors.leverage}
                           </p>
                         ) : (
-                          <p className="text-xs text-muted-foreground">Range: 1-100x. Default from strategy config: 10x</p>
+                          <p className="text-xs text-muted-foreground">Range: 1-100x. Default from strategy config: {defaultLeverage}x</p>
                         )}
                       </div>
 
@@ -600,7 +607,7 @@ export function SubscribeModal({
                           type="text"
                           value={riskPerTrade}
                           onChange={(e) => handleRiskPerTradeChange(e.target.value)}
-                          placeholder="Leave empty to use default (0.4)"
+                          placeholder={`Leave empty to use default (${defaultRiskPerTrade})`}
                           className={validationErrors.riskPerTrade ? 'border-red-500' : ''}
                         />
                         {validationErrors.riskPerTrade ? (
@@ -610,7 +617,7 @@ export function SubscribeModal({
                           </p>
                         ) : (
                           <p className="text-xs text-muted-foreground">
-                            Range: 0.01-0.55. Default from strategy config: 0.4 (40%)
+                            Range: 0.01-0.55. Default from strategy config: {defaultRiskPerTrade} ({(defaultRiskPerTrade * 100).toFixed(0)}%)
                           </p>
                         )}
                       </div>
