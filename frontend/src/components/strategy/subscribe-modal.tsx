@@ -210,8 +210,8 @@ export function SubscribeModal({
     const errors = { ...validationErrors };
     if (sanitized) {
       const risk = parseFloat(sanitized);
-      if (isNaN(risk) || risk < 0.1 || risk > 0.55) {
-        errors.riskPerTrade = 'Risk per trade must be between 0.1 and 0.55';
+      if (isNaN(risk) || risk < 0.01 || risk > 0.55) {
+        errors.riskPerTrade = 'Risk per trade must be between 0.01 and 0.55';
       } else {
         delete errors.riskPerTrade;
       }
@@ -593,7 +593,7 @@ export function SubscribeModal({
                       <div className="space-y-2">
                         <Label htmlFor="riskPerTrade" className="flex items-center gap-2">
                           <Percent className="h-4 w-4" />
-                          Risk Per Trade (0.1 to 0.55):
+                          Risk Per Trade (0.01 to 0.55):
                         </Label>
                         <Input
                           id="riskPerTrade"
@@ -610,7 +610,7 @@ export function SubscribeModal({
                           </p>
                         ) : (
                           <p className="text-xs text-muted-foreground">
-                            Range: 0.1-0.55. Default from strategy config: 0.4 (40%)
+                            Range: 0.01-0.55. Default from strategy config: 0.4 (40%)
                           </p>
                         )}
                       </div>

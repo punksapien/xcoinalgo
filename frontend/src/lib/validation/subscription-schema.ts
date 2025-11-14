@@ -12,8 +12,8 @@ export const subscriptionConfigSchema = z.object({
 
   riskPerTrade: z
     .number({ message: 'Risk per trade must be a number' })
-    .min(0.001, 'Minimum risk per trade is 0.1%')
-    .max(0.55, 'Maximum risk per trade is 55%')
+    .min(0.01, 'Minimum risk per trade is 0.01 (1%)')
+    .max(0.55, 'Maximum risk per trade is 0.55 (55%)')
     .positive('Risk per trade must be positive'),
 
   leverage: z
