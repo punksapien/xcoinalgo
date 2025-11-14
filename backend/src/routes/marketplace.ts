@@ -71,8 +71,8 @@ router.get('/', async (req: AuthenticatedRequest, res, next) => {
     };
 
     // ROLE-BASED VISIBILITY LOGIC
-    if (!userId || userRole === 'REGULAR' || userRole === 'QUANT') {
-      // REGULAR/QUANT users: Show public strategies + private strategies they have access to
+    if (!userId || userRole === 'REGULAR') {
+      // REGULAR users: Show public strategies + private strategies they have access to
       const userAccessRequests = userId ? await prisma.strategyAccessRequest.findMany({
         where: {
           userId,
@@ -93,6 +93,21 @@ router.get('/', async (req: AuthenticatedRequest, res, next) => {
         // Only show public strategies
         whereConditions.isPublic = true;
       }
+    } else if (userRole === 'QUANT') {
+      // QUANT users: Show ALL strategies (public + all private) + private strategies they have access to
+      // This allows quants to see and test private strategies in the marketplace
+      const userAccessRequests = await prisma.strategyAccessRequest.findMany({
+        where: {
+          userId,
+          status: { in: ['APPROVED', 'PENDING'] }
+        },
+        select: { strategyId: true }
+      });
+
+      const accessiblePrivateStrategyIds = userAccessRequests.map(req => req.strategyId);
+
+      // Show all strategies (both public and private)
+      // No additional filter needed - quants can see everything
     } else if (userRole === 'CLIENT') {
       // CLIENTS: Show public strategies + their own private strategies + private strategies they have access to
       const userAccessRequests = await prisma.strategyAccessRequest.findMany({
