@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useAuth } from '@/lib/auth';
 import { strategyService, Strategy } from '@/lib/strategy-service';
 import { SubscribeModal } from '@/components/strategy/subscribe-modal';
-import { Search, Filter, TrendingUp, Users, Bot, Clock, Target, TrendingDown, Zap, RefreshCw } from 'lucide-react';
+import { Search, Filter, TrendingUp, Users, Bot, Clock, Target, TrendingDown, Zap, RefreshCw, AlertTriangle, Sparkles } from 'lucide-react';
 
 function DashboardContent() {
   const [strategies, setStrategies] = useState<Strategy[]>([]);
@@ -152,6 +152,30 @@ function DashboardContent() {
     return <Bot className="h-4 w-4 text-primary" />;
   }, []);
 
+  const getTimeAgo = useCallback((dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInMs = now.getTime() - date.getTime();
+    const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
+    const diffInMonths = Math.floor(diffInDays / 30);
+
+    if (diffInDays < 1) return 'today';
+    if (diffInDays === 1) return 'yesterday';
+    if (diffInDays < 7) return `${diffInDays} days ago`;
+    if (diffInDays < 30) return `${Math.floor(diffInDays / 7)} weeks ago`;
+    if (diffInMonths === 1) return 'about 1 month ago';
+    if (diffInMonths < 12) return `about ${diffInMonths} months ago`;
+    const diffInYears = Math.floor(diffInMonths / 12);
+    return diffInYears === 1 ? 'about 1 year ago' : `about ${diffInYears} years ago`;
+  }, []);
+
+  const isNewStrategy = useCallback((dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInDays = (now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24);
+    return diffInDays <= 30;
+  }, []);
+
   const handleStrategyClick = useCallback((strategyId: string) => {
     router.push(`/dashboard/strategy/${strategyId}`);
   }, [router]);
@@ -284,20 +308,30 @@ function DashboardContent() {
           {displayedStrategies.map((strategy) => (
             <Card
               key={strategy.id}
-              className="card-hover cursor-pointer border-border/50 hover:border-primary/30 transition-all duration-200"
+              className="group card-hover cursor-pointer border-border/50 hover:border-primary/50 hover:shadow-lg transition-all duration-300 hover:-translate-y-1"
               onClick={() => handleStrategyClick(strategy.id)}
             >
               <CardHeader className="pb-3">
                 <div className="flex justify-between items-start">
                   <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
+                    <div className="flex items-center gap-2 mb-2">
                       {getStrategyTypeIcon(strategy.tags)}
-                      <CardTitle className="text-lg text-foreground leading-tight">{strategy.name}</CardTitle>
+                      <CardTitle className="text-lg text-foreground leading-tight group-hover:text-primary transition-colors">{strategy.name}</CardTitle>
                     </div>
-                    <p className="text-sm text-muted-foreground font-mono">{strategy.code}</p>
+                    {/* Timestamp and New Badge */}
+                    <div className="flex items-center gap-2 mb-1">
+                      <Clock className="h-3 w-3 text-muted-foreground" />
+                      <span className="text-xs text-muted-foreground">{getTimeAgo(strategy.createdAt)}</span>
+                      {isNewStrategy(strategy.createdAt) && (
+                        <Badge className="text-[10px] px-1.5 py-0 bg-gradient-to-r from-yellow-400 to-orange-500 text-white border-0 animate-pulse">
+                          <Sparkles className="h-2.5 w-2.5 mr-0.5" />
+                          NEW
+                        </Badge>
+                      )}
+                    </div>
                   </div>
                   <div className="flex flex-col gap-1 items-end">
-                    <Badge variant="outline" className="text-xs border-primary/30 text-primary">
+                    <Badge variant="outline" className="text-xs border-primary/30 text-primary bg-primary/5">
                       {strategy.instrument}
                     </Badge>
                     {/* Visibility Badge */}
@@ -356,7 +390,10 @@ function DashboardContent() {
                     <p className="font-semibold text-foreground">{strategy.riskReward?.toFixed(1) || 'N/A'}</p>
                   </div>
                   <div>
-                    <p className="text-muted-foreground">Max Drawdown</p>
+                    <div className="flex items-center gap-1">
+                      <AlertTriangle className="h-3 w-3 text-destructive" />
+                      <p className="text-muted-foreground">Max Drawdown</p>
+                    </div>
                     <p className="font-semibold text-destructive">
                       {formatPercentage(strategy.maxDrawdown)}
                     </p>
@@ -386,22 +423,22 @@ function DashboardContent() {
                 </div>
 
                 {/* Tags */}
-                <div className="flex flex-wrap gap-1">
+                <div className="flex flex-wrap gap-1.5">
                   {strategy.tags && strategy.tags.trim() ? (
                     <>
                       {strategy.tags.split(',').map(tag => tag.trim()).filter(tag => tag).slice(0, 3).map((tag, index) => (
-                        <Badge key={index} variant="secondary" className="text-xs hover:bg-primary/10 transition-colors">
+                        <Badge key={index} variant="secondary" className="text-xs hover:bg-primary/20 hover:text-primary transition-all duration-200 cursor-default">
                           {tag}
                         </Badge>
                       ))}
                       {strategy.tags.split(',').length > 3 && (
-                        <Badge variant="secondary" className="text-xs hover:bg-primary/10 transition-colors">
-                          +{strategy.tags.split(',').length - 3}
+                        <Badge variant="secondary" className="text-xs hover:bg-primary/20 hover:text-primary transition-all duration-200 cursor-default">
+                          +{strategy.tags.split(',').length - 3} more
                         </Badge>
                       )}
                     </>
                   ) : (
-                    <Badge variant="secondary" className="text-xs">
+                    <Badge variant="secondary" className="text-xs opacity-50">
                       No tags
                     </Badge>
                   )}
@@ -410,8 +447,8 @@ function DashboardContent() {
                 {/* Deployment Count */}
                 <div className="flex items-center justify-between text-sm">
                   <span className="flex items-center space-x-1 text-muted-foreground">
-                    <TrendingUp className="h-3 w-3" />
-                    <span>{strategy.deploymentCount} active</span>
+                    <Zap className="h-3 w-3 text-yellow-500" />
+                    <span className="font-medium">{strategy.deploymentCount} active deployments</span>
                   </span>
                 </div>
 
@@ -420,7 +457,7 @@ function DashboardContent() {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="flex-1 hover:bg-primary/5 hover:border-primary/50 transition-all"
+                    className="flex-1 hover:bg-primary/5 hover:border-primary/50 transition-all duration-200 hover:shadow-md"
                     onClick={(e) => {
                       e.stopPropagation();
                       router.push(`/dashboard/strategy/${strategy.id}`);
@@ -428,14 +465,25 @@ function DashboardContent() {
                   >
                     View Details
                   </Button>
-                  <Button
-                    size="sm"
-                    className="flex-1 bg-primary hover:bg-primary/90 transition-all hover:scale-105"
-                    onClick={(e) => handleDeployBot(strategy, e)}
-                    disabled={strategy.isSubscribed}
-                  >
-                    {strategy.isSubscribed ? 'Deployed' : 'Deploy Bot Now'}
-                  </Button>
+                  {strategy.isSubscribed ? (
+                    <Button
+                      size="sm"
+                      className="flex-1 bg-muted text-muted-foreground cursor-not-allowed"
+                      disabled
+                    >
+                      <Zap className="h-3 w-3 mr-1" />
+                      Already Deployed
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      className="flex-1 bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 transition-all duration-200 hover:scale-105 hover:shadow-lg"
+                      onClick={(e) => handleDeployBot(strategy, e)}
+                    >
+                      <Zap className="h-3 w-3 mr-1" />
+                      Deploy Now
+                    </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>
