@@ -312,13 +312,10 @@ function DashboardContent() {
               onClick={() => handleStrategyClick(strategy.id)}
             >
               <CardHeader className="pb-3">
-                {/* Top Row: Strategy Code + Instrument Badge */}
-                <div className="flex justify-between items-center mb-3">
+                {/* Top Row: Strategy Code Badge */}
+                <div className="mb-3">
                   <Badge className="text-xs px-2 py-1 bg-primary/10 text-primary border border-primary/30 font-mono uppercase">
                     {strategy.code}
-                  </Badge>
-                  <Badge variant="outline" className="text-xs border-primary/30 text-primary bg-primary/5">
-                    {strategy.instrument}
                   </Badge>
                 </div>
 
@@ -347,9 +344,9 @@ function DashboardContent() {
                   )}
                 </div>
 
-                {/* Deployments */}
-                <div className="flex items-center gap-1 text-xs mb-3">
-                  <span className="text-muted-foreground">•</span>
+                {/* Trading Pair and Deployments */}
+                <div className="flex items-center gap-3 text-xs mb-3">
+                  <span className="text-muted-foreground">• {strategy.instrument}</span>
                   <div className="flex items-center gap-1 text-green-600">
                     <Zap className="h-3 w-3" />
                     <span className="font-medium">{strategy.deploymentCount} deployments</span>
