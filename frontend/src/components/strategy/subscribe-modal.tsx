@@ -477,7 +477,7 @@ export function SubscribeModal({
                       <Alert className="bg-yellow-50 border-yellow-300">
                         <Info className="h-4 w-4 text-yellow-700" />
                         <AlertDescription className="text-xs text-yellow-800">
-                          <strong>Warning:</strong> Modifying these settings will override the strategy's default configuration. Only change these if you understand the risks.
+                          <strong>Warning:</strong> Modifying these settings will override the strategy&apos;s default configuration. Only change these if you understand the risks.
                         </AlertDescription>
                       </Alert>
 
