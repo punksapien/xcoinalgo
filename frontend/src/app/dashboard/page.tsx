@@ -347,9 +347,9 @@ function DashboardContent() {
                   )}
                 </div>
 
-                {/* Trading Pair and Deployments */}
-                <div className="flex items-center gap-3 text-xs mb-3">
-                  <span className="text-muted-foreground">• {strategy.instrument}</span>
+                {/* Deployments */}
+                <div className="flex items-center gap-1 text-xs mb-3">
+                  <span className="text-muted-foreground">•</span>
                   <div className="flex items-center gap-1 text-green-600">
                     <Zap className="h-3 w-3" />
                     <span className="font-medium">{strategy.deploymentCount} deployments</span>
