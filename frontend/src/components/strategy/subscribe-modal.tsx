@@ -6,9 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { useAuth } from '@/lib/auth';
 import { StrategyExecutionAPI, type SubscriptionConfig, type Subscription } from '@/lib/api/strategy-execution-api';
-import { Loader2, DollarSign, Percent, TrendingUp, AlertCircle, CheckCircle } from 'lucide-react';
+import { Loader2, DollarSign, Percent, TrendingUp, AlertCircle, CheckCircle, Award, TrendingDown, Target, ChevronRight, ArrowLeft, Info, Shield } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { showSuccessToast, showErrorToast, showWarningToast } from '@/lib/toast-utils';
 import { getUserFriendlyError } from '@/lib/error-messages';
@@ -19,6 +20,13 @@ interface SubscribeModalProps {
   onOpenChange: (open: boolean) => void;
   strategyId: string;
   strategyName: string;
+  strategyMetrics?: {
+    minMargin?: number;
+    winRate?: number;
+    roi?: number;
+    riskReward?: number;
+    maxDrawdown?: number;
+  };
   onSuccess?: () => void;
 }
 
@@ -33,9 +41,11 @@ export function SubscribeModal({
   onOpenChange,
   strategyId,
   strategyName,
+  strategyMetrics,
   onSuccess
 }: SubscribeModalProps) {
   const { token } = useAuth();
+  const [step, setStep] = useState<'overview' | 'deploy'>('overview');
   const [loading, setLoading] = useState(false);
   const [brokerCredentials, setBrokerCredentials] = useState<BrokerCredential[]>([]);
   const [loadingCredentials, setLoadingCredentials] = useState(true);
@@ -52,8 +62,9 @@ export function SubscribeModal({
 
   // Form state
   const [capital, setCapital] = useState('10000');
-  const [riskPerTrade, setRiskPerTrade] = useState(''); // No default - user must enter
-  const [leverage, setLeverage] = useState(''); // No default - user must enter
+  const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
+  const [riskPerTrade, setRiskPerTrade] = useState('0.4'); // Default from strategy config
+  const [leverage, setLeverage] = useState('10'); // Default from strategy config
   const [selectedCredentialId, setSelectedCredentialId] = useState<string>('');
 
   const fetchBrokerCredentials = useCallback(async () => {
@@ -95,25 +106,16 @@ export function SubscribeModal({
     console.log('🔄 Fetching futures balance...');
     try {
       setLoadingBalance(true);
-      // Fetch futures balance (USDT or INR wallet) - all strategies use futures
       const balanceData = await StrategyExecutionAPI.getFuturesBalance(token);
       console.log('✅ Balance API response:', balanceData);
-      console.log('💰 Total available:', balanceData.totalAvailable);
-      console.log('💵 Currency:', balanceData.currency);
-
       setAvailableBalance(balanceData.totalAvailable);
-      // Store currency for display (₹ for INR, $ for USDT)
       setBalanceCurrency(balanceData.currency as 'INR' | 'USDT');
-
-      console.log('✅ State updated - balance:', balanceData.totalAvailable, 'currency:', balanceData.currency);
     } catch (err) {
       console.error('❌ Failed to fetch futures balance:', err);
-      console.error('Error details:', JSON.stringify(err, null, 2));
       setAvailableBalance(null);
-      // Show error toast to inform user about balance fetch failure
       showErrorToast(
         'Balance Fetch Failed',
-        'Unable to fetch your wallet balance. Please check your broker connection. You cannot subscribe until balance is verified.'
+        'Unable to fetch your wallet balance. Please check your broker connection.'
       );
     } finally {
       setLoadingBalance(false);
@@ -121,37 +123,22 @@ export function SubscribeModal({
   }, [token]);
 
   const fetchUserSubscriptions = useCallback(async () => {
-    if (!token) {
-      console.log('❌ No token, skipping subscriptions fetch');
-      return;
-    }
+    if (!token) return;
 
-    console.log('🔄 Fetching user subscriptions...');
     try {
       setLoadingSubscriptions(true);
       const { subscriptions: userSubscriptions } = await StrategyExecutionAPI.getUserSubscriptions(token);
-      console.log('✅ Subscriptions API response:', userSubscriptions);
-
-      // Filter active subscriptions (active and not paused)
       const activeSubscriptions = userSubscriptions.filter(
         (sub) => sub.isActive && !sub.isPaused
       );
-      console.log('📊 Active subscriptions:', activeSubscriptions.length);
-
-      // Calculate total allocated capital
       const totalAllocated = activeSubscriptions.reduce(
         (sum, sub) => sum + (sub.capital || 0),
         0
       );
-      console.log('💰 Total allocated capital:', totalAllocated);
-
       setSubscriptions(activeSubscriptions);
       setAllocatedCapital(totalAllocated);
     } catch (err) {
       console.error('❌ Failed to fetch subscriptions:', err);
-      console.error('Error details:', JSON.stringify(err, null, 2));
-      // Don't show error toast - just log it
-      // User can still subscribe even if we can't fetch existing subscriptions
       setSubscriptions([]);
       setAllocatedCapital(0);
     } finally {
@@ -159,12 +146,14 @@ export function SubscribeModal({
     }
   }, [token]);
 
-  // Fetch broker credentials, balance, and subscriptions
+  // Fetch data when modal opens
   useEffect(() => {
     if (open && token) {
       fetchBrokerCredentials();
       fetchUserBalance();
       fetchUserSubscriptions();
+      // Reset to overview step when opening
+      setStep('overview');
     }
   }, [open, token, fetchBrokerCredentials, fetchUserBalance, fetchUserSubscriptions]);
 
@@ -185,16 +174,6 @@ export function SubscribeModal({
       setError(null);
       setValidationErrors({});
 
-      // Check required fields (no defaults allowed)
-      if (!riskPerTrade || !leverage) {
-        const errors: Record<string, string> = {};
-        if (!riskPerTrade) errors.riskPerTrade = 'Risk per trade is required';
-        if (!leverage) errors.leverage = 'Leverage is required';
-        setValidationErrors(errors);
-        showErrorToast('Required Fields Missing', 'Please enter Risk Per Trade and Leverage values');
-        return;
-      }
-
       // Prepare config for validation
       const configData = {
         capital: parseFloat(capital),
@@ -211,7 +190,7 @@ export function SubscribeModal({
         return;
       }
 
-      // Balance check is mandatory - reject if balance is unavailable
+      // Balance check
       if (availableBalance === null) {
         showErrorToast(
           'Balance Unavailable',
@@ -220,18 +199,10 @@ export function SubscribeModal({
         return;
       }
 
-      // Calculate available capital (wallet balance - already allocated capital)
+      // Calculate available capital
       const availableForAllocation = availableBalance - allocatedCapital;
       const requestedCapital = configData.capital;
 
-      console.log('💰 Capital allocation check:', {
-        walletBalance: availableBalance,
-        allocatedCapital,
-        availableForAllocation,
-        requestedCapital
-      });
-
-      // Check if user has enough unallocated capital
       if (availableForAllocation <= 0) {
         showErrorToast(
           'No Capital Available',
@@ -249,13 +220,6 @@ export function SubscribeModal({
           `(Wallet: ${symbol}${availableBalance.toFixed(2)} - Already Allocated: ${symbol}${allocatedCapital.toFixed(2)})`
         );
         return;
-      }
-
-      // Validate sufficient balance (original check for high allocation warning)
-      const balanceCheck = validateSufficientBalance(requestedCapital, availableBalance);
-      if (balanceCheck.error) {
-        // Show warning but allow to proceed
-        showWarningToast('High Capital Allocation', balanceCheck.error);
       }
 
       // Subscribe to strategy
@@ -278,234 +242,336 @@ export function SubscribeModal({
     }
   };
 
-  const calculateMaxRisk = () => {
-    const cap = parseFloat(capital) || 0;
-    const risk = parseFloat(riskPerTrade) || 0;
-    return (cap * risk).toFixed(2);
-  };
+  const availableForNewSubscription = availableBalance !== null ? availableBalance - allocatedCapital : 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Subscribe to Strategy</DialogTitle>
-          <DialogDescription>
-            Configure your subscription parameters for <span className="font-semibold">{strategyName}</span>
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        {step === 'overview' ? (
+          <>
+            {/* STEP 1: OVERVIEW */}
+            <DialogHeader>
+              <div className="flex items-center gap-2 mb-2">
+                <div className="p-2 bg-blue-100 rounded-lg">
+                  <Award className="h-5 w-5 text-blue-600" />
+                </div>
+                <div>
+                  <DialogTitle className="text-xl">Expert-Crafted Strategy</DialogTitle>
+                  <DialogDescription className="text-sm">
+                    This trading bot was designed by industry experts with years of experience in the crypto markets.
+                  </DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
 
-        {error && (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
+            <div className="space-y-6 py-4">
+              {/* Trading Bot Overview */}
+              <div>
+                <div className="flex items-center gap-2 mb-4">
+                  <Target className="h-5 w-5 text-yellow-600" />
+                  <h3 className="text-lg font-semibold">Trading Bot Overview</h3>
+                </div>
 
-        {loadingCredentials ? (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-6 w-6 animate-spin" />
-          </div>
-        ) : brokerCredentials.length === 0 ? (
-          <Alert>
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              No active broker credentials found. Please set up your broker connection first.
-            </AlertDescription>
-          </Alert>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Strategy Name */}
+                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-center gap-2 mb-2 text-blue-700">
+                      <Shield className="h-4 w-4" />
+                      <p className="text-xs font-medium">Strategy Name</p>
+                    </div>
+                    <p className="font-semibold text-blue-900">{strategyName}</p>
+                  </div>
+
+                  {/* Min Margin */}
+                  <div className="p-4 bg-purple-50 border border-purple-200 rounded-lg">
+                    <div className="flex items-center gap-2 mb-2 text-purple-700">
+                      <DollarSign className="h-4 w-4" />
+                      <p className="text-xs font-medium">Min Margin</p>
+                    </div>
+                    <p className="text-2xl font-bold text-purple-900">₹{strategyMetrics?.minMargin || 10000}</p>
+                  </div>
+
+                  {/* Win Rate */}
+                  <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                    <div className="flex items-center gap-2 mb-2 text-green-700">
+                      <Award className="h-4 w-4" />
+                      <p className="text-xs font-medium">Win Rate</p>
+                    </div>
+                    <p className="text-2xl font-bold text-green-900">
+                      {strategyMetrics?.winRate ? `${strategyMetrics.winRate.toFixed(1)}%` : 'N/A'}
+                    </p>
+                  </div>
+
+                  {/* Risk/Reward */}
+                  <div className="p-4 bg-indigo-50 border border-indigo-200 rounded-lg">
+                    <div className="flex items-center gap-2 mb-2 text-indigo-700">
+                      <Target className="h-4 w-4" />
+                      <p className="text-xs font-medium">Risk/Reward</p>
+                    </div>
+                    <p className="text-2xl font-bold text-indigo-900">
+                      {strategyMetrics?.riskReward ? `${strategyMetrics.riskReward.toFixed(1)}:1` : 'N/A'}
+                    </p>
+                  </div>
+
+                  {/* Max Drawdown */}
+                  <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                    <div className="flex items-center gap-2 mb-2 text-red-700">
+                      <TrendingDown className="h-4 w-4" />
+                      <p className="text-xs font-medium">Max Drawdown</p>
+                    </div>
+                    <p className="text-2xl font-bold text-red-900">
+                      ₹{strategyMetrics?.maxDrawdown ? (strategyMetrics.maxDrawdown * 100).toFixed(2) : 'N/A'}
+                    </p>
+                  </div>
+
+                  {/* ROI */}
+                  <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <div className="flex items-center gap-2 mb-2 text-yellow-700">
+                      <TrendingUp className="h-4 w-4" />
+                      <p className="text-xs font-medium">ROI</p>
+                    </div>
+                    <p className="text-2xl font-bold text-yellow-900">
+                      {strategyMetrics?.roi ? `${strategyMetrics.roi.toFixed(1)}%` : 'N/A'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                onClick={() => setStep('deploy')}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                size="lg"
+              >
+                Proceed to Deploy
+                <ChevronRight className="ml-2 h-4 w-4" />
+              </Button>
+            </DialogFooter>
+          </>
         ) : (
-          <div className="space-y-6 py-4">
-            {/* Capital Allocation Display */}
-            {loadingBalance || loadingSubscriptions ? (
-              <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-lg">
-                <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
-                <span className="text-sm text-blue-700">
-                  Loading balance and allocations...
-                </span>
-              </div>
-            ) : availableBalance !== null ? (
-              <div className="space-y-2">
-                {/* Total Wallet Balance */}
-                <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="h-4 w-4 text-green-600" />
-                    <span className="text-sm font-medium text-green-700">
-                      Total Wallet Balance:
-                    </span>
-                  </div>
-                  <span className="text-lg font-bold text-green-700">
-                    {balanceCurrency === 'INR' ? '₹' : '$'}{availableBalance.toFixed(2)}
-                  </span>
+          <>
+            {/* STEP 2: DEPLOY */}
+            <DialogHeader>
+              <div className="flex items-center gap-2 mb-2">
+                <div className="p-2 bg-blue-100 rounded-lg">
+                  <Target className="h-5 w-5 text-blue-600" />
                 </div>
-
-                {/* Already Allocated Capital */}
-                {allocatedCapital > 0 && (
-                  <div className="flex items-center justify-between p-3 bg-orange-50 rounded-lg">
-                    <span className="text-sm font-medium text-orange-700">
-                      Already Allocated ({subscriptions.length} subscription{subscriptions.length !== 1 ? 's' : ''}):
-                    </span>
-                    <span className="text-lg font-bold text-orange-700">
-                      -{balanceCurrency === 'INR' ? '₹' : '$'}{allocatedCapital.toFixed(2)}
-                    </span>
-                  </div>
-                )}
-
-                {/* Available for New Subscription */}
-                <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border-2 border-blue-200">
-                  <span className="text-sm font-semibold text-blue-800">
-                    Available for New Subscription:
-                  </span>
-                  <span className="text-xl font-bold text-blue-800">
-                    {balanceCurrency === 'INR' ? '₹' : '$'}{(availableBalance - allocatedCapital).toFixed(2)}
-                  </span>
+                <div>
+                  <DialogTitle className="text-xl">Deploy Trading Bot</DialogTitle>
+                  <DialogDescription className="text-sm">
+                    Configure your investment parameters for {strategyName}
+                  </DialogDescription>
                 </div>
               </div>
-            ) : (
+            </DialogHeader>
+
+            {error && (
               <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />
-                <AlertDescription>
-                  Unable to fetch your wallet balance. Please check your broker connection and refresh the page to try again.
-                </AlertDescription>
+                <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
-            {/* Broker Credential Selection */}
-            <div className="space-y-2">
-              <Label htmlFor="broker">Broker Credential</Label>
-              <Select value={selectedCredentialId} onValueChange={setSelectedCredentialId}>
-                <SelectTrigger id="broker">
-                  <SelectValue placeholder="Select broker credential" />
-                </SelectTrigger>
-                <SelectContent>
-                  {brokerCredentials.map((credential) => (
-                    <SelectItem key={credential.id} value={credential.id}>
-                      {credential.brokerName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
 
-            {/* Capital */}
-            <div className="space-y-2">
-              <Label htmlFor="capital" className="flex items-center gap-2">
-                <DollarSign className="h-4 w-4" />
-                Capital (₹)
-              </Label>
-              <Input
-                id="capital"
-                type="number"
-                min="100"
-                step="100"
-                value={capital}
-                onChange={(e) => setCapital(e.target.value)}
-                placeholder="10000"
-                className={validationErrors.capital ? 'border-red-500' : ''}
-              />
-              {validationErrors.capital ? (
-                <p className="text-sm text-red-500 flex items-center gap-1">
-                  <AlertCircle className="h-3 w-3" />
-                  {validationErrors.capital}
-                </p>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Amount of capital to allocate to this strategy (Min: ₹100)
-                </p>
-              )}
-            </div>
-
-            {/* Risk Per Trade */}
-            <div className="space-y-2">
-              <Label htmlFor="riskPerTrade" className="flex items-center gap-2">
-                <Percent className="h-4 w-4" />
-                Risk Per Trade *
-              </Label>
-              <div className="flex gap-2">
-                <Input
-                  id="riskPerTrade"
-                  type="number"
-                  min="0.001"
-                  max="0.55"
-                  step="0.001"
-                  value={riskPerTrade}
-                  onChange={(e) => setRiskPerTrade(e.target.value)}
-                  placeholder="0.02"
-                  className={validationErrors.riskPerTrade ? 'border-red-500' : ''}
-                  required
-                />
-                <span className="flex items-center px-3 bg-secondary rounded-md">
-                  {riskPerTrade ? (parseFloat(riskPerTrade) * 100).toFixed(1) : '0.0'}%
-                </span>
+            {loadingCredentials ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin" />
               </div>
-              {validationErrors.riskPerTrade ? (
-                <p className="text-sm text-red-500 flex items-center gap-1">
-                  <AlertCircle className="h-3 w-3" />
-                  {validationErrors.riskPerTrade}
-                </p>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Maximum risk: ₹{calculateMaxRisk()} per trade
-                </p>
-              )}
-            </div>
-
-            {/* Leverage */}
-            <div className="space-y-2">
-              <Label htmlFor="leverage" className="flex items-center gap-2">
-                <TrendingUp className="h-4 w-4" />
-                Leverage *
-              </Label>
-              <div className="flex gap-2">
-                <Input
-                  id="leverage"
-                  type="number"
-                  min="1"
-                  max="100"
-                  step="1"
-                  value={leverage}
-                  onChange={(e) => setLeverage(e.target.value)}
-                  placeholder="10"
-                  className={validationErrors.leverage ? 'border-red-500' : ''}
-                  required
-                />
-                <span className="flex items-center px-3 bg-secondary rounded-md">
-                  {leverage || '0'}x
-                </span>
-              </div>
-              {validationErrors.leverage ? (
-                <p className="text-sm text-red-500 flex items-center gap-1">
-                  <AlertCircle className="h-3 w-3" />
-                  {validationErrors.leverage}
-                </p>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Trading leverage multiplier (1-100x)
-                </p>
-              )}
-            </div>
-          </div>
-        )}
-
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={loading}
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSubscribe}
-            disabled={loading || loadingCredentials || loadingBalance || loadingSubscriptions || brokerCredentials.length === 0 || availableBalance === null}
-          >
-            {loading ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Deploying...
-              </>
+            ) : brokerCredentials.length === 0 ? (
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  No active broker credentials found. Please set up your broker connection first.
+                </AlertDescription>
+              </Alert>
             ) : (
-              'Deploy Now'
+              <div className="space-y-6 py-4">
+                {/* Balance Information */}
+                {loadingBalance || loadingSubscriptions ? (
+                  <div className="flex items-center gap-2 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                    <span className="text-sm text-blue-700">Loading balance...</span>
+                  </div>
+                ) : availableBalance !== null ? (
+                  <div className="p-4 bg-blue-50 border-2 border-blue-300 rounded-lg">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium text-blue-800">Available Balance:</span>
+                      <span className="text-2xl font-bold text-blue-900">
+                        {balanceCurrency === 'INR' ? '₹' : '$'}{availableForNewSubscription.toFixed(2)}
+                      </span>
+                    </div>
+                    <Alert className="mt-2 bg-blue-100 border-blue-300">
+                      <Info className="h-4 w-4 text-blue-700" />
+                      <AlertDescription className="text-xs text-blue-800">
+                        <strong>Note:</strong> The available balance in your broker wallet must cover the margin for this new bot, plus the total margin required for any other bots you have already deployed.
+                      </AlertDescription>
+                    </Alert>
+                  </div>
+                ) : (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>
+                      Unable to fetch your wallet balance. Please check your broker connection.
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {/* Broker Selection */}
+                <div className="space-y-2">
+                  <Label htmlFor="broker">Trading Account:</Label>
+                  <Select value={selectedCredentialId} onValueChange={setSelectedCredentialId}>
+                    <SelectTrigger id="broker">
+                      <SelectValue placeholder="Select trading account" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {brokerCredentials.map((credential) => (
+                        <SelectItem key={credential.id} value={credential.id}>
+                          {credential.brokerName} (CoinDCX)
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Investment Amount */}
+                <div className="space-y-2">
+                  <Label htmlFor="capital">Investment Amount (₹):</Label>
+                  <Input
+                    id="capital"
+                    type="number"
+                    min="10000"
+                    step="1000"
+                    value={capital}
+                    onChange={(e) => setCapital(e.target.value)}
+                    placeholder="10000"
+                    className={validationErrors.capital ? 'border-red-500 text-lg font-semibold' : 'text-lg font-semibold'}
+                  />
+                  {validationErrors.capital ? (
+                    <p className="text-sm text-red-500 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" />
+                      {validationErrors.capital}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Minimum required: ₹10,000</p>
+                  )}
+                </div>
+
+                {/* Advanced Settings Toggle */}
+                <div className="border-t border-border pt-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <Label htmlFor="advanced-settings" className="text-sm font-semibold cursor-pointer">
+                        Advanced Settings
+                      </Label>
+                      <span className="text-xs text-muted-foreground">(Optional)</span>
+                    </div>
+                    <Switch
+                      id="advanced-settings"
+                      checked={showAdvancedSettings}
+                      onCheckedChange={setShowAdvancedSettings}
+                    />
+                  </div>
+
+                  {showAdvancedSettings && (
+                    <div className="space-y-4 p-4 bg-gray-50 border border-gray-200 rounded-lg animate-in slide-in-from-top">
+                      <Alert className="bg-yellow-50 border-yellow-300">
+                        <Info className="h-4 w-4 text-yellow-700" />
+                        <AlertDescription className="text-xs text-yellow-800">
+                          <strong>Warning:</strong> Modifying these settings will override the strategy's default configuration. Only change these if you understand the risks.
+                        </AlertDescription>
+                      </Alert>
+
+                      {/* Leverage */}
+                      <div className="space-y-2">
+                        <Label htmlFor="leverage" className="flex items-center gap-2">
+                          <TrendingUp className="h-4 w-4" />
+                          Leverage (X):
+                        </Label>
+                        <Input
+                          id="leverage"
+                          type="number"
+                          min="1"
+                          max="100"
+                          step="1"
+                          value={leverage}
+                          onChange={(e) => setLeverage(e.target.value)}
+                          placeholder="10"
+                          className={validationErrors.leverage ? 'border-red-500' : ''}
+                        />
+                        {validationErrors.leverage ? (
+                          <p className="text-sm text-red-500 flex items-center gap-1">
+                            <AlertCircle className="h-3 w-3" />
+                            {validationErrors.leverage}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">Default: 10x</p>
+                        )}
+                      </div>
+
+                      {/* Risk Per Trade */}
+                      <div className="space-y-2">
+                        <Label htmlFor="riskPerTrade" className="flex items-center gap-2">
+                          <Percent className="h-4 w-4" />
+                          Risk Per Trade (0.1 to 1):
+                        </Label>
+                        <Input
+                          id="riskPerTrade"
+                          type="number"
+                          min="0.1"
+                          max="1"
+                          step="0.1"
+                          value={riskPerTrade}
+                          onChange={(e) => setRiskPerTrade(e.target.value)}
+                          placeholder="0.5"
+                          className={validationErrors.riskPerTrade ? 'border-red-500' : ''}
+                        />
+                        {validationErrors.riskPerTrade ? (
+                          <p className="text-sm text-red-500 flex items-center gap-1">
+                            <AlertCircle className="h-3 w-3" />
+                            {validationErrors.riskPerTrade}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">
+                            Max percent of total capital to risk per trade. Default: 0.4 (40%)
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
-          </Button>
-        </DialogFooter>
+
+            <DialogFooter className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setStep('overview')}
+                disabled={loading}
+                className="flex-1"
+              >
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Back
+              </Button>
+              <Button
+                onClick={handleSubscribe}
+                disabled={loading || loadingCredentials || loadingBalance || loadingSubscriptions || brokerCredentials.length === 0 || availableBalance === null}
+                className="flex-1 bg-blue-600 hover:bg-blue-700"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Deploying Bot...
+                  </>
+                ) : (
+                  <>
+                    <Target className="mr-2 h-4 w-4" />
+                    Deploy Bot
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );

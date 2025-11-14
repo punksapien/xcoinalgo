@@ -520,6 +520,13 @@ function DashboardContent() {
             onOpenChange={setSubscribeModalOpen}
             strategyId={selectedStrategy.id}
             strategyName={selectedStrategy.name}
+            strategyMetrics={{
+              minMargin: 10000,
+              winRate: selectedStrategy.winRate,
+              roi: selectedStrategy.roi,
+              riskReward: selectedStrategy.riskReward,
+              maxDrawdown: selectedStrategy.maxDrawdown,
+            }}
             onSuccess={handleSubscribeSuccess}
           />
         )}
