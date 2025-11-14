@@ -312,150 +312,120 @@ function DashboardContent() {
               onClick={() => handleStrategyClick(strategy.id)}
             >
               <CardHeader className="pb-3">
-                {/* Strategy Code Badge at Top */}
-                <div className="mb-3">
+                {/* Top Row: Strategy Code + Instrument Badge */}
+                <div className="flex justify-between items-center mb-3">
                   <Badge className="text-xs px-2 py-1 bg-primary/10 text-primary border border-primary/30 font-mono uppercase">
                     {strategy.code}
                   </Badge>
-                </div>
-                <div className="flex justify-between items-start">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      {getStrategyTypeIcon(strategy.tags)}
-                      <CardTitle className="text-lg text-foreground leading-tight group-hover:text-primary transition-colors">{strategy.name}</CardTitle>
-                    </div>
-                    {/* Timestamp and New Badge */}
-                    <div className="flex items-center gap-2 mb-1">
-                      <Clock className="h-3 w-3 text-muted-foreground" />
-                      <span className="text-xs text-muted-foreground">{getTimeAgo(strategy.createdAt)}</span>
-                      {isNewStrategy(strategy.createdAt) && (
-                        <Badge className="text-[10px] px-1.5 py-0 bg-gradient-to-r from-yellow-400 to-orange-500 text-white border-0 animate-pulse">
-                          <Sparkles className="h-2.5 w-2.5 mr-0.5" />
-                          NEW
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-1 items-end">
-                    <Badge variant="outline" className="text-xs border-primary/30 text-primary bg-primary/5">
-                      {strategy.instrument}
-                    </Badge>
-                    {/* Visibility Badge */}
-                    {strategy.isPublic === false && (
-                      <Badge variant="secondary" className="text-xs">
-                        Private
-                      </Badge>
-                    )}
-                    {/* Owner Badge */}
-                    {strategy.isOwned && (
-                      <Badge variant="default" className="text-xs bg-blue-600">
-                        Your Strategy
-                      </Badge>
-                    )}
-                    {/* Access Status Badge */}
-                    {strategy.accessStatus === 'PENDING' && (
-                      <Badge variant="outline" className="text-xs border-yellow-600 text-yellow-600">
-                        Access Pending
-                      </Badge>
-                    )}
-                    {strategy.accessStatus === 'APPROVED' && strategy.isPublic === false && (
-                      <Badge variant="outline" className="text-xs border-green-600 text-green-600">
-                        Access Granted
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-                <p className="text-sm text-muted-foreground line-clamp-2 mt-2">
-                  {strategy.description}
-                </p>
-              </CardHeader>
-
-              <CardContent className="space-y-4">
-                {/* Author */}
-                <div className="flex items-center space-x-2">
-                  <Users className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm text-foreground">{strategy.author}</span>
+                  <Badge variant="outline" className="text-xs border-primary/30 text-primary bg-primary/5">
+                    {strategy.instrument}
+                  </Badge>
                 </div>
 
-                {/* Key Metrics */}
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">Win Rate</p>
-                    <p className="font-semibold text-primary">
-                      {formatPercentage(strategy.winRate)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">ROI</p>
-                    <p className="font-semibold text-accent">
-                      {formatPercentage(strategy.roi)}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Risk/Reward</p>
-                    <p className="font-semibold text-foreground">{strategy.riskReward?.toFixed(1) || 'N/A'}</p>
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-1">
-                      <AlertTriangle className="h-3 w-3 text-destructive" />
-                      <p className="text-muted-foreground">Max Drawdown</p>
-                    </div>
-                    <p className="font-semibold text-destructive">
-                      {formatPercentage(strategy.maxDrawdown)}
-                    </p>
-                  </div>
+                {/* Strategy Title with Icon */}
+                <div className="flex items-center gap-2 mb-3">
+                  {getStrategyTypeIcon(strategy.tags)}
+                  <CardTitle className="text-lg text-foreground leading-tight group-hover:text-primary transition-colors">{strategy.name}</CardTitle>
                 </div>
 
-                {/* Additional Features */}
-                {strategy.features && (
-                  <div className="border-t border-border/50 pt-3">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Clock className="h-3 w-3 text-muted-foreground" />
-                      <span className="text-xs text-muted-foreground">Timeframes:</span>
-                      <span className="text-xs text-foreground">{strategy.features.timeframes.join(', ')}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Target className="h-3 w-3 text-muted-foreground" />
-                      <span className="text-xs text-muted-foreground">Leverage:</span>
-                      <span className="text-xs text-foreground">{strategy.features.leverage}x</span>
-                    </div>
+                {/* Author and Timestamp Row */}
+                <div className="flex items-center gap-3 text-xs text-muted-foreground mb-2">
+                  <div className="flex items-center gap-1">
+                    <Users className="h-3 w-3" />
+                    <span>{strategy.author}</span>
                   </div>
-                )}
-
-                {/* Margin Required */}
-                <div className="border-t border-border/50 pt-3">
-                  <p className="text-xs text-muted-foreground">Min Margin</p>
-                  <p className="font-semibold text-foreground">{formatCurrency(strategy.marginRequired, strategy.marginCurrency)}</p>
-                </div>
-
-                {/* Tags */}
-                <div className="flex flex-wrap gap-1.5">
-                  {strategy.tags && strategy.tags.trim() ? (
-                    <>
-                      {strategy.tags.split(',').map(tag => tag.trim()).filter(tag => tag).slice(0, 3).map((tag, index) => (
-                        <Badge key={index} variant="secondary" className="text-xs hover:bg-primary/20 hover:text-primary transition-all duration-200 cursor-default">
-                          {tag}
-                        </Badge>
-                      ))}
-                      {strategy.tags.split(',').length > 3 && (
-                        <Badge variant="secondary" className="text-xs hover:bg-primary/20 hover:text-primary transition-all duration-200 cursor-default">
-                          +{strategy.tags.split(',').length - 3} more
-                        </Badge>
-                      )}
-                    </>
-                  ) : (
-                    <Badge variant="secondary" className="text-xs opacity-50">
-                      No tags
+                  <span>•</span>
+                  <div className="flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    <span>{getTimeAgo(strategy.createdAt)}</span>
+                  </div>
+                  {isNewStrategy(strategy.createdAt) && (
+                    <Badge className="text-[10px] px-1.5 py-0 bg-gradient-to-r from-yellow-400 to-orange-500 text-white border-0 animate-pulse">
+                      <Sparkles className="h-2.5 w-2.5 mr-0.5" />
+                      NEW
                     </Badge>
                   )}
                 </div>
 
-                {/* Deployment Count */}
-                <div className="flex items-center justify-between text-sm">
-                  <span className="flex items-center space-x-1 text-muted-foreground">
-                    <Zap className="h-3 w-3 text-yellow-500" />
-                    <span className="font-medium">{strategy.deploymentCount} active deployments</span>
-                  </span>
+                {/* Trading Pair and Deployments */}
+                <div className="flex items-center gap-3 text-xs mb-3">
+                  <span className="text-muted-foreground">• {strategy.instrument}</span>
+                  <div className="flex items-center gap-1 text-green-600">
+                    <Zap className="h-3 w-3" />
+                    <span className="font-medium">{strategy.deploymentCount} deployments</span>
+                  </div>
+                </div>
+
+                {/* Description (optional - keeping it minimal) */}
+                {strategy.description && (
+                  <p className="text-sm text-muted-foreground line-clamp-2 mb-3">
+                    {strategy.description}
+                  </p>
+                )}
+              </CardHeader>
+
+              <CardContent className="space-y-3">
+                {/* Key Metrics Grid (2x2) */}
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <div className="flex items-center gap-1 mb-1">
+                      <TrendingUp className="h-3 w-3 text-green-600" />
+                      <p className="text-muted-foreground text-xs">Win Rate</p>
+                    </div>
+                    <p className="font-semibold text-green-600 text-base">
+                      {formatPercentage(strategy.winRate)}
+                    </p>
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-1 mb-1">
+                      <Target className="h-3 w-3 text-yellow-600" />
+                      <p className="text-muted-foreground text-xs">ROI</p>
+                    </div>
+                    <p className="font-semibold text-yellow-600 text-base">
+                      {formatPercentage(strategy.roi)}
+                    </p>
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-1 mb-1">
+                      <TrendingUp className="h-3 w-3 text-muted-foreground" />
+                      <p className="text-muted-foreground text-xs">Risk/Reward</p>
+                    </div>
+                    <p className="font-semibold text-foreground text-base">
+                      {strategy.riskReward?.toFixed(2) || 'N/A'}
+                    </p>
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-1 mb-1">
+                      <AlertTriangle className="h-3 w-3 text-red-600" />
+                      <p className="text-muted-foreground text-xs">Max Drawdown</p>
+                    </div>
+                    <p className="font-semibold text-red-600 text-base">
+                      {strategy.maxDrawdown ? `₹${(strategy.maxDrawdown * 100).toFixed(2)}` : 'N/A'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Min Margin - Hardcoded */}
+                <div className="pt-2">
+                  <p className="text-xs text-muted-foreground">Min Margin</p>
+                  <p className="font-semibold text-foreground">₹10000</p>
+                </div>
+
+                {/* Tags - Compact */}
+                {strategy.tags && strategy.tags.trim() && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {strategy.tags.split(',').map(tag => tag.trim()).filter(tag => tag).slice(0, 3).map((tag, index) => (
+                      <Badge key={index} variant="secondary" className="text-[10px] py-0 px-1.5">
+                        {tag}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+
+                {/* Active Deployments Footer */}
+                <div className="flex items-center gap-1 text-xs text-muted-foreground pt-2">
+                  <Zap className="h-3 w-3 text-yellow-500" />
+                  <span>{strategy.deploymentCount} active deployments</span>
                 </div>
 
                 {/* Action Buttons */}
@@ -463,7 +433,7 @@ function DashboardContent() {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="flex-1 hover:bg-primary/5 hover:border-primary/50 transition-all duration-200 hover:shadow-md"
+                    className="flex-1 hover:bg-primary/5 hover:border-primary/50 transition-all duration-200"
                     onClick={(e) => {
                       e.stopPropagation();
                       router.push(`/dashboard/strategy/${strategy.id}`);
@@ -477,13 +447,12 @@ function DashboardContent() {
                       className="flex-1 bg-muted text-muted-foreground cursor-not-allowed"
                       disabled
                     >
-                      <Zap className="h-3 w-3 mr-1" />
-                      Already Deployed
+                      This bot is already deployed
                     </Button>
                   ) : (
                     <Button
                       size="sm"
-                      className="flex-1 bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 transition-all duration-200 hover:scale-105 hover:shadow-lg"
+                      className="flex-1 bg-green-600 hover:bg-green-700 text-white transition-all duration-200 hover:scale-105 hover:shadow-lg"
                       onClick={(e) => handleDeployBot(strategy, e)}
                     >
                       <Zap className="h-3 w-3 mr-1" />
