@@ -26,8 +26,6 @@ interface SubscribeModalProps {
     roi?: number;
     riskReward?: number;
     maxDrawdown?: number;
-    defaultLeverage?: number;
-    defaultRiskPerTrade?: number;
   };
   onSuccess?: () => void;
 }
@@ -62,9 +60,7 @@ export function SubscribeModal({
   const [loadingSubscriptions, setLoadingSubscriptions] = useState(false);
   const [allocatedCapital, setAllocatedCapital] = useState<number>(0);
 
-  // Get strategy config defaults
-  const defaultLeverage = strategyMetrics?.defaultLeverage || 10;
-  const defaultRiskPerTrade = strategyMetrics?.defaultRiskPerTrade || 0.4;
+  // Get strategy config
   const minMargin = strategyMetrics?.minMargin || 10000;
 
   // Form state
@@ -269,8 +265,8 @@ export function SubscribeModal({
       // Use strategy config defaults if advanced settings not provided
       const configData = {
         capital: capitalAmount,
-        riskPerTrade: riskPerTrade ? parseFloat(riskPerTrade) : defaultRiskPerTrade, // Default from strategy config
-        leverage: leverage ? parseInt(leverage) : defaultLeverage, // Default from strategy config
+        riskPerTrade: riskPerTrade ? parseFloat(riskPerTrade) : 0.4, // Default 40%
+        leverage: leverage ? parseInt(leverage) : 10, // Default 10x
         brokerCredentialId: selectedCredentialId,
       };
 
@@ -603,7 +599,7 @@ export function SubscribeModal({
                           type="text"
                           value={leverage}
                           onChange={(e) => handleLeverageChange(e.target.value)}
-                          placeholder={`Leave empty to use default (${defaultLeverage}x)`}
+                          placeholder="Leave empty to use default (10x)"
                           className={validationErrors.leverage ? 'border-red-500' : ''}
                         />
                         {validationErrors.leverage ? (
@@ -612,7 +608,7 @@ export function SubscribeModal({
                             {validationErrors.leverage}
                           </p>
                         ) : (
-                          <p className="text-xs text-muted-foreground">Range: 1-100x. Default from strategy config: {defaultLeverage}x</p>
+                          <p className="text-xs text-muted-foreground">Range: 1-100x. Default: 10x</p>
                         )}
                       </div>
 
@@ -627,7 +623,7 @@ export function SubscribeModal({
                           type="text"
                           value={riskPerTrade}
                           onChange={(e) => handleRiskPerTradeChange(e.target.value)}
-                          placeholder={`Leave empty to use default (${defaultRiskPerTrade})`}
+                          placeholder="Leave empty to use default (0.4)"
                           className={validationErrors.riskPerTrade ? 'border-red-500' : ''}
                         />
                         {validationErrors.riskPerTrade ? (
@@ -637,7 +633,7 @@ export function SubscribeModal({
                           </p>
                         ) : (
                           <p className="text-xs text-muted-foreground">
-                            Range: 0.01-0.55. Default from strategy config: {defaultRiskPerTrade} ({(defaultRiskPerTrade * 100).toFixed(0)}%)
+                            Range: 0.01-0.55. Default: 0.4 (40%)
                           </p>
                         )}
                       </div>

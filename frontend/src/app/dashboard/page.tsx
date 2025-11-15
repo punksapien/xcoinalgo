@@ -415,10 +415,12 @@ function DashboardContent() {
                   </div>
                 </div>
 
-                {/* Min Margin - Hardcoded */}
+                {/* Min Margin */}
                 <div className="pt-2">
                   <p className="text-xs text-muted-foreground">Min Margin</p>
-                  <p className="font-semibold text-foreground">₹10000</p>
+                  <p className="font-semibold text-foreground">
+                    ₹{((strategy.executionConfig as Record<string, unknown>)?.minMargin as number ?? 10000).toLocaleString()}
+                  </p>
                 </div>
 
                 {/* Tags - Compact */}
@@ -522,8 +524,6 @@ function DashboardContent() {
             strategyName={selectedStrategy.name}
             strategyMetrics={{
               minMargin: (selectedStrategy.executionConfig as Record<string, unknown>)?.minMargin as number ?? 10000,
-              defaultLeverage: (selectedStrategy.executionConfig as Record<string, unknown>)?.defaultLeverage as number ?? 10,
-              defaultRiskPerTrade: (selectedStrategy.executionConfig as Record<string, unknown>)?.defaultRiskPerTrade as number ?? 0.4,
               winRate: selectedStrategy.winRate,
               roi: selectedStrategy.roi,
               riskReward: selectedStrategy.riskReward,

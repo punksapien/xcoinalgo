@@ -32,8 +32,6 @@ export interface Strategy {
   // Execution configuration
   executionConfig?: {
     minMargin?: number;
-    defaultLeverage?: number;
-    defaultRiskPerTrade?: number;
   };
 }
 
@@ -113,7 +111,7 @@ class StrategyService {
         isPublic: s.isPublic as boolean | undefined,
         accessStatus: s.accessStatus as 'APPROVED' | 'PENDING' | 'REJECTED' | null | undefined,
         isOwned: s.isOwned as boolean | undefined,
-        executionConfig: s.executionConfig as { minMargin?: number; defaultLeverage?: number; defaultRiskPerTrade?: number } | undefined,
+        executionConfig: s.executionConfig as { minMargin?: number } | undefined,
       }));
 
       this.buildSearchIndex();
