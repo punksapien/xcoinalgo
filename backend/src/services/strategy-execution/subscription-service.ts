@@ -185,33 +185,137 @@ class SubscriptionService {
       })
 
       // If first subscriber, register strategy in registry
-      if (isFirstSubscriber && strategy.executionConfig) {
-        const config = strategy.executionConfig as any
+      if (isFirstSubscriber) {
+        let config = strategy.executionConfig as any
 
-        // Support both 'symbol' and 'pair' fields
-        const symbol = config.symbol || config.pair
+        // 🔧 AUTO-SYNC: If executionConfig is missing or incomplete, extract from Python file
+        const needsSync = !config || !config.pair || !config.resolution
 
-        if (symbol && config.resolution) {
-          // ✅ NEW: Initialize strategy settings in Redis with ALL parameters from executionConfig
-          await settingsService.initializeStrategy(
-            strategyId,
-            config,  // This includes ALL STRATEGY_CONFIG parameters (st_period, ema_fast_len, etc.)
-            1
+        if (needsSync) {
+          console.warn(
+            `⚠️  Strategy ${strategyId} missing executionConfig or pair/resolution. ` +
+            `Attempting auto-sync from Python file...`
           )
 
-          console.log(
-            `Initialized strategy ${strategyId} settings in Redis with ${Object.keys(config).length} parameters`
-          )
+          try {
+            // Import dependencies
+            const fs = await import('fs')
+            const path = await import('path')
+            const { extractStrategyConfig } = await import('../../utils/strategy-config-extractor')
 
-          await strategyRegistry.registerStrategy(
-            strategyId,
-            symbol,
-            config.resolution
-          )
+            // Find Python file
+            const strategiesDir = path.join(__dirname, '../../../strategies')
+            const strategyDir = path.join(strategiesDir, strategyId)
 
-          console.log(
-            `Registered strategy ${strategyId} for ${symbol}/${config.resolution} ` +
-            `(first subscriber)`
+            if (fs.existsSync(strategyDir)) {
+              const files = fs.readdirSync(strategyDir)
+              const pythonFile = files.find((f: string) => f.endsWith('.py'))
+
+              if (pythonFile) {
+                const pythonFilePath = path.join(strategyDir, pythonFile)
+                const strategyCode = fs.readFileSync(pythonFilePath, 'utf8')
+
+                // Extract config
+                const configExtraction = extractStrategyConfig(strategyCode)
+
+                if (configExtraction.success && configExtraction.config) {
+                  // Merge extracted config with existing (preserve things like minMargin)
+                  const extractedConfig = configExtraction.config
+                  const mergedConfig = {
+                    ...extractedConfig,
+                    ...(config || {})
+                  }
+
+                  // Ensure pair/resolution are from extracted config
+                  if (extractedConfig.pair) mergedConfig.pair = extractedConfig.pair
+                  if (extractedConfig.resolution) mergedConfig.resolution = extractedConfig.resolution
+
+                  // Update database
+                  await prisma.strategy.update({
+                    where: { id: strategyId },
+                    data: { executionConfig: mergedConfig }
+                  })
+
+                  config = mergedConfig
+                  console.log(
+                    `✅ Auto-synced config from Python file: ` +
+                    `pair=${config.pair}, resolution=${config.resolution}`
+                  )
+                } else {
+                  console.error(
+                    `❌ Failed to extract STRATEGY_CONFIG from ${pythonFile}. ` +
+                    `Strategy will NOT be registered with scheduler.`
+                  )
+                }
+              } else {
+                console.error(
+                  `❌ No Python file found in ${strategyDir}. ` +
+                  `Strategy will NOT be registered with scheduler.`
+                )
+              }
+            } else {
+              console.error(
+                `❌ Strategy directory not found: ${strategyDir}. ` +
+                `Strategy will NOT be registered with scheduler.`
+              )
+            }
+          } catch (syncError) {
+            console.error(
+              `❌ Auto-sync failed for strategy ${strategyId}:`,
+              syncError instanceof Error ? syncError.message : String(syncError)
+            )
+          }
+        }
+
+        // Proceed with registration if we now have valid config
+        if (config) {
+          // Support both 'symbol' and 'pair' fields
+          const symbol = config.symbol || config.pair
+
+          if (symbol && config.resolution) {
+            try {
+              // ✅ Initialize strategy settings in Redis with ALL parameters from executionConfig
+              await settingsService.initializeStrategy(
+                strategyId,
+                config,  // This includes ALL STRATEGY_CONFIG parameters (st_period, ema_fast_len, etc.)
+                1
+              )
+
+              console.log(
+                `Initialized strategy ${strategyId} settings in Redis with ${Object.keys(config).length} parameters`
+              )
+
+              await strategyRegistry.registerStrategy(
+                strategyId,
+                symbol,
+                config.resolution
+              )
+
+              console.log(
+                `✅ Registered strategy ${strategyId} for ${symbol}/${config.resolution} ` +
+                `(first subscriber)`
+              )
+            } catch (regError) {
+              console.error(
+                `❌ Failed to register strategy ${strategyId} with scheduler:`,
+                regError instanceof Error ? regError.message : String(regError)
+              )
+              console.error(
+                `⚠️  WARNING: Subscription created but strategy will NOT execute! ` +
+                `Manual intervention required.`
+              )
+              // Don't throw - subscription is still created, just not scheduled
+            }
+          } else {
+            console.error(
+              `❌ Strategy ${strategyId} missing pair (${symbol}) or resolution (${config.resolution}). ` +
+              `Cannot register with scheduler. Subscription created but strategy will NOT execute!`
+            )
+          }
+        } else {
+          console.error(
+            `❌ Strategy ${strategyId} has no executionConfig even after auto-sync attempt. ` +
+            `Subscription created but strategy will NOT execute!`
           )
         }
       }
