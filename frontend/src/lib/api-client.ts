@@ -3,7 +3,7 @@
  * Uses NextAuth as single source of truth for authentication
  */
 
-import { getSession } from 'next-auth/react';
+import { getSession, signOut } from 'next-auth/react';
 
 export class ApiError extends Error {
   constructor(
@@ -136,9 +136,13 @@ class ApiClient {
         );
       }
 
-      // If still 401 after retry, session is truly expired
+      // If still 401 after retry, session is truly expired - auto logout
       if (response.status === 401 && isRetry) {
-        console.error('[apiClient] 401 after retry - session cannot be refreshed');
+        console.error('[apiClient] 401 after retry - session cannot be refreshed. Auto-logging out...');
+
+        // Automatically sign out the user
+        await signOut({ redirect: true, callbackUrl: '/login?sessionExpired=true' });
+
         throw new ApiError(
           'Your session has expired. Please log in again.',
           401,

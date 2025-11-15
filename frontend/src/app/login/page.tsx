@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { signIn } from 'next-auth/react';
 import { Button } from '@/components/ui/button';
@@ -12,7 +12,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Chrome, TrendingUp, Mail, Lock, AlertCircle, Loader2 } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 
-export default function LoginPage() {
+function LoginForm() {
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
@@ -21,6 +21,8 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const { isAuthenticated, checkAuth } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const sessionExpired = searchParams.get('sessionExpired') === 'true';
 
   useEffect(() => {
     const checkAuthStatus = async () => {
@@ -121,6 +123,16 @@ export default function LoginPage() {
             <CardTitle className="text-center">Welcome back</CardTitle>
           </CardHeader>
           <CardContent>
+            {/* Session Expired Alert */}
+            {sessionExpired && (
+              <Alert variant="destructive" className="mb-4">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  Your session has expired. Please log in again to continue.
+                </AlertDescription>
+              </Alert>
+            )}
+
             <form onSubmit={handleEmailLogin} className="space-y-4">
               {/* Email/Password Form */}
               <div className="space-y-4">
@@ -224,5 +236,13 @@ export default function LoginPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>}>
+      <LoginForm />
+    </Suspense>
   );
 }
