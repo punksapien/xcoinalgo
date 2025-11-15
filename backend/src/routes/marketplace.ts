@@ -199,6 +199,7 @@ router.get('/', async (req: AuthenticatedRequest, res, next) => {
           riskReward: true,
           maxDrawdown: true,
           marginRequired: true,
+          executionConfig: true,
 
           // Trading config (visible to all)
           instrument: true,
