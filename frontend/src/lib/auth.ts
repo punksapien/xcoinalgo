@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import axios from 'axios';
+import { signOut } from 'next-auth/react';
 
 interface User {
   id: string;
@@ -88,12 +89,26 @@ export const useAuth = create<AuthState>()(
             token,
             isAuthenticated: true
           });
-        } catch (_error) {
+        } catch (error) {
+          console.error('[Auth] checkAuth failed:', error);
+
+          // Clear auth state
           set({
             user: null,
             token: null,
             isAuthenticated: false
           });
+
+          // If 401, session expired - auto logout
+          if (axios.isAxiosError(error) && error.response?.status === 401) {
+            console.error('[Auth] Session expired (401) - auto-logging out...');
+
+            // Stop periodic refresh
+            get().stopPeriodicRefresh();
+
+            // Sign out and redirect to login with session expired message
+            await signOut({ redirect: true, callbackUrl: '/login?sessionExpired=true' });
+          }
         }
       },
       isQuant: () => {
