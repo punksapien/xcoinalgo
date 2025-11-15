@@ -385,20 +385,19 @@ router.get('/access-requests', async (req: AuthenticatedRequest, res, next) => {
 router.put('/strategies/:id', async (req: AuthenticatedRequest, res, next) => {
   try {
     const { id: strategyId } = req.params;
-    const { name, code, description, author, minMargin, defaultLeverage, defaultRiskPerTrade } = req.body;
+    const { name, code, description, author, minMargin } = req.body;
 
     // Validate required fields
     if (!name || !code || !author) {
       return res.status(400).json({ error: 'Name, code, and author are required' });
     }
 
-    // Build execution config if any values provided
+    // Build execution config if minMargin is provided
     let executionConfig: any = undefined;
-    if (minMargin !== undefined || defaultLeverage !== undefined || defaultRiskPerTrade !== undefined) {
-      executionConfig = {};
-      if (minMargin !== undefined) executionConfig.minMargin = parseFloat(minMargin);
-      if (defaultLeverage !== undefined) executionConfig.defaultLeverage = parseInt(defaultLeverage);
-      if (defaultRiskPerTrade !== undefined) executionConfig.defaultRiskPerTrade = parseFloat(defaultRiskPerTrade);
+    if (minMargin !== undefined) {
+      executionConfig = {
+        minMargin: parseFloat(minMargin)
+      };
     }
 
     // Update the strategy
