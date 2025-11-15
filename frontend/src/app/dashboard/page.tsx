@@ -521,7 +521,9 @@ function DashboardContent() {
             strategyId={selectedStrategy.id}
             strategyName={selectedStrategy.name}
             strategyMetrics={{
-              minMargin: 10000,
+              minMargin: (selectedStrategy.executionConfig as Record<string, unknown>)?.minMargin as number ?? 10000,
+              defaultLeverage: (selectedStrategy.executionConfig as Record<string, unknown>)?.defaultLeverage as number ?? 10,
+              defaultRiskPerTrade: (selectedStrategy.executionConfig as Record<string, unknown>)?.defaultRiskPerTrade as number ?? 0.4,
               winRate: selectedStrategy.winRate,
               roi: selectedStrategy.roi,
               riskReward: selectedStrategy.riskReward,

@@ -44,6 +44,11 @@ interface Strategy {
   activeInviteLinks: number;
   pendingRequests: number;
   createdAt: string;
+  executionConfig?: {
+    minMargin?: number;
+    defaultLeverage?: number;
+    defaultRiskPerTrade?: number;
+  };
 }
 
 export default function AdminStrategiesPage() {
@@ -62,7 +67,10 @@ export default function AdminStrategiesPage() {
     name: '',
     code: '',
     description: '',
-    author: ''
+    author: '',
+    minMargin: '',
+    defaultLeverage: '',
+    defaultRiskPerTrade: ''
   });
 
   // Calculate pagination
@@ -169,7 +177,10 @@ export default function AdminStrategiesPage() {
       name: strategy.name,
       code: strategy.code,
       description: strategy.description || '',
-      author: strategy.author
+      author: strategy.author,
+      minMargin: strategy.executionConfig?.minMargin?.toString() || '10000',
+      defaultLeverage: strategy.executionConfig?.defaultLeverage?.toString() || '10',
+      defaultRiskPerTrade: strategy.executionConfig?.defaultRiskPerTrade?.toString() || '0.4'
     });
     setEditModalOpen(true);
   };
@@ -445,6 +456,60 @@ export default function AdminStrategiesPage() {
                 placeholder="Brief description of the strategy..."
                 rows={3}
               />
+            </div>
+
+            {/* Execution Config Section */}
+            <div className="border-t pt-4 mt-2">
+              <h4 className="text-sm font-semibold mb-3">Execution Configuration</h4>
+              <div className="grid gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="minMargin">Minimum Margin (₹)</Label>
+                  <Input
+                    id="minMargin"
+                    type="number"
+                    value={editForm.minMargin}
+                    onChange={(e) => setEditForm({ ...editForm, minMargin: e.target.value })}
+                    placeholder="e.g., 10000"
+                    min="1000"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Minimum investment amount required to subscribe to this strategy
+                  </p>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="defaultLeverage">Default Leverage (x)</Label>
+                  <Input
+                    id="defaultLeverage"
+                    type="number"
+                    value={editForm.defaultLeverage}
+                    onChange={(e) => setEditForm({ ...editForm, defaultLeverage: e.target.value })}
+                    placeholder="e.g., 10"
+                    min="1"
+                    max="100"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Default leverage users will see when subscribing (1-100x)
+                  </p>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="defaultRiskPerTrade">Default Risk Per Trade</Label>
+                  <Input
+                    id="defaultRiskPerTrade"
+                    type="number"
+                    step="0.01"
+                    value={editForm.defaultRiskPerTrade}
+                    onChange={(e) => setEditForm({ ...editForm, defaultRiskPerTrade: e.target.value })}
+                    placeholder="e.g., 0.4"
+                    min="0.01"
+                    max="0.55"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Default risk per trade (0.01 = 1%, 0.4 = 40%, max 0.55 = 55%)
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
           <DialogFooter>

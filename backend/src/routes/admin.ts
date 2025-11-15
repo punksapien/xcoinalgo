@@ -227,7 +227,8 @@ router.get('/strategies', async (req: AuthenticatedRequest, res, next) => {
         subscriberCount: strategy.subscriberCount,
         activeInviteLinks: strategy._count.inviteLinks,
         pendingRequests: strategy._count.accessRequests,
-        createdAt: strategy.createdAt
+        createdAt: strategy.createdAt,
+        executionConfig: strategy.executionConfig
       }))
     });
   } catch (error) {
@@ -384,11 +385,20 @@ router.get('/access-requests', async (req: AuthenticatedRequest, res, next) => {
 router.put('/strategies/:id', async (req: AuthenticatedRequest, res, next) => {
   try {
     const { id: strategyId } = req.params;
-    const { name, code, description, author } = req.body;
+    const { name, code, description, author, minMargin, defaultLeverage, defaultRiskPerTrade } = req.body;
 
     // Validate required fields
     if (!name || !code || !author) {
       return res.status(400).json({ error: 'Name, code, and author are required' });
+    }
+
+    // Build execution config if any values provided
+    let executionConfig: any = undefined;
+    if (minMargin !== undefined || defaultLeverage !== undefined || defaultRiskPerTrade !== undefined) {
+      executionConfig = {};
+      if (minMargin !== undefined) executionConfig.minMargin = parseFloat(minMargin);
+      if (defaultLeverage !== undefined) executionConfig.defaultLeverage = parseInt(defaultLeverage);
+      if (defaultRiskPerTrade !== undefined) executionConfig.defaultRiskPerTrade = parseFloat(defaultRiskPerTrade);
     }
 
     // Update the strategy
@@ -398,14 +408,16 @@ router.put('/strategies/:id', async (req: AuthenticatedRequest, res, next) => {
         name,
         code,
         description: description || null,
-        author
+        author,
+        ...(executionConfig && { executionConfig })
       },
       select: {
         id: true,
         name: true,
         code: true,
         description: true,
-        author: true
+        author: true,
+        executionConfig: true
       }
     });
 

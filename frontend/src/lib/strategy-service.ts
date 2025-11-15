@@ -29,6 +29,12 @@ export interface Strategy {
   isPublic?: boolean;
   accessStatus?: 'APPROVED' | 'PENDING' | 'REJECTED' | null;
   isOwned?: boolean;
+  // Execution configuration
+  executionConfig?: {
+    minMargin?: number;
+    defaultLeverage?: number;
+    defaultRiskPerTrade?: number;
+  };
 }
 
 interface CachedData {
@@ -107,6 +113,7 @@ class StrategyService {
         isPublic: s.isPublic as boolean | undefined,
         accessStatus: s.accessStatus as 'APPROVED' | 'PENDING' | 'REJECTED' | null | undefined,
         isOwned: s.isOwned as boolean | undefined,
+        executionConfig: s.executionConfig as { minMargin?: number; defaultLeverage?: number; defaultRiskPerTrade?: number } | undefined,
       }));
 
       this.buildSearchIndex();
