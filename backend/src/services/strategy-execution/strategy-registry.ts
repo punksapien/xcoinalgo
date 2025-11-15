@@ -79,14 +79,36 @@ class StrategyRegistry {
                 const extraction = extractStrategyConfig(strategyCode)
 
                 if (extraction.success && extraction.config) {
-                  // Update database with ALL extracted config
-                  await prisma.strategy.update({
-                    where: { id: strategy.id },
-                    data: { executionConfig: extraction.config }
+                  // Merge: Preserve admin-set values (like minMargin), use Python file for technical params
+                  const extractedConfig = extraction.config
+                  const existingConfig = (strategy.executionConfig as Record<string, any>) || {}
+
+                  const mergedConfig = {
+                    ...extractedConfig,     // Start with Python file defaults
+                    ...existingConfig,      // Preserve admin-set values like minMargin
+                  }
+
+                  // Critical technical parameters MUST come from Python file (not overrideable)
+                  const technicalParams = ['pair', 'resolution', 'margin_currency', 'base_resolution',
+                                          'signal_resolution', 'exit_resolution', 'is_multi_resolution',
+                                          'dema_len', 'rsi_len', 'rsi_ma_len', 'swing_lookback',
+                                          'sl_pct', 'tp_pct', 'trailing_activation_pct', 'trailing_move_pct',
+                                          'trailing_pct', 'commission_rate', 'gst_rate']
+
+                  technicalParams.forEach(param => {
+                    if (extractedConfig[param] !== undefined) {
+                      mergedConfig[param] = extractedConfig[param]
+                    }
                   })
 
-                  config = extraction.config
-                  console.log(`✅ Auto-synced ${extraction.extractedParams.length} parameters for ${strategy.name}`)
+                  // Update database with merged config
+                  await prisma.strategy.update({
+                    where: { id: strategy.id },
+                    data: { executionConfig: mergedConfig }
+                  })
+
+                  config = mergedConfig
+                  console.log(`✅ Auto-synced ${extraction.extractedParams.length} parameters, preserved admin overrides for ${strategy.name}`)
                 } else {
                   console.error(`❌ Config extraction failed for ${strategy.name}`)
                 }
