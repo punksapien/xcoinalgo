@@ -54,7 +54,7 @@ interface FilterOptions {
 
 class StrategyService {
   private cache: CachedData | null = null;
-  private readonly CACHE_DURATION = 10 * 1000; // 10 seconds - hot reload for marketplace
+  private readonly CACHE_DURATION = 2 * 1000; // 2 seconds - balance between real-time updates and performance
   private searchIndex: Map<string, Set<number>> = new Map();
   private strategies: Strategy[] = [];
   private fetchPromise: Promise<void> | null = null;

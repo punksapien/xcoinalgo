@@ -185,17 +185,29 @@ export default function AdminStrategiesPage() {
     try {
       const authToken = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
 
-      await axios.put(
+      console.log('[Admin] Updating strategy:', {
+        strategyId: editingStrategy.id,
+        payload: editForm
+      });
+
+      const response = await axios.put(
         `${process.env.NEXT_PUBLIC_API_URL}/api/admin/strategies/${editingStrategy.id}`,
         editForm,
         { headers: { Authorization: authToken } }
       );
+
+      console.log('[Admin] Update response:', response.data);
+
+      // Invalidate strategy cache to force refresh on dashboard
+      const { strategyService } = await import('@/lib/strategy-service');
+      strategyService.invalidateCache();
 
       setEditModalOpen(false);
       setEditingStrategy(null);
       loadData();
     } catch (err) {
       const error = err as { response?: { data?: { error?: string } } };
+      console.error('[Admin] Update failed:', error);
       setError(error?.response?.data?.error || 'Failed to update strategy');
     }
   };
