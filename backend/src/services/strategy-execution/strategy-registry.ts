@@ -46,17 +46,69 @@ class StrategyRegistry {
         },
         select: {
           id: true,
+          name: true,
           executionConfig: true,
         },
       })
 
       console.log(`Found ${strategies.length} active strategies`)
 
-      // Register each strategy
+      // 🔧 AUTO-SYNC: Ensure all strategies have complete config before registration
       for (const strategy of strategies) {
-        const config = strategy.executionConfig as any
-        if (config?.symbol && config?.resolution) {
-          await this.registerStrategy(strategy.id, config.symbol, config.resolution)
+        let config = strategy.executionConfig as any
+        const needsSync = !config || !config.pair || !config.resolution
+
+        if (needsSync) {
+          console.warn(`⚠️  Strategy ${strategy.name} missing config. Auto-syncing from Python file...`)
+
+          try {
+            const fs = await import('fs')
+            const path = await import('path')
+            const { extractStrategyConfig } = await import('../../utils/strategy-config-extractor')
+
+            const strategiesDir = path.join(__dirname, '../../../strategies')
+            const strategyDir = path.join(strategiesDir, strategy.id)
+
+            if (fs.existsSync(strategyDir)) {
+              const files = fs.readdirSync(strategyDir)
+              const pythonFile = files.find((f: string) => f.endsWith('.py'))
+
+              if (pythonFile) {
+                const pythonFilePath = path.join(strategyDir, pythonFile)
+                const strategyCode = fs.readFileSync(pythonFilePath, 'utf8')
+                const extraction = extractStrategyConfig(strategyCode)
+
+                if (extraction.success && extraction.config) {
+                  // Update database with ALL extracted config
+                  await prisma.strategy.update({
+                    where: { id: strategy.id },
+                    data: { executionConfig: extraction.config }
+                  })
+
+                  config = extraction.config
+                  console.log(`✅ Auto-synced ${extraction.extractedParams.length} parameters for ${strategy.name}`)
+                } else {
+                  console.error(`❌ Config extraction failed for ${strategy.name}`)
+                }
+              }
+            }
+          } catch (syncError) {
+            console.error(`❌ Auto-sync failed for ${strategy.name}:`, syncError)
+          }
+        }
+
+        // Sync config to Redis via settingsService
+        if (config && Object.keys(config).length > 0) {
+          const { settingsService } = await import('./settings-service')
+          await settingsService.initializeStrategy(strategy.id, config, 1)
+        }
+
+        // Register strategy if has required fields
+        const symbol = config?.symbol || config?.pair
+        if (symbol && config?.resolution) {
+          await this.registerStrategy(strategy.id, symbol, config.resolution)
+        } else {
+          console.error(`❌ Cannot register ${strategy.name} - missing pair/resolution even after sync`)
         }
       }
 
