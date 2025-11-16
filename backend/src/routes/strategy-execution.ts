@@ -142,13 +142,14 @@ router.post('/:id/subscribe', authenticate, async (req: AuthenticatedRequest, re
           brokerCredential.apiSecret
         );
 
-        // Calculate available balance: balance - (locked_balance + cross_order_margin + cross_user_margin)
+        // Calculate available balance
+        // Note: CoinDCX's 'balance' field already represents AVAILABLE balance (not locked in positions)
+        // 'locked_balance' is separate funds locked in open positions/orders
         const calculateAvailable = (wallet: any): number => {
           const balance = Number(wallet.balance || 0);
-          const locked = Number(wallet.locked_balance || 0);
           const crossOrder = Number(wallet.cross_order_margin || 0);
           const crossUser = Number(wallet.cross_user_margin || 0);
-          return balance - (locked + crossOrder + crossUser);
+          return balance - (crossOrder + crossUser);
         };
 
         // Find which wallet user has (prefer INR for Indian users, fallback to USDT)
