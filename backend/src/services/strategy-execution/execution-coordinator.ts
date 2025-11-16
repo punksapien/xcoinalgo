@@ -572,14 +572,19 @@ class ExecutionCoordinator {
       }
 
       // Prepare subscribers data (with API keys)
-      const subscribersData = subscribers.map(sub => ({
-        user_id: sub.userId,
-        api_key: sub.brokerCredential?.apiKey || '',
-        api_secret: sub.brokerCredential?.apiSecret || '',
-        capital: sub.capital || 10000,
-        risk_per_trade: sub.riskPerTrade || 0.02,
-        leverage: sub.leverage || 10
-      }))
+      // Resolve settings: NULL values use strategy.executionConfig defaults
+      const subscribersData = subscribers.map(sub => {
+        const strategyConfig = sub.strategy?.executionConfig as any || {}
+
+        return {
+          user_id: sub.userId,
+          api_key: sub.brokerCredential?.apiKey || '',
+          api_secret: sub.brokerCredential?.apiSecret || '',
+          capital: sub.capital || 10000,
+          risk_per_trade: sub.riskPerTrade ?? strategyConfig.risk_per_trade ?? 0.02,
+          leverage: sub.leverage ?? strategyConfig.leverage ?? 10
+        }
+      })
 
       // Prepare input for Python script
       // Add strategy_id to settings for LiveTrader compatibility

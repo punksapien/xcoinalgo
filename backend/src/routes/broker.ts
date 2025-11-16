@@ -170,14 +170,15 @@ router.get('/futures-balance', authenticate, async (req: AuthenticatedRequest, r
         brokerCredential.apiSecret
       );
 
-      // Calculate available balance: balance - (locked_balance + cross_order_margin + cross_user_margin)
-      // Matches Python implementation
+      // Calculate available balance
+      // Note: CoinDCX's 'balance' field already represents AVAILABLE balance (not locked in positions)
+      // 'locked_balance' is separate funds locked in open positions/orders
+      // So we only subtract cross margins from available balance
       const calculateAvailable = (wallet: any): number => {
-        const balance = Number(wallet.balance || 0);
-        const locked = Number(wallet.locked_balance || 0);
+        const balance = Number(wallet.balance || 0); // Already available, not locked
         const crossOrder = Number(wallet.cross_order_margin || 0);
         const crossUser = Number(wallet.cross_user_margin || 0);
-        return balance - (locked + crossOrder + crossUser);
+        return balance - (crossOrder + crossUser);
       };
 
       // Find primary futures wallet (USDT or INR)

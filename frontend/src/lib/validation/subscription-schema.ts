@@ -14,13 +14,15 @@ export const subscriptionConfigSchema = z.object({
     .number({ message: 'Risk per trade must be a number' })
     .min(0.01, 'Minimum risk per trade is 0.01 (1%)')
     .max(0.55, 'Maximum risk per trade is 0.55 (55%)')
-    .positive('Risk per trade must be positive'),
+    .positive('Risk per trade must be positive')
+    .optional(), // Optional - undefined = use strategy default
 
   leverage: z
     .number({ message: 'Leverage must be a number' })
     .int('Leverage must be a whole number')
     .min(1, 'Minimum leverage is 1x')
-    .max(100, 'Maximum leverage is 100x'),
+    .max(100, 'Maximum leverage is 100x')
+    .optional(), // Optional - undefined = use strategy default
 
   maxPositions: z
     .number({ message: 'Max positions must be a number' })

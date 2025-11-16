@@ -529,6 +529,7 @@ function DashboardContent() {
               riskReward: selectedStrategy.riskReward,
               maxDrawdown: selectedStrategy.maxDrawdown,
             }}
+            strategyConfig={selectedStrategy.executionConfig}
             onSuccess={handleSubscribeSuccess}
           />
         )}

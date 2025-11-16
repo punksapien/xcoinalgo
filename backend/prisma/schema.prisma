@@ -367,11 +367,12 @@ model StrategySubscription {
   strategyId String
 
   // User-specific execution settings
+  // NULL = use strategy default, non-NULL = manual override
   capital      Float
-  riskPerTrade Float
-  leverage     Int   @default(1)
-  maxPositions Int   @default(1)
-  maxDailyLoss Float @default(0.05)
+  riskPerTrade Float? // NULL = use strategy.executionConfig.risk_per_trade
+  leverage     Int?   // NULL = use strategy.executionConfig.leverage
+  maxPositions Int?   // NULL = use strategy.executionConfig.max_positions or default(1)
+  maxDailyLoss Float? // NULL = use strategy.executionConfig.max_daily_loss or default(0.05)
 
   // Risk management overrides (optional)
   slAtrMultiplier Float?
