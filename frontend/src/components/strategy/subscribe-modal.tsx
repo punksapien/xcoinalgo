@@ -27,7 +27,7 @@ interface SubscribeModalProps {
     riskReward?: number;
     maxDrawdown?: number;
   };
-  strategyConfig?: any; // Strategy executionConfig for defaults
+  strategyConfig?: Record<string, unknown>; // Strategy executionConfig for defaults
   onSuccess?: () => void;
 }
 
@@ -64,8 +64,8 @@ export function SubscribeModal({
 
   // Get strategy config defaults
   const minMargin = strategyMetrics?.minMargin || 10000;
-  const strategyDefaultRisk = strategyConfig?.risk_per_trade ?? 0.04;
-  const strategyDefaultLeverage = strategyConfig?.leverage ?? 10;
+  const strategyDefaultRisk = Number(strategyConfig?.risk_per_trade) || 0.04;
+  const strategyDefaultLeverage = Number(strategyConfig?.leverage) || 10;
 
   // Form state
   const [capital, setCapital] = useState('');
@@ -267,7 +267,7 @@ export function SubscribeModal({
 
       // Prepare config for validation
       // Empty values = use strategy defaults (sent as undefined to backend)
-      const configData: any = {
+      const configData: Record<string, unknown> = {
         capital: capitalAmount,
         brokerCredentialId: selectedCredentialId,
       };
@@ -297,9 +297,9 @@ export function SubscribeModal({
         return;
       }
 
-      // Calculate available capital
+      // Calculate available capital (use validated data)
       const availableForAllocation = availableBalance - allocatedCapital;
-      const requestedCapital = configData.capital;
+      const requestedCapital = validation.data?.capital ?? 0;
 
       if (availableForAllocation <= 0) {
         showErrorToast(
@@ -321,7 +321,7 @@ export function SubscribeModal({
       }
 
       // Subscribe to strategy
-      await StrategyExecutionAPI.subscribeToStrategy(strategyId, validation.data!, token);
+      await StrategyExecutionAPI.subscribeToStrategy(strategyId, validation.data as never, token);
 
       // Success
       showSuccessToast(
