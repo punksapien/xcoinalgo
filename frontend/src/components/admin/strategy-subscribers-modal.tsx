@@ -98,7 +98,7 @@ export function StrategySubscribersModal({
   const [data, setData] = useState<SubscriberData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editValues, setEditValues] = useState<any>({});
+  const [editValues, setEditValues] = useState<Record<string, number | null>>({});
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkField, setBulkField] = useState<'riskPerTrade' | 'leverage' | 'maxPositions' | 'maxDailyLoss'>('riskPerTrade');
   const [bulkValue, setBulkValue] = useState('');
@@ -139,8 +139,9 @@ export function StrategySubscribersModal({
       setEditingId(null);
       setEditValues({});
       setError(null);
-    } catch (err: any) {
-      const errorMsg = err?.response?.data?.details?.join(', ') || err?.response?.data?.error || 'Failed to update';
+    } catch (err) {
+      const error = err as { response?: { data?: { details?: string[]; error?: string } } };
+      const errorMsg = error?.response?.data?.details?.join(', ') || error?.response?.data?.error || 'Failed to update';
       setError(errorMsg);
     }
   };
@@ -171,8 +172,9 @@ export function StrategySubscribersModal({
       setSelectedIds(new Set());
       setBulkValue('');
       setError(null);
-    } catch (err: any) {
-      setError(err?.response?.data?.error || 'Failed to bulk update');
+    } catch (err) {
+      const error = err as { response?: { data?: { error?: string } } };
+      setError(error?.response?.data?.error || 'Failed to bulk update');
     }
   };
 
@@ -265,7 +267,7 @@ export function StrategySubscribersModal({
                     id="bulk-field"
                     className="w-full px-3 py-2 border rounded-md bg-background"
                     value={bulkField}
-                    onChange={(e) => setBulkField(e.target.value as any)}
+                    onChange={(e) => setBulkField(e.target.value as 'riskPerTrade' | 'leverage' | 'maxPositions' | 'maxDailyLoss')}
                   >
                     <option value="riskPerTrade">Risk Per Trade</option>
                     <option value="leverage">Leverage</option>
