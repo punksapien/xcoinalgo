@@ -119,8 +119,9 @@ export function StrategySubscribersModal({
         { headers: { Authorization: authToken } }
       );
       setData(res.data);
-    } catch (err: any) {
-      setError(err?.response?.data?.error || 'Failed to load subscribers');
+    } catch (err) {
+      const error = err as { response?: { data?: { error?: string } } };
+      setError(error?.response?.data?.error || 'Failed to load subscribers');
       console.error('Load subscribers error:', err);
     } finally {
       setLoading(false);
@@ -357,7 +358,7 @@ export function StrategySubscribersModal({
                           <Input
                             type="number"
                             className="w-24"
-                            value={editValues.capital}
+                            value={editValues.capital ?? ''}
                             onChange={(e) => setEditValues({ ...editValues, capital: parseFloat(e.target.value) })}
                           />
                         ) : (
