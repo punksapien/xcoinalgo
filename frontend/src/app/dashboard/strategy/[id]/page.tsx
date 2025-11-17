@@ -287,7 +287,7 @@ export default function StrategyDetailPage() {
   const [userSubscription, setUserSubscription] = useState<UserSubscription | null>(null)
   const [loading, setLoading] = useState(true)
   const [subscribeModalOpen, setSubscribeModalOpen] = useState(false)
-  const [showingUSD, setShowingUSD] = useState(true)
+  const [showingUSD, setShowingUSD] = useState(false)
   const [reportMultiplier, setReportMultiplier] = useState(1)
   const [currentPage, setCurrentPage] = useState(1)
   const [searchQuery, setSearchQuery] = useState('')
