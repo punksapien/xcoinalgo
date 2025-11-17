@@ -9,8 +9,8 @@ import { AuthSyncManager } from "@/components/auth/auth-sync-manager";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "CoinDCX Trading Platform",
-  description: "Algorithmic trading bot deployment platform for CoinDCX exchange",
+  title: "Crypto Trading Platform",
+  description: "Algorithmic trading bot deployment platform for cryptocurrency exchanges",
 };
 
 export default function RootLayout({
