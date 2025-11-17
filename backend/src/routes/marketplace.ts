@@ -453,14 +453,14 @@ router.get('/:id', async (req, res, next) => {
 
           if (!accessRequest) {
             // User doesn't have approved access (might be pending or no request at all)
-            return res.status(404).json({
-              error: 'Strategy not found or not available in marketplace'
+            return res.status(403).json({
+              error: 'This strategy is private and requires approval to access'
             });
           }
         } else {
           // Unauthenticated user trying to access private strategy
-          return res.status(404).json({
-            error: 'Strategy not found or not available in marketplace'
+          return res.status(403).json({
+            error: 'This strategy is private and requires approval to access'
           });
         }
       }
