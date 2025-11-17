@@ -511,6 +511,9 @@ class SubscriptionService {
   /**
    * Get active subscribers for a strategy
    * Includes strategy executionConfig for resolving defaults
+   *
+   * NOTE: This method reads from PostgreSQL (source of truth)
+   * Redis sync service ensures Redis cache stays in sync
    */
   async getActiveSubscribers(
     strategyId: string

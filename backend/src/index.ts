@@ -26,6 +26,7 @@ import { strategyInviteRoutes } from './routes/strategy-invite';
 import { errorHandler } from './middleware/errorHandler';
 import { startHealthCheckMonitoring } from './services/strategyExecutor';
 import { startOrderMonitoring } from './workers/order-monitor';
+import { redisSyncService } from './services/strategy-execution/redis-sync-service';
 // COMMENTED OUT: Terminal session manager - removed until PM2 log viewer is implemented
 // import { terminalSessionManager } from './services/terminal-session-manager';
 import './config/passport'; // Initialize passport configuration
@@ -159,6 +160,18 @@ httpServer.listen(PORT, () => {
   // Start order monitoring for SL/TP
   startOrderMonitoring();
   console.log(`📊 Order monitoring service started`);
+
+  // Initialize Redis subscription cache from PostgreSQL (source of truth)
+  redisSyncService.hydrateAllSubscriptions()
+    .then(() => {
+      // Start periodic reconciliation (every 5 minutes)
+      redisSyncService.startPeriodicReconciliation(5);
+      console.log(`🔄 Redis subscription sync initialized`);
+    })
+    .catch((error) => {
+      console.error('❌ Failed to initialize Redis sync:', error);
+      // Don't crash the server - retry on next reconciliation cycle
+    });
 });
 
 export default app;
