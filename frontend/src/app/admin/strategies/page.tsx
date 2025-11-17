@@ -3,10 +3,11 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import axios from 'axios';
+import { StrategySubscribersModal } from '@/components/admin/strategy-subscribers-modal';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { AlertCircle, UserCheck, UserX, Trash2, Edit } from 'lucide-react';
+import { AlertCircle, UserCheck, UserX, Trash2, Edit, Settings, Save, X, RefreshCw } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -49,6 +50,59 @@ interface Strategy {
   };
 }
 
+interface Subscriber {
+  id: string;
+  user: {
+    id: string;
+    email: string;
+    name: string | null;
+  };
+  settings: {
+    capital: number;
+    riskPerTrade: number | null;
+    leverage: number | null;
+    maxPositions: number | null;
+    maxDailyLoss: number | null;
+  };
+  effectiveSettings: {
+    riskPerTrade: number;
+    leverage: number;
+    maxPositions: number;
+    maxDailyLoss: number;
+  };
+  usingDefaults: {
+    riskPerTrade: boolean;
+    leverage: boolean;
+    maxPositions: boolean;
+    maxDailyLoss: boolean;
+  };
+  tradingType: string;
+  marginCurrency: string;
+  isPaused: boolean;
+  subscribedAt: string;
+  stats: {
+    totalTrades: number;
+    winningTrades: number;
+    losingTrades: number;
+    totalPnl: number;
+  };
+}
+
+interface SubscriberData {
+  strategy: {
+    id: string;
+    name: string;
+    defaults: {
+      riskPerTrade: number;
+      leverage: number;
+      maxPositions: number;
+      maxDailyLoss: number;
+    };
+  };
+  subscribers: Subscriber[];
+  count: number;
+}
+
 export default function AdminStrategiesPage() {
   const { token } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -68,6 +122,10 @@ export default function AdminStrategiesPage() {
     author: '',
     minMargin: ''
   });
+
+  // Subscriber management modal state
+  const [subscribersModalOpen, setSubscribersModalOpen] = useState(false);
+  const [selectedStrategyForSubscribers, setSelectedStrategyForSubscribers] = useState<Strategy | null>(null);
 
   // Calculate pagination
   const totalPages = Math.ceil(strategies.length / itemsPerPage);
@@ -289,6 +347,18 @@ export default function AdminStrategiesPage() {
                       <Button
                         size="sm"
                         variant="outline"
+                        onClick={() => {
+                          setSelectedStrategyForSubscribers(strategy);
+                          setSubscribersModalOpen(true);
+                        }}
+                        title="Manage subscribers"
+                        disabled={strategy.subscriberCount === 0}
+                      >
+                        <Settings className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
                         onClick={() => openEditModal(strategy)}
                         title="Edit strategy metadata"
                       >
@@ -493,6 +563,22 @@ export default function AdminStrategiesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Subscriber Management Modal */}
+      {selectedStrategyForSubscribers && token && (
+        <StrategySubscribersModal
+          open={subscribersModalOpen}
+          onClose={() => {
+            setSubscribersModalOpen(false);
+            setSelectedStrategyForSubscribers(null);
+            // Reload data to refresh subscriber counts
+            loadData();
+          }}
+          strategyId={selectedStrategyForSubscribers.id}
+          strategyName={selectedStrategyForSubscribers.name}
+          token={token}
+        />
+      )}
     </div>
   );
 }

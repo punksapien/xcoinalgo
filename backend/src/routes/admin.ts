@@ -738,4 +738,403 @@ router.post('/verify-user-manually', async (req: AuthenticatedRequest, res, next
   }
 });
 
+/**
+ * ========================================
+ * STRATEGY SUBSCRIBER MANAGEMENT
+ * ========================================
+ */
+
+/**
+ * GET /api/admin/strategies/:id/subscribers
+ * Get all subscribers of a strategy with their settings
+ */
+router.get('/strategies/:id/subscribers', async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const { id: strategyId } = req.params;
+
+    // Verify strategy exists
+    const strategy = await prisma.strategy.findUnique({
+      where: { id: strategyId },
+      select: {
+        id: true,
+        name: true,
+        executionConfig: true
+      }
+    });
+
+    if (!strategy) {
+      return res.status(404).json({ error: 'Strategy not found' });
+    }
+
+    // Get all active subscribers with their settings
+    const subscribers = await prisma.strategySubscription.findMany({
+      where: {
+        strategyId,
+        isActive: true
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            name: true
+          }
+        },
+        brokerCredential: {
+          select: {
+            id: true,
+            brokerName: true
+          }
+        }
+      },
+      orderBy: { subscribedAt: 'desc' }
+    });
+
+    // Get strategy defaults
+    const execConfig = strategy.executionConfig as any || {};
+    const strategyDefaults = {
+      riskPerTrade: execConfig.risk_per_trade || 0.02,
+      leverage: execConfig.leverage || 10,
+      maxPositions: execConfig.max_positions || 1,
+      maxDailyLoss: execConfig.max_daily_loss || 0.05
+    };
+
+    // Format response
+    const subscriberData = subscribers.map(sub => ({
+      id: sub.id,
+      user: {
+        id: sub.user.id,
+        email: sub.user.email,
+        name: sub.user.name
+      },
+      settings: {
+        capital: sub.capital,
+        riskPerTrade: sub.riskPerTrade,
+        leverage: sub.leverage,
+        maxPositions: sub.maxPositions,
+        maxDailyLoss: sub.maxDailyLoss,
+        slAtrMultiplier: sub.slAtrMultiplier,
+        tpAtrMultiplier: sub.tpAtrMultiplier
+      },
+      effectiveSettings: {
+        riskPerTrade: sub.riskPerTrade ?? strategyDefaults.riskPerTrade,
+        leverage: sub.leverage ?? strategyDefaults.leverage,
+        maxPositions: sub.maxPositions ?? strategyDefaults.maxPositions,
+        maxDailyLoss: sub.maxDailyLoss ?? strategyDefaults.maxDailyLoss
+      },
+      usingDefaults: {
+        riskPerTrade: sub.riskPerTrade === null,
+        leverage: sub.leverage === null,
+        maxPositions: sub.maxPositions === null,
+        maxDailyLoss: sub.maxDailyLoss === null
+      },
+      tradingType: sub.tradingType,
+      marginCurrency: sub.marginCurrency,
+      brokerCredential: sub.brokerCredential,
+      isPaused: sub.isPaused,
+      subscribedAt: sub.subscribedAt,
+      stats: {
+        totalTrades: sub.totalTrades,
+        winningTrades: sub.winningTrades,
+        losingTrades: sub.losingTrades,
+        totalPnl: sub.totalPnl
+      }
+    }));
+
+    res.json({
+      success: true,
+      strategy: {
+        id: strategy.id,
+        name: strategy.name,
+        defaults: strategyDefaults
+      },
+      subscribers: subscriberData,
+      count: subscriberData.length
+    });
+
+  } catch (error) {
+    console.error('Failed to fetch strategy subscribers:', error);
+    next(error);
+  }
+});
+
+/**
+ * PATCH /api/admin/strategies/:id/subscribers/:subscriptionId
+ * Update a single subscriber's settings
+ */
+router.patch('/strategies/:id/subscribers/:subscriptionId', async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const { id: strategyId, subscriptionId } = req.params;
+    const { riskPerTrade, leverage, maxPositions, maxDailyLoss, capital } = req.body;
+
+    // Validation
+    const errors: string[] = [];
+
+    if (riskPerTrade !== undefined && riskPerTrade !== null) {
+      if (typeof riskPerTrade !== 'number' || riskPerTrade <= 0 || riskPerTrade > 1) {
+        errors.push('riskPerTrade must be a number between 0 and 1');
+      }
+    }
+
+    if (leverage !== undefined && leverage !== null) {
+      if (!Number.isInteger(leverage) || leverage < 1 || leverage > 125) {
+        errors.push('leverage must be an integer between 1 and 125');
+      }
+    }
+
+    if (maxPositions !== undefined && maxPositions !== null) {
+      if (!Number.isInteger(maxPositions) || maxPositions < 1 || maxPositions > 10) {
+        errors.push('maxPositions must be an integer between 1 and 10');
+      }
+    }
+
+    if (maxDailyLoss !== undefined && maxDailyLoss !== null) {
+      if (typeof maxDailyLoss !== 'number' || maxDailyLoss <= 0 || maxDailyLoss > 1) {
+        errors.push('maxDailyLoss must be a number between 0 and 1');
+      }
+    }
+
+    if (capital !== undefined && capital !== null) {
+      if (typeof capital !== 'number' || capital <= 0) {
+        errors.push('capital must be a positive number');
+      }
+    }
+
+    if (errors.length > 0) {
+      return res.status(400).json({
+        error: 'Validation failed',
+        details: errors
+      });
+    }
+
+    // Verify subscription exists and belongs to this strategy
+    const subscription = await prisma.strategySubscription.findUnique({
+      where: { id: subscriptionId },
+      include: {
+        user: { select: { email: true } }
+      }
+    });
+
+    if (!subscription) {
+      return res.status(404).json({ error: 'Subscription not found' });
+    }
+
+    if (subscription.strategyId !== strategyId) {
+      return res.status(400).json({ error: 'Subscription does not belong to this strategy' });
+    }
+
+    // Build update data
+    const updateData: any = {};
+    if (riskPerTrade !== undefined) updateData.riskPerTrade = riskPerTrade;
+    if (leverage !== undefined) updateData.leverage = leverage;
+    if (maxPositions !== undefined) updateData.maxPositions = maxPositions;
+    if (maxDailyLoss !== undefined) updateData.maxDailyLoss = maxDailyLoss;
+    if (capital !== undefined) updateData.capital = capital;
+
+    // Update database
+    const updatedSubscription = await prisma.strategySubscription.update({
+      where: { id: subscriptionId },
+      data: updateData
+    });
+
+    // Update Redis cache
+    try {
+      const { settingsService } = await import('../services/strategy-execution/settings-service');
+      await settingsService.updateSubscriptionSettings(
+        subscription.userId,
+        strategyId,
+        {
+          ...(riskPerTrade !== undefined && { risk_per_trade: riskPerTrade }),
+          ...(leverage !== undefined && { leverage }),
+          ...(maxPositions !== undefined && { max_positions: maxPositions }),
+          ...(maxDailyLoss !== undefined && { max_daily_loss: maxDailyLoss }),
+          ...(capital !== undefined && { capital })
+        }
+      );
+      console.log(`✅ Updated Redis cache for subscription ${subscriptionId}`);
+    } catch (redisError) {
+      console.error(`⚠️ Failed to update Redis cache for subscription ${subscriptionId}:`, redisError);
+      // Don't fail the request if Redis update fails
+    }
+
+    console.log(
+      `[ADMIN] Updated subscription ${subscriptionId} for user ${subscription.user.email}: ` +
+      `${Object.keys(updateData).join(', ')}`
+    );
+
+    res.json({
+      success: true,
+      message: 'Subscription settings updated successfully',
+      subscription: updatedSubscription
+    });
+
+  } catch (error) {
+    console.error('Failed to update subscription:', error);
+    next(error);
+  }
+});
+
+/**
+ * PATCH /api/admin/strategies/:id/subscribers/bulk
+ * Bulk update subscribers' settings
+ */
+router.patch('/strategies/:id/subscribers/bulk', async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const { id: strategyId } = req.params;
+    const {
+      subscriptionIds,
+      updates,
+      resetToDefaults
+    } = req.body;
+
+    // Validation
+    if (!Array.isArray(subscriptionIds) || subscriptionIds.length === 0) {
+      return res.status(400).json({ error: 'subscriptionIds must be a non-empty array' });
+    }
+
+    if (subscriptionIds.length > 100) {
+      return res.status(400).json({ error: 'Cannot update more than 100 subscriptions at once' });
+    }
+
+    // Verify strategy exists
+    const strategy = await prisma.strategy.findUnique({
+      where: { id: strategyId },
+      select: { id: true, name: true }
+    });
+
+    if (!strategy) {
+      return res.status(404).json({ error: 'Strategy not found' });
+    }
+
+    let updateData: any = {};
+
+    if (resetToDefaults) {
+      // Reset to NULL (use strategy defaults)
+      updateData = {
+        riskPerTrade: null,
+        leverage: null,
+        maxPositions: null,
+        maxDailyLoss: null
+      };
+    } else {
+      // Apply specific updates
+      if (updates.riskPerTrade !== undefined) {
+        if (updates.riskPerTrade !== null && (typeof updates.riskPerTrade !== 'number' || updates.riskPerTrade <= 0 || updates.riskPerTrade > 1)) {
+          return res.status(400).json({ error: 'riskPerTrade must be a number between 0 and 1 or null' });
+        }
+        updateData.riskPerTrade = updates.riskPerTrade;
+      }
+
+      if (updates.leverage !== undefined) {
+        if (updates.leverage !== null && (!Number.isInteger(updates.leverage) || updates.leverage < 1 || updates.leverage > 125)) {
+          return res.status(400).json({ error: 'leverage must be an integer between 1 and 125 or null' });
+        }
+        updateData.leverage = updates.leverage;
+      }
+
+      if (updates.maxPositions !== undefined) {
+        if (updates.maxPositions !== null && (!Number.isInteger(updates.maxPositions) || updates.maxPositions < 1 || updates.maxPositions > 10)) {
+          return res.status(400).json({ error: 'maxPositions must be an integer between 1 and 10 or null' });
+        }
+        updateData.maxPositions = updates.maxPositions;
+      }
+
+      if (updates.maxDailyLoss !== undefined) {
+        if (updates.maxDailyLoss !== null && (typeof updates.maxDailyLoss !== 'number' || updates.maxDailyLoss <= 0 || updates.maxDailyLoss > 1)) {
+          return res.status(400).json({ error: 'maxDailyLoss must be a number between 0 and 1 or null' });
+        }
+        updateData.maxDailyLoss = updates.maxDailyLoss;
+      }
+
+      if (updates.capital !== undefined) {
+        if (updates.capital !== null && (typeof updates.capital !== 'number' || updates.capital <= 0)) {
+          return res.status(400).json({ error: 'capital must be a positive number' });
+        }
+        updateData.capital = updates.capital;
+      }
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ error: 'No valid updates provided' });
+    }
+
+    // Verify all subscriptions belong to this strategy
+    const subscriptions = await prisma.strategySubscription.findMany({
+      where: {
+        id: { in: subscriptionIds },
+        strategyId
+      },
+      select: {
+        id: true,
+        userId: true,
+        user: { select: { email: true } }
+      }
+    });
+
+    if (subscriptions.length !== subscriptionIds.length) {
+      return res.status(400).json({
+        error: 'Some subscriptions not found or do not belong to this strategy',
+        found: subscriptions.length,
+        requested: subscriptionIds.length
+      });
+    }
+
+    // Perform bulk update in transaction
+    const result = await prisma.$transaction(async (tx) => {
+      const updated = await tx.strategySubscription.updateMany({
+        where: {
+          id: { in: subscriptionIds }
+        },
+        data: updateData
+      });
+
+      return updated;
+    });
+
+    // Update Redis cache for each subscription
+    try {
+      const { settingsService } = await import('../services/strategy-execution/settings-service');
+
+      for (const sub of subscriptions) {
+        try {
+          const redisUpdates: any = {};
+          if (updateData.riskPerTrade !== undefined) redisUpdates.risk_per_trade = updateData.riskPerTrade;
+          if (updateData.leverage !== undefined) redisUpdates.leverage = updateData.leverage;
+          if (updateData.maxPositions !== undefined) redisUpdates.max_positions = updateData.maxPositions;
+          if (updateData.maxDailyLoss !== undefined) redisUpdates.max_daily_loss = updateData.maxDailyLoss;
+          if (updateData.capital !== undefined) redisUpdates.capital = updateData.capital;
+
+          await settingsService.updateSubscriptionSettings(
+            sub.userId,
+            strategyId,
+            redisUpdates
+          );
+        } catch (subError) {
+          console.error(`⚠️ Failed to update Redis for user ${sub.userId}:`, subError);
+        }
+      }
+
+      console.log(`✅ Updated Redis cache for ${subscriptions.length} subscriptions`);
+    } catch (redisError) {
+      console.error('⚠️ Failed to update Redis cache:', redisError);
+    }
+
+    console.log(
+      `[ADMIN] Bulk updated ${result.count} subscriptions for strategy ${strategy.name}: ` +
+      `${Object.keys(updateData).join(', ')}`
+    );
+
+    res.json({
+      success: true,
+      message: `Successfully updated ${result.count} subscriptions`,
+      updated: result.count,
+      affectedUsers: subscriptions.map(s => s.user.email)
+    });
+
+  } catch (error) {
+    console.error('Failed to bulk update subscriptions:', error);
+    next(error);
+  }
+});
+
 export { router as adminRoutes };
