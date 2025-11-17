@@ -57,7 +57,7 @@ def configure_logging():
     logger.add(
         log_file,
         rotation="10 MB",
-        retention="5 files",
+        retention=5,
         level="DEBUG",
         format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {message}",
         enqueue=True  # Thread-safe
@@ -67,7 +67,7 @@ def configure_logging():
     logger.add(
         signal_log_file,
         rotation="10 MB",
-        retention="5 files",
+        retention=5,
         level="INFO",
         format="{time:YYYY-MM-DD HH:mm:ss} | {message}",
         filter=lambda record: "Signal Generated" in record["message"] or "OPENED" in record["message"] or "CLOSED" in record["message"],
