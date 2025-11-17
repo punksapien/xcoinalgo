@@ -1,6 +1,6 @@
 'use client'
 
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useEffect, useState, useMemo } from 'react'
 import { ArrowLeft, Calendar, Users, Award, Activity, TrendingUp, Code, Clock, Download, Lock, ShieldAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -282,6 +282,7 @@ const StrategyHeader = ({
 export default function StrategyDetailPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { token } = useAuth()
   const [strategy, setStrategy] = useState<StrategyData | null>(null)
   const [userSubscription, setUserSubscription] = useState<UserSubscription | null>(null)
@@ -292,7 +293,15 @@ export default function StrategyDetailPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const [searchQuery, setSearchQuery] = useState('')
   const [errorType, setErrorType] = useState<'not-found' | 'private' | null>(null)
+  const [showBacktestBanner, setShowBacktestBanner] = useState(false)
   const itemsPerPage = 10
+
+  // Check if backtest was just triggered
+  useEffect(() => {
+    if (searchParams.get('backtestRunning') === 'true') {
+      setShowBacktestBanner(true)
+    }
+  }, [searchParams])
 
   useEffect(() => {
     fetchStrategy()
@@ -707,6 +716,47 @@ export default function StrategyDetailPage() {
           onSubscribe={handleSubscribe}
           userSubscription={userSubscription || undefined}
         />
+
+        {/* Backtest Running Banner */}
+        {showBacktestBanner && (
+          <Card className="border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20">
+            <CardContent className="py-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+                  <div>
+                    <p className="font-medium text-blue-900 dark:text-blue-100">
+                      Backtest Running
+                    </p>
+                    <p className="text-sm text-blue-700 dark:text-blue-300">
+                      Your backtest is being processed. Results will appear here shortly (typically 30-60 seconds).
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => {
+                      setShowBacktestBanner(false)
+                      fetchStrategy()
+                    }}
+                    variant="outline"
+                    size="sm"
+                    className="border-blue-300 dark:border-blue-700"
+                  >
+                    Refresh Results
+                  </Button>
+                  <Button
+                    onClick={() => setShowBacktestBanner(false)}
+                    variant="ghost"
+                    size="sm"
+                  >
+                    Dismiss
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Backtest Results Section */}
         {backtest ? (

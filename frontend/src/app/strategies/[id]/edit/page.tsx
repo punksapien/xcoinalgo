@@ -158,11 +158,11 @@ export default function StrategyCodeEditorPage() {
         strategyId
       });
 
-      showSuccessToast('Success', 'Backtest started! Redirecting...');
+      showSuccessToast('Success', 'Backtest started! Results will be available shortly.');
 
-      // Redirect to backtest results page or strategy detail page
+      // Redirect to backtest results page with flag to show backtest running message
       setTimeout(() => {
-        router.push(`/dashboard/strategy/${strategyId}`);
+        router.push(`/dashboard/strategy/${strategyId}?backtestRunning=true`);
       }, 1500);
     } catch (error) {
       if (error instanceof ApiError) {
