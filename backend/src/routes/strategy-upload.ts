@@ -21,6 +21,7 @@ import { strategyEnvironmentManager } from '../services/strategy-environment-man
 import { strategyExecutor } from '../services/strategy-execution/strategy-executor';
 import { redis } from '../lib/redis-client';
 import { strategyRegistry } from '../services/strategy-execution/strategy-registry';
+import { settingsService } from '../services/strategy-execution/settings-service';
 
 const logger = new Logger('StrategyUpload');
 const router = Router();
@@ -283,6 +284,25 @@ router.post('/upload', authenticate, requireQuantRole, upload.single('strategyFi
       });
     }
 
+    // ✅ Extract STRATEGY_CONFIG from Python code
+    const configExtraction = extractStrategyConfig(strategyCode);
+    let executionConfig = parsedConfig.executionConfig || {};
+
+    if (configExtraction.success && configExtraction.config) {
+      // Merge extracted config with provided config
+      executionConfig = {
+        ...configExtraction.config,
+        ...executionConfig,
+      };
+      logger.info(
+        `Extracted STRATEGY_CONFIG for new strategy: ${configExtraction.extractedParams.join(', ')}`
+      );
+    } else {
+      logger.warn(
+        `Failed to extract STRATEGY_CONFIG: ${configExtraction.error || 'Unknown error'}`
+      );
+    }
+
     // Store strategy code in a version (start as non-marketplace until backtest succeeds)
     const strategy = await prisma.strategy.create({
       data: {
@@ -301,6 +321,7 @@ router.post('/upload', authenticate, requireQuantRole, upload.single('strategyFi
         isApproved: false,
         isMarketplace: false,
         isPublic: true, // Default to PUBLIC for new strategies
+        executionConfig: executionConfig,  // ✅ Save extracted config
         winRate: parsedConfig.winRate,
         riskReward: parsedConfig.riskReward,
         maxDrawdown: parsedConfig.maxDrawdown,
@@ -714,6 +735,29 @@ router.put('/:id', authenticate, requireQuantRole, upload.single('strategyFile')
         });
       }
 
+      // ✅ Extract STRATEGY_CONFIG from Python code
+      const configExtraction = extractStrategyConfig(strategyCode);
+      if (configExtraction.success && configExtraction.config) {
+        // Merge extracted config with existing
+        const extractedConfig = configExtraction.config;
+        const mergedConfig = {
+          ...(existingStrategy.executionConfig as any || {}),
+          ...extractedConfig,
+          ...(parsedConfig || {})
+        };
+
+        // Update executionConfig in database
+        updateData.executionConfig = mergedConfig;
+
+        logger.info(
+          `Extracted STRATEGY_CONFIG: ${configExtraction.extractedParams.join(', ')}`
+        );
+      } else {
+        logger.warn(
+          `Failed to extract STRATEGY_CONFIG: ${configExtraction.error || 'Unknown error'}`
+        );
+      }
+
       // Create new version
       const newVersion = incrementVersion(existingStrategy.version);
       updateData.version = newVersion;
@@ -746,6 +790,59 @@ router.put('/:id', authenticate, requireQuantRole, upload.single('strategyFile')
           isValidated: true,
         }
       });
+    }
+
+    // ✅ Update Redis cache if executionConfig was updated
+    const updatedExecutionConfig = updateData.executionConfig;
+    if (updatedExecutionConfig) {
+      try {
+        const execConfig = updatedExecutionConfig as any;
+        await settingsService.updateStrategySettings(
+          strategyId,
+          execConfig,
+          true  // publishUpdate = true
+        );
+        logger.info(`Updated Redis cache for strategy ${strategyId}`);
+
+        // ✅ IMPORTANT: Sync existing subscriptions that have NULL values
+        // This ensures all subscribers using defaults get the new values
+        const subscriptions = await prisma.strategySubscription.findMany({
+          where: {
+            strategyId,
+            isActive: true,
+            riskPerTrade: null,  // Only update subscriptions using default
+          },
+        });
+
+        logger.info(
+          `Found ${subscriptions.length} subscriptions using default risk_per_trade. ` +
+          `They will now use the new default: ${execConfig.risk_per_trade || 'unchanged'}`
+        );
+
+        // Update Redis cache for each subscription
+        for (const sub of subscriptions) {
+          try {
+            await settingsService.updateSubscriptionSettings(
+              sub.userId,
+              strategyId,
+              {
+                risk_per_trade: execConfig.risk_per_trade,
+                leverage: execConfig.leverage,
+                max_positions: execConfig.max_positions,
+                max_daily_loss: execConfig.max_daily_loss,
+              }
+            );
+          } catch (subError) {
+            logger.error(
+              `Failed to update subscription cache for user ${sub.userId}:`,
+              subError
+            );
+          }
+        }
+      } catch (redisError) {
+        logger.error(`Failed to update Redis cache:`, redisError);
+        // Don't fail the request if Redis update fails
+      }
     }
 
     logger.info(`Strategy updated: ${strategyId} by user ${userId}`);
@@ -2421,12 +2518,39 @@ router.put('/:id/code', authenticate, requireQuantRole, async (req: Authenticate
       });
     }
 
-    // Update database (only timestamp - don't update 'code' field as it's an identifier, not content)
+    // ✅ Extract STRATEGY_CONFIG from the new code
+    const configExtraction = extractStrategyConfig(code);
+    const updateData: any = {
+      updatedAt: new Date()
+    };
+
+    if (configExtraction.success && configExtraction.config) {
+      // Get existing executionConfig and merge
+      const existingStrategy = await prisma.strategy.findUnique({
+        where: { id: strategyId },
+        select: { executionConfig: true }
+      });
+
+      const mergedConfig = {
+        ...(existingStrategy?.executionConfig as any || {}),
+        ...configExtraction.config
+      };
+
+      updateData.executionConfig = mergedConfig;
+
+      logger.info(
+        `✅ Extracted STRATEGY_CONFIG for ${strategyId}: ${configExtraction.extractedParams.join(', ')}`
+      );
+    } else {
+      logger.warn(
+        `⚠️ Failed to extract STRATEGY_CONFIG for ${strategyId}: ${configExtraction.error || 'Unknown error'}`
+      );
+    }
+
+    // Update database with executionConfig
     await prisma.strategy.update({
       where: { id: strategyId },
-      data: {
-        updatedAt: new Date()
-      }
+      data: updateData
     });
 
     // Update file on disk
@@ -2446,6 +2570,60 @@ router.put('/:id/code', authenticate, requireQuantRole, async (req: Authenticate
         if (fs.existsSync(pycacheDir)) {
           fs.rmSync(pycacheDir, { recursive: true, force: true });
         }
+      }
+    }
+
+    // ✅ Update Redis cache and sync subscriptions if executionConfig was updated
+    if (updateData.executionConfig) {
+      try {
+        const execConfig = updateData.executionConfig as any;
+
+        // Update strategy settings in Redis
+        await settingsService.updateStrategySettings(
+          strategyId,
+          execConfig,
+          true  // publishUpdate = true
+        );
+
+        logger.info(`✅ Updated Redis cache for strategy ${strategyId}`);
+
+        // ✅ CRITICAL: Sync subscriptions with NULL values (using defaults)
+        const subscriptions = await prisma.strategySubscription.findMany({
+          where: {
+            strategyId,
+            isActive: true,
+            riskPerTrade: null,  // Only subscribers using default
+          },
+        });
+
+        logger.info(
+          `📊 Found ${subscriptions.length} subscriptions using default risk_per_trade. ` +
+          `Syncing to new default: ${execConfig.risk_per_trade || 'N/A'}`
+        );
+
+        // Update Redis cache for each subscription
+        for (const sub of subscriptions) {
+          try {
+            await settingsService.updateSubscriptionSettings(
+              sub.userId,
+              strategyId,
+              {
+                risk_per_trade: execConfig.risk_per_trade,
+                leverage: execConfig.leverage,
+                max_positions: execConfig.max_positions,
+                max_daily_loss: execConfig.max_daily_loss,
+              }
+            );
+          } catch (subError) {
+            logger.error(
+              `❌ Failed to update subscription cache for user ${sub.userId}:`,
+              subError
+            );
+          }
+        }
+      } catch (redisError) {
+        logger.error(`❌ Failed to update Redis cache:`, redisError);
+        // Don't fail the request if Redis update fails
       }
     }
 
