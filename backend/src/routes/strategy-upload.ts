@@ -1362,31 +1362,46 @@ router.post('/:id/backtest', authenticate, async (req: AuthenticatedRequest, res
       });
     }
 
+    // Get config from latest version
+    const latestVersion = strategy.versions[0];
+    const parsedConfig = latestVersion?.configData as any || {};
+    const executionConfig = strategy.executionConfig as any || {};
+
+    // Try to get symbol and resolution with fallbacks (same logic as auto-backtest)
+    const symbol = executionConfig.symbol || parsedConfig.pair || parsedConfig.pairs?.[0];
+    const resolution = executionConfig.resolution || parsedConfig.timeframes?.[0] || '5';
+
+    if (!symbol) {
+      return res.status(400).json({
+        error: 'Strategy missing symbol configuration',
+        details: 'Could not find symbol in executionConfig.symbol, config.pair, or config.pairs. Please check your strategy config.'
+      });
+    }
+
     // Run backtest asynchronously in background
     (async () => {
       try {
         const { backtestEngine } = await import('../services/backtest-engine');
 
-        const executionConfig = strategy.executionConfig as any;
-        if (!executionConfig || !executionConfig.symbol || !executionConfig.resolution) {
-          logger.error(`Strategy ${strategyId} missing execution config`);
-          return;
-        }
-
-        const symbol = executionConfig.symbol;
-        const resolution = executionConfig.resolution;
+        // Use symbol and resolution from outer scope (already resolved with fallbacks)
+        // Map resolution to backtest format (same as auto-backtest)
+        const resolutionMap: Record<string, string> = {
+          '1': '1m', '5': '5m', '15': '15m', '30': '30m',
+          '60': '1h', '120': '2h', '240': '4h', '1D': '1d'
+        };
+        const mappedResolution = resolutionMap[resolution] || `${resolution}m`;
 
         // Backtest last 30 days
         const endDate = new Date();
         const startDate = new Date();
         startDate.setDate(startDate.getDate() - 30);
 
-        logger.info(`Running backtest for ${strategyId}: ${symbol} ${resolution}m`);
+        logger.info(`Running backtest for ${strategyId}: ${symbol} ${mappedResolution}`);
 
         const backtestResult = await backtestEngine.runBacktest({
           strategyId,
           symbol,
-          resolution: `${resolution}m` as any,
+          resolution: mappedResolution as any,
           startDate,
           endDate,
           initialCapital: 10000,
