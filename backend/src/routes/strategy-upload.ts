@@ -1315,6 +1315,121 @@ router.post('/cli-upload', authenticate, requireQuantRole, async (req: Authentic
   }
 });
 
+// Trigger backtest for a strategy (from UI)
+router.post('/:id/backtest', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = req.userId!;
+    const strategyId = req.params.id;
+
+    logger.info(`Backtest requested for strategy ${strategyId} by user ${userId}`);
+
+    // Get strategy with latest version
+    const strategy = await prisma.strategy.findUnique({
+      where: { id: strategyId },
+      include: {
+        versions: {
+          orderBy: { createdAt: 'desc' },
+          take: 1
+        }
+      }
+    });
+
+    if (!strategy) {
+      return res.status(404).json({
+        error: 'Strategy not found'
+      });
+    }
+
+    // Check if user has permission (owner, client, or admin)
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true }
+    });
+
+    const isOwner = strategy.clientId === userId;
+    const isAdmin = user?.role === 'ADMIN';
+
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({
+        error: 'You do not have permission to backtest this strategy'
+      });
+    }
+
+    // Check if strategy has code
+    if (!strategy.versions || strategy.versions.length === 0) {
+      return res.status(400).json({
+        error: 'No strategy code found. Please upload code first.'
+      });
+    }
+
+    // Run backtest asynchronously in background
+    (async () => {
+      try {
+        const { backtestEngine } = await import('../services/backtest-engine');
+
+        const executionConfig = strategy.executionConfig as any;
+        if (!executionConfig || !executionConfig.symbol || !executionConfig.resolution) {
+          logger.error(`Strategy ${strategyId} missing execution config`);
+          return;
+        }
+
+        const symbol = executionConfig.symbol;
+        const resolution = executionConfig.resolution;
+
+        // Backtest last 30 days
+        const endDate = new Date();
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - 30);
+
+        logger.info(`Running backtest for ${strategyId}: ${symbol} ${resolution}m`);
+
+        const backtestResult = await backtestEngine.runBacktest({
+          strategyId,
+          symbol,
+          resolution: `${resolution}m` as any,
+          startDate,
+          endDate,
+          initialCapital: 10000,
+          riskPerTrade: 0.02,
+          leverage: 10,
+          commission: 0.0004,
+        });
+
+        logger.info(`Backtest completed for ${strategyId}: ${backtestResult.metrics.totalTrades} trades, ${backtestResult.metrics.winRate.toFixed(2)}% win rate`);
+
+        // Update strategy metrics
+        await prisma.strategy.update({
+          where: { id: strategyId },
+          data: {
+            winRate: backtestResult.metrics.winRate,
+            roi: backtestResult.metrics.totalPnlPct,
+            riskReward: backtestResult.metrics.avgLoss > 0 ? backtestResult.metrics.avgWin / backtestResult.metrics.avgLoss : 0,
+            maxDrawdown: backtestResult.metrics.maxDrawdownPct,
+            sharpeRatio: backtestResult.metrics.sharpeRatio,
+            totalTrades: backtestResult.metrics.totalTrades,
+            profitFactor: backtestResult.metrics.profitFactor,
+          },
+        });
+
+        logger.info(`Strategy metrics updated for ${strategyId}`);
+      } catch (error) {
+        logger.error(`Background backtest failed for strategy ${strategyId}:`, error);
+      }
+    })();
+
+    // Return immediately with success
+    res.json({
+      success: true,
+      message: 'Backtest started successfully. Results will be available shortly.',
+      backtestId: `backtest-${strategyId}-${Date.now()}`
+    });
+
+  } catch (error) {
+    logger.error('Failed to start backtest:', error);
+    next(error);
+  }
+});
+
 // Upload backtest results from CLI
 router.post('/:id/backtest-results', authenticate, async (req: AuthenticatedRequest, res, next) => {
   try {
