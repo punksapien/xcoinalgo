@@ -283,7 +283,7 @@ export default function StrategyDetailPage() {
   const params = useParams()
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { token } = useAuth()
+  const { token, isQuant, isAdmin } = useAuth()
   const [strategy, setStrategy] = useState<StrategyData | null>(null)
   const [userSubscription, setUserSubscription] = useState<UserSubscription | null>(null)
   const [loading, setLoading] = useState(true)
@@ -294,14 +294,49 @@ export default function StrategyDetailPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [errorType, setErrorType] = useState<'not-found' | 'private' | null>(null)
   const [showBacktestBanner, setShowBacktestBanner] = useState(false)
+  const [backtestStartTime, setBacktestStartTime] = useState<number | null>(null)
+  const [elapsedTime, setElapsedTime] = useState(0)
   const itemsPerPage = 10
+
+  // Check if user is admin or quant (only they should see backtest status)
+  const canSeeBacktestProgress = isQuant() || isAdmin()
 
   // Check if backtest was just triggered
   useEffect(() => {
-    if (searchParams.get('backtestRunning') === 'true') {
+    if (searchParams.get('backtestRunning') === 'true' && canSeeBacktestProgress) {
       setShowBacktestBanner(true)
+      setBacktestStartTime(Date.now())
     }
-  }, [searchParams])
+  }, [searchParams, canSeeBacktestProgress])
+
+  // Update elapsed time every second when backtest is running
+  useEffect(() => {
+    if (!showBacktestBanner || !backtestStartTime) return
+
+    const interval = setInterval(() => {
+      setElapsedTime(Math.floor((Date.now() - backtestStartTime) / 1000))
+    }, 1000)
+
+    return () => clearInterval(interval)
+  }, [showBacktestBanner, backtestStartTime])
+
+  // Poll for backtest completion every 5 seconds
+  useEffect(() => {
+    if (!showBacktestBanner) return
+
+    const pollInterval = setInterval(async () => {
+      // Refresh strategy data to check if backtest updated
+      await fetchStrategy()
+
+      // If backtest has been running for more than 2 minutes, auto-dismiss
+      if (elapsedTime > 120) {
+        setShowBacktestBanner(false)
+        setBacktestStartTime(null)
+      }
+    }, 5000)
+
+    return () => clearInterval(pollInterval)
+  }, [showBacktestBanner, elapsedTime])
 
   useEffect(() => {
     fetchStrategy()
@@ -717,19 +752,16 @@ export default function StrategyDetailPage() {
           userSubscription={userSubscription || undefined}
         />
 
-        {/* Backtest Running Banner */}
-        {showBacktestBanner && (
+        {/* Backtest Running Banner - Only visible to ADMIN/QUANT */}
+        {showBacktestBanner && canSeeBacktestProgress && (
           <Card className="border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20">
-            <CardContent className="py-4">
+            <CardContent className="py-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
                   <div>
-                    <p className="font-medium text-blue-900 dark:text-blue-100">
-                      Backtest Running
-                    </p>
-                    <p className="text-sm text-blue-700 dark:text-blue-300">
-                      Your backtest is being processed. Results will appear here shortly (typically 30-60 seconds).
+                    <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                      Backtest Running • {elapsedTime}s elapsed
                     </p>
                   </div>
                 </div>
@@ -737,18 +769,23 @@ export default function StrategyDetailPage() {
                   <Button
                     onClick={() => {
                       setShowBacktestBanner(false)
+                      setBacktestStartTime(null)
                       fetchStrategy()
                     }}
                     variant="outline"
                     size="sm"
-                    className="border-blue-300 dark:border-blue-700"
+                    className="border-blue-300 dark:border-blue-700 text-xs"
                   >
-                    Refresh Results
+                    Refresh
                   </Button>
                   <Button
-                    onClick={() => setShowBacktestBanner(false)}
+                    onClick={() => {
+                      setShowBacktestBanner(false)
+                      setBacktestStartTime(null)
+                    }}
                     variant="ghost"
                     size="sm"
+                    className="text-xs"
                   >
                     Dismiss
                   </Button>
