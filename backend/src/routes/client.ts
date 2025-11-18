@@ -471,7 +471,8 @@ router.get('/subscribers', async (req: AuthenticatedRequest, res, next) => {
             id: true,
             name: true,
             code: true,
-            isPublic: true
+            isPublic: true,
+            executionConfig: true
           }
         }
       },

@@ -52,12 +52,18 @@ interface Subscriber {
     name: string;
     code: string;
     isPublic: boolean;
+    executionConfig: {
+      leverage?: number;
+      risk_per_trade?: number;
+      max_positions?: number;
+      max_daily_loss?: number;
+    } | null;
   };
   capital: number;
-  riskPerTrade: number;
-  leverage: number;
-  maxPositions: number;
-  maxDailyLoss: number;
+  riskPerTrade: number | null;
+  leverage: number | null;
+  maxPositions: number | null;
+  maxDailyLoss: number | null;
   tradingType: string;
   marginCurrency: string;
   isActive: boolean;
@@ -148,12 +154,24 @@ export default function SubscribersPage() {
 
   const openEditDialog = (subscriber: Subscriber) => {
     setSelectedSubscriber(subscriber);
+
+    // Get strategy defaults from executionConfig
+    const strategyDefaults = subscriber.strategy.executionConfig || {};
+
     setEditForm({
       capital: subscriber.capital.toString(),
-      riskPerTrade: (subscriber.riskPerTrade * 100).toString(),
-      leverage: subscriber.leverage.toString(),
-      maxPositions: subscriber.maxPositions.toString(),
-      maxDailyLoss: (subscriber.maxDailyLoss * 100).toString()
+      riskPerTrade: subscriber.riskPerTrade !== null
+        ? (subscriber.riskPerTrade * 100).toString()
+        : strategyDefaults.risk_per_trade ? (strategyDefaults.risk_per_trade * 100).toString() : '',
+      leverage: subscriber.leverage !== null
+        ? subscriber.leverage.toString()
+        : strategyDefaults.leverage?.toString() || '',
+      maxPositions: subscriber.maxPositions !== null
+        ? subscriber.maxPositions.toString()
+        : strategyDefaults.max_positions?.toString() || '',
+      maxDailyLoss: subscriber.maxDailyLoss !== null
+        ? (subscriber.maxDailyLoss * 100).toString()
+        : strategyDefaults.max_daily_loss ? (strategyDefaults.max_daily_loss * 100).toString() : ''
     });
     setEditDialogOpen(true);
   };
@@ -176,10 +194,10 @@ export default function SubscribersPage() {
         `/api/client/subscribers/${selectedSubscriber.id}/parameters`,
         {
           capital: parseFloat(editForm.capital),
-          riskPerTrade: parseFloat(editForm.riskPerTrade) / 100,
-          leverage: parseInt(editForm.leverage),
-          maxPositions: parseInt(editForm.maxPositions),
-          maxDailyLoss: parseFloat(editForm.maxDailyLoss) / 100
+          riskPerTrade: editForm.riskPerTrade ? parseFloat(editForm.riskPerTrade) / 100 : null,
+          leverage: editForm.leverage ? parseInt(editForm.leverage) : null,
+          maxPositions: editForm.maxPositions ? parseInt(editForm.maxPositions) : null,
+          maxDailyLoss: editForm.maxDailyLoss ? parseFloat(editForm.maxDailyLoss) / 100 : null
         },
         { headers: { Authorization: `Bearer ${authToken}` } }
       );
@@ -398,15 +416,36 @@ export default function SubscribersPage() {
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Risk/Trade</p>
-                      <p className="font-semibold">{(subscriber.riskPerTrade * 100).toFixed(2)}%</p>
+                      <p className="font-semibold">
+                        {subscriber.riskPerTrade !== null
+                          ? `${(subscriber.riskPerTrade * 100).toFixed(2)}%`
+                          : subscriber.strategy.executionConfig?.risk_per_trade
+                            ? `${(subscriber.strategy.executionConfig.risk_per_trade * 100).toFixed(2)}% (Default)`
+                            : 'Default'
+                        }
+                      </p>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Leverage</p>
-                      <p className="font-semibold">{subscriber.leverage}x</p>
+                      <p className="font-semibold">
+                        {subscriber.leverage !== null
+                          ? `${subscriber.leverage}x`
+                          : subscriber.strategy.executionConfig?.leverage
+                            ? `${subscriber.strategy.executionConfig.leverage}x (Default)`
+                            : 'Default'
+                        }
+                      </p>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Max Positions</p>
-                      <p className="font-semibold">{subscriber.maxPositions}</p>
+                      <p className="font-semibold">
+                        {subscriber.maxPositions !== null
+                          ? subscriber.maxPositions
+                          : subscriber.strategy.executionConfig?.max_positions
+                            ? `${subscriber.strategy.executionConfig.max_positions} (Default)`
+                            : 'Default'
+                        }
+                      </p>
                     </div>
 
                     {/* Performance Metrics */}
@@ -461,48 +500,48 @@ export default function SubscribersPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="riskPerTrade">Risk Per Trade (%)</Label>
+              <Label htmlFor="riskPerTrade">Risk Per Trade (%) - Leave empty for strategy default</Label>
               <Input
                 id="riskPerTrade"
                 type="number"
                 step="0.1"
                 value={editForm.riskPerTrade}
                 onChange={(e) => setEditForm({ ...editForm, riskPerTrade: e.target.value })}
-                placeholder="2.0"
+                placeholder="Leave empty to use strategy default"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="leverage">Leverage</Label>
+              <Label htmlFor="leverage">Leverage - Leave empty for strategy default</Label>
               <Input
                 id="leverage"
                 type="number"
                 value={editForm.leverage}
                 onChange={(e) => setEditForm({ ...editForm, leverage: e.target.value })}
-                placeholder="10"
+                placeholder="Leave empty to use strategy default"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="maxPositions">Max Positions</Label>
+              <Label htmlFor="maxPositions">Max Positions - Leave empty for strategy default</Label>
               <Input
                 id="maxPositions"
                 type="number"
                 value={editForm.maxPositions}
                 onChange={(e) => setEditForm({ ...editForm, maxPositions: e.target.value })}
-                placeholder="1"
+                placeholder="Leave empty to use strategy default"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="maxDailyLoss">Max Daily Loss (%)</Label>
+              <Label htmlFor="maxDailyLoss">Max Daily Loss (%) - Leave empty for strategy default</Label>
               <Input
                 id="maxDailyLoss"
                 type="number"
                 step="0.1"
                 value={editForm.maxDailyLoss}
                 onChange={(e) => setEditForm({ ...editForm, maxDailyLoss: e.target.value })}
-                placeholder="5.0"
+                placeholder="Leave empty to use strategy default"
               />
             </div>
           </div>
