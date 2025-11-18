@@ -252,7 +252,7 @@ export default function SubscriptionsPage() {
                         <DollarSign className="h-3 w-3" />
                         <span className="text-xs">Capital</span>
                       </div>
-                      <p className="font-semibold">${subscription.capital.toLocaleString()}</p>
+                      <p className="font-semibold">₹{subscription.capital.toLocaleString()}</p>
                     </div>
                     <div className="bg-secondary/20 rounded-lg p-3">
                       <div className="flex items-center gap-2 text-muted-foreground mb-1">
@@ -284,7 +284,7 @@ export default function SubscriptionsPage() {
                         <div>
                           <p className="text-xs text-muted-foreground">Total P&L</p>
                           <p className={`font-bold ${subscription.liveStats.totalPnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            ${subscription.liveStats.totalPnl.toFixed(2)}
+                            ₹{subscription.liveStats.totalPnl.toFixed(2)}
                           </p>
                         </div>
                         <div>
@@ -421,7 +421,7 @@ export default function SubscriptionsPage() {
                   <DollarSign className="h-5 w-5 text-purple-500" />
                   <div>
                     <div className={`text-2xl font-bold ${subscriptions.reduce((sum, s) => sum + (s.liveStats?.totalPnl || 0), 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      ${subscriptions.reduce((sum, s) => sum + (s.liveStats?.totalPnl || 0), 0).toFixed(2)}
+                      ₹{subscriptions.reduce((sum, s) => sum + (s.liveStats?.totalPnl || 0), 0).toFixed(2)}
                     </div>
                     <div className="text-sm text-gray-600">Total P&L</div>
                   </div>

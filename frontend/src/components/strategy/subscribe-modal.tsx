@@ -560,7 +560,7 @@ export function SubscribeModal({
                     value={capital}
                     onChange={(e) => handleCapitalChange(e.target.value)}
                     onBlur={() => validateCapital(capital)}
-                    placeholder={`Enter amount (minimum ₹${minMargin.toLocaleString()})`}
+                    placeholder="Enter amount"
                     className={validationErrors.capital ? 'border-red-500 text-lg font-semibold' : 'text-lg font-semibold'}
                   />
                   {validationErrors.capital ? (
