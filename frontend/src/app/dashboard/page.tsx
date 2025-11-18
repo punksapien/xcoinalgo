@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useAuth } from '@/lib/auth';
 import { strategyService, Strategy } from '@/lib/strategy-service';
 import { SubscribeModal } from '@/components/strategy/subscribe-modal';
-import { Search, Filter, TrendingUp, Users, Bot, Clock, Target, TrendingDown, Zap, RefreshCw, AlertTriangle, Sparkles } from 'lucide-react';
+import { Search, Filter, TrendingUp, Users, Bot, Clock, Target, TrendingDown, Zap, RefreshCw, AlertTriangle } from 'lucide-react';
 
 function DashboardContent() {
   const [strategies, setStrategies] = useState<Strategy[]>([]);
@@ -169,13 +169,6 @@ function DashboardContent() {
     return diffInYears === 1 ? 'about 1 year ago' : `about ${diffInYears} years ago`;
   }, []);
 
-  const isNewStrategy = useCallback((dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffInDays = (now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24);
-    return diffInDays <= 30;
-  }, []);
-
   const handleStrategyClick = useCallback((strategyId: string) => {
     router.push(`/dashboard/strategy/${strategyId}`);
   }, [router]);
@@ -311,18 +304,14 @@ function DashboardContent() {
               className="group card-hover cursor-pointer border-border/50 hover:border-primary/50 hover:shadow-lg transition-all duration-300 hover:-translate-y-1 relative overflow-visible"
               onClick={() => handleStrategyClick(strategy.id)}
             >
-              {/* Public/Private Badge Overlay - Positioned absolutely at top-right, protruding from card */}
-              <div className="absolute -top-2 -right-2 z-10">
-                {strategy.isPublic ? (
-                  <Badge className="text-xs px-3 py-1 bg-green-600 text-white border-2 border-background shadow-lg font-semibold">
-                    PUBLIC
-                  </Badge>
-                ) : (
+              {/* Private Badge Overlay - Only shown for private strategies */}
+              {!strategy.isPublic && (
+                <div className="absolute -top-2 -right-2 z-10">
                   <Badge className="text-xs px-3 py-1 bg-yellow-600 text-white border-2 border-background shadow-lg font-semibold">
                     PRIVATE
                   </Badge>
-                )}
-              </div>
+                </div>
+              )}
 
               <CardHeader className="pb-3">
                 {/* Top Row: Strategy Code Badge */}
@@ -349,12 +338,6 @@ function DashboardContent() {
                     <Clock className="h-3 w-3" />
                     <span>{getTimeAgo(strategy.createdAt)}</span>
                   </div>
-                  {isNewStrategy(strategy.createdAt) && (
-                    <Badge className="text-[10px] px-1.5 py-0 bg-gradient-to-r from-yellow-400 to-orange-500 text-white border-0 animate-pulse">
-                      <Sparkles className="h-2.5 w-2.5 mr-0.5" />
-                      NEW
-                    </Badge>
-                  )}
                 </div>
 
                 {/* Trading Pair and Deployments */}
