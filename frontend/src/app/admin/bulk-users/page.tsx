@@ -78,7 +78,7 @@ export default function BulkUsersPage() {
       const content = await file.text();
       const users = parseCSV(content);
       setParsedUsers(users);
-    } catch (err) {
+    } catch {
       setError('Failed to parse CSV file. Please check the format.');
       setParsedUsers([]);
     }
@@ -112,8 +112,8 @@ export default function BulkUsersPage() {
       setResults(data);
       setParsedUsers([]); // Clear preview
       setCsvFile(null); // Clear file
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
       setIsLoading(false);
     }
