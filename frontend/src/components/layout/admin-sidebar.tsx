@@ -14,7 +14,8 @@ import {
   LogOut,
   LayoutDashboard,
   Mail,
-  Activity
+  Activity,
+  UserPlus
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { useTheme } from '@/lib/theme';
@@ -29,6 +30,11 @@ const navigation = [
     name: 'Users',
     href: '/admin/users',
     icon: Users,
+  },
+  {
+    name: 'Bulk Users',
+    href: '/admin/bulk-users',
+    icon: UserPlus,
   },
   {
     name: 'Strategies',
