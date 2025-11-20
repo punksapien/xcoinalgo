@@ -4,7 +4,9 @@
 
 import { Router } from 'express';
 import multer from 'multer';
-import { authenticate } from '../middleware/auth';
+import { authenticate, requireQuantRole } from '../middleware/auth';
+// COMMENTED OUT: Rate limiters for validation endpoints - removed until PM2 log viewer is implemented
+// import { quickValidationLimiter, sandboxValidationLimiter } from '../middleware/validation-rate-limiter';
 import { strategyService } from '../services/strategy-service';
 import { AuthenticatedRequest } from '../types';
 import prisma from '../utils/database';
@@ -19,6 +21,7 @@ import { strategyEnvironmentManager } from '../services/strategy-environment-man
 import { strategyExecutor } from '../services/strategy-execution/strategy-executor';
 import { redis } from '../lib/redis-client';
 import { strategyRegistry } from '../services/strategy-execution/strategy-registry';
+import { settingsService } from '../services/strategy-execution/settings-service';
 
 const logger = new Logger('StrategyUpload');
 const router = Router();
@@ -169,7 +172,7 @@ const upload = multer({
 });
 
 // Validate strategy structure endpoint - validates Python code structure before upload
-router.post('/validate', authenticate, upload.single('strategyFile'), async (req: AuthenticatedRequest, res, next) => {
+router.post('/validate', authenticate, requireQuantRole, upload.single('strategyFile'), async (req: AuthenticatedRequest, res, next) => {
   try {
     const file = req.file;
 
@@ -238,7 +241,7 @@ router.post('/validate', authenticate, upload.single('strategyFile'), async (req
 });
 
 // Upload strategy file
-router.post('/upload', authenticate, upload.single('strategyFile'), async (req: AuthenticatedRequest, res, next) => {
+router.post('/upload', authenticate, requireQuantRole, upload.single('strategyFile'), async (req: AuthenticatedRequest, res, next) => {
   try {
     const userId = req.userId!;
     const file = req.file;
@@ -281,6 +284,25 @@ router.post('/upload', authenticate, upload.single('strategyFile'), async (req: 
       });
     }
 
+    // ✅ Extract STRATEGY_CONFIG from Python code
+    const configExtraction = extractStrategyConfig(strategyCode);
+    let executionConfig = parsedConfig.executionConfig || {};
+
+    if (configExtraction.success && configExtraction.config) {
+      // Merge extracted config with provided config
+      executionConfig = {
+        ...configExtraction.config,
+        ...executionConfig,
+      };
+      logger.info(
+        `Extracted STRATEGY_CONFIG for new strategy: ${configExtraction.extractedParams.join(', ')}`
+      );
+    } else {
+      logger.warn(
+        `Failed to extract STRATEGY_CONFIG: ${configExtraction.error || 'Unknown error'}`
+      );
+    }
+
     // Store strategy code in a version (start as non-marketplace until backtest succeeds)
     const strategy = await prisma.strategy.create({
       data: {
@@ -298,6 +320,8 @@ router.post('/upload', authenticate, upload.single('strategyFile'), async (req: 
         isActive: false,
         isApproved: false,
         isMarketplace: false,
+        isPublic: true, // Default to PUBLIC for new strategies
+        executionConfig: executionConfig,  // ✅ Save extracted config
         winRate: parsedConfig.winRate,
         riskReward: parsedConfig.riskReward,
         maxDrawdown: parsedConfig.maxDrawdown,
@@ -432,7 +456,7 @@ router.post('/upload', authenticate, upload.single('strategyFile'), async (req: 
 });
 
 // Get all active strategies (public marketplace)
-router.get('/strategies', authenticate, async (req: AuthenticatedRequest, res, next) => {
+router.get('/strategies', authenticate, requireQuantRole, async (req: AuthenticatedRequest, res, next) => {
   try {
     const userId = req.userId!;
     const { page = 1, limit = 10, search, status, all } = req.query;
@@ -471,6 +495,7 @@ router.get('/strategies', authenticate, async (req: AuthenticatedRequest, res, n
           version: true,
           isActive: true,
           isMarketplace: true,
+          isPublic: true,
           tags: true,
           instrument: true,
           createdAt: true,
@@ -499,6 +524,14 @@ router.get('/strategies', authenticate, async (req: AuthenticatedRequest, res, n
             },
             orderBy: { deployedAt: 'desc' },
             take: 1,
+          },
+
+          // Subscriptions (for deployment count)
+          subscriptions: {
+            select: {
+              id: true,
+              isActive: true,
+            },
           },
 
           // Latest backtest results
@@ -538,10 +571,8 @@ router.get('/strategies', authenticate, async (req: AuthenticatedRequest, res, n
         const supportedPairs = strategy.supportedPairs ? JSON.parse(strategy.supportedPairs as string) : null;
         const timeframes = strategy.timeframes ? JSON.parse(strategy.timeframes as string) : null;
 
-        // Count active deployments
-        const deploymentCount = strategy.botDeployments.filter(d =>
-          ['ACTIVE', 'DEPLOYING', 'STARTING'].includes(d.status)
-        ).length;
+        // Count active subscriptions (subscribers who have deployed this strategy)
+        const deploymentCount = strategy.subscriptions.filter(sub => sub.isActive).length;
 
         return {
           ...strategy,
@@ -550,7 +581,7 @@ router.get('/strategies', authenticate, async (req: AuthenticatedRequest, res, n
           timeframes,
           // Add computed fields
           deploymentCount,
-          subscriberCount: 0, // TODO: Implement subscription count
+          subscriberCount: deploymentCount, // Same as deployment count (active subscribers)
           latestDeployment: strategy.botDeployments[0] || null,
           latestBacktest: strategy.backtestResults[0] || null,
           // Add features object for frontend compatibility
@@ -561,6 +592,7 @@ router.get('/strategies', authenticate, async (req: AuthenticatedRequest, res, n
           // Remove internal arrays from response
           botDeployments: undefined,
           backtestResults: undefined,
+          subscriptions: undefined,
         };
       }),
       pagination: {
@@ -578,7 +610,7 @@ router.get('/strategies', authenticate, async (req: AuthenticatedRequest, res, n
 });
 
 // Get specific strategy details
-router.get('/:id', authenticate, async (req: AuthenticatedRequest, res, next) => {
+router.get('/:id', authenticate, requireQuantRole, async (req: AuthenticatedRequest, res, next) => {
   try {
     const userId = req.userId!;
     const strategyId = req.params.id;
@@ -642,7 +674,7 @@ router.get('/:id', authenticate, async (req: AuthenticatedRequest, res, next) =>
 });
 
 // Update strategy
-router.put('/:id', authenticate, upload.single('strategyFile'), async (req: AuthenticatedRequest, res, next) => {
+router.put('/:id', authenticate, requireQuantRole, upload.single('strategyFile'), async (req: AuthenticatedRequest, res, next) => {
   try {
     const userId = req.userId!;
     const strategyId = req.params.id;
@@ -703,6 +735,29 @@ router.put('/:id', authenticate, upload.single('strategyFile'), async (req: Auth
         });
       }
 
+      // ✅ Extract STRATEGY_CONFIG from Python code
+      const configExtraction = extractStrategyConfig(strategyCode);
+      if (configExtraction.success && configExtraction.config) {
+        // Merge extracted config with existing
+        const extractedConfig = configExtraction.config;
+        const mergedConfig = {
+          ...(existingStrategy.executionConfig as any || {}),
+          ...extractedConfig,
+          ...(parsedConfig || {})
+        };
+
+        // Update executionConfig in database
+        updateData.executionConfig = mergedConfig;
+
+        logger.info(
+          `Extracted STRATEGY_CONFIG: ${configExtraction.extractedParams.join(', ')}`
+        );
+      } else {
+        logger.warn(
+          `Failed to extract STRATEGY_CONFIG: ${configExtraction.error || 'Unknown error'}`
+        );
+      }
+
       // Create new version
       const newVersion = incrementVersion(existingStrategy.version);
       updateData.version = newVersion;
@@ -737,6 +792,59 @@ router.put('/:id', authenticate, upload.single('strategyFile'), async (req: Auth
       });
     }
 
+    // ✅ Update Redis cache if executionConfig was updated
+    const updatedExecutionConfig = updateData.executionConfig;
+    if (updatedExecutionConfig) {
+      try {
+        const execConfig = updatedExecutionConfig as any;
+        await settingsService.updateStrategySettings(
+          strategyId,
+          execConfig,
+          true  // publishUpdate = true
+        );
+        logger.info(`Updated Redis cache for strategy ${strategyId}`);
+
+        // ✅ IMPORTANT: Sync existing subscriptions that have NULL values
+        // This ensures all subscribers using defaults get the new values
+        const subscriptions = await prisma.strategySubscription.findMany({
+          where: {
+            strategyId,
+            isActive: true,
+            riskPerTrade: null,  // Only update subscriptions using default
+          },
+        });
+
+        logger.info(
+          `Found ${subscriptions.length} subscriptions using default risk_per_trade. ` +
+          `They will now use the new default: ${execConfig.risk_per_trade || 'unchanged'}`
+        );
+
+        // Update Redis cache for each subscription
+        for (const sub of subscriptions) {
+          try {
+            await settingsService.updateSubscriptionSettings(
+              sub.userId,
+              strategyId,
+              {
+                risk_per_trade: execConfig.risk_per_trade,
+                leverage: execConfig.leverage,
+                max_positions: execConfig.max_positions,
+                max_daily_loss: execConfig.max_daily_loss,
+              }
+            );
+          } catch (subError) {
+            logger.error(
+              `Failed to update subscription cache for user ${sub.userId}:`,
+              subError
+            );
+          }
+        }
+      } catch (redisError) {
+        logger.error(`Failed to update Redis cache:`, redisError);
+        // Don't fail the request if Redis update fails
+      }
+    }
+
     logger.info(`Strategy updated: ${strategyId} by user ${userId}`);
 
     res.json({
@@ -763,7 +871,7 @@ router.put('/:id', authenticate, upload.single('strategyFile'), async (req: Auth
 });
 
 // Delete strategy
-router.delete('/:id', authenticate, async (req: AuthenticatedRequest, res, next) => {
+router.delete('/:id', authenticate, requireQuantRole, async (req: AuthenticatedRequest, res, next) => {
   try {
     const userId = req.userId!;
     const strategyId = req.params.id;
@@ -831,7 +939,7 @@ router.delete('/:id', authenticate, async (req: AuthenticatedRequest, res, next)
         const resolution = config.resolution;
 
         if (symbol && resolution) {
-          const candleKey = `candles:${symbol}:${resolution}`;
+          const candleKey = `candle:${symbol}:${resolution}`;
           await redis.srem(candleKey, strategyId);
           logger.info(`Removed strategy ${strategyId} from ${candleKey}`);
 
@@ -959,8 +1067,46 @@ router.patch('/:id/activate', authenticate, async (req: AuthenticatedRequest, re
   }
 });
 
+// Toggle strategy visibility (public/private)
+router.patch('/:id/toggle-visibility', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = req.userId!;
+    const strategyId = req.params.id;
+
+    // Get current strategy
+    const strategy = await prisma.strategy.findUnique({
+      where: { id: strategyId }
+    });
+
+    if (!strategy) {
+      return res.status(404).json({
+        error: 'Strategy not found'
+      });
+    }
+
+    // Toggle isPublic
+    const newVisibility = !strategy.isPublic;
+    await prisma.strategy.update({
+      where: { id: strategyId },
+      data: { isPublic: newVisibility }
+    });
+
+    logger.info(`Strategy visibility toggled: ${strategyId} -> ${newVisibility ? 'PUBLIC' : 'PRIVATE'} by user ${userId}`);
+
+    res.json({
+      success: true,
+      isPublic: newVisibility,
+      message: `Strategy is now ${newVisibility ? 'PUBLIC' : 'PRIVATE'}`
+    });
+
+  } catch (error) {
+    logger.error('Strategy visibility toggle failed:', error);
+    next(error);
+  }
+});
+
 // CLI-friendly upload: accepts JSON payload with file contents (no multipart)
-router.post('/cli-upload', authenticate, async (req: AuthenticatedRequest, res, next) => {
+router.post('/cli-upload', authenticate, requireQuantRole, async (req: AuthenticatedRequest, res, next) => {
   try {
     const userId = req.userId!;
     const { strategyCode, config, requirements, name, description } = req.body;
@@ -1061,6 +1207,7 @@ router.post('/cli-upload', authenticate, async (req: AuthenticatedRequest, res, 
           isActive: false,
           isApproved: false,
           isMarketplace: false,
+          isPublic: true, // Default to PUBLIC for new strategies
           winRate: parsedConfig.winRate,
           riskReward: parsedConfig.riskReward,
           maxDrawdown: parsedConfig.maxDrawdown,
@@ -1261,6 +1408,136 @@ router.post('/cli-upload', authenticate, async (req: AuthenticatedRequest, res, 
       });
     }
 
+    next(error);
+  }
+});
+
+// Trigger backtest for a strategy (from UI)
+router.post('/:id/backtest', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = req.userId!;
+    const strategyId = req.params.id;
+
+    logger.info(`Backtest requested for strategy ${strategyId} by user ${userId}`);
+
+    // Get strategy with latest version
+    const strategy = await prisma.strategy.findUnique({
+      where: { id: strategyId },
+      include: {
+        versions: {
+          orderBy: { createdAt: 'desc' },
+          take: 1
+        }
+      }
+    });
+
+    if (!strategy) {
+      return res.status(404).json({
+        error: 'Strategy not found'
+      });
+    }
+
+    // Check if user has permission (owner, client, or admin)
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true }
+    });
+
+    const isOwner = strategy.clientId === userId;
+    const isAdmin = user?.role === 'ADMIN';
+
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({
+        error: 'You do not have permission to backtest this strategy'
+      });
+    }
+
+    // Check if strategy has code
+    if (!strategy.versions || strategy.versions.length === 0) {
+      return res.status(400).json({
+        error: 'No strategy code found. Please upload code first.'
+      });
+    }
+
+    // Get config from latest version
+    const latestVersion = strategy.versions[0];
+    const parsedConfig = latestVersion?.configData as any || {};
+    const executionConfig = strategy.executionConfig as any || {};
+
+    // Try to get symbol and resolution with fallbacks (same logic as auto-backtest)
+    const symbol = executionConfig.symbol || parsedConfig.pair || parsedConfig.pairs?.[0];
+    const resolution = executionConfig.resolution || parsedConfig.timeframes?.[0] || '5';
+
+    if (!symbol) {
+      return res.status(400).json({
+        error: 'Strategy missing symbol configuration',
+        details: 'Could not find symbol in executionConfig.symbol, config.pair, or config.pairs. Please check your strategy config.'
+      });
+    }
+
+    // Run backtest asynchronously in background
+    (async () => {
+      try {
+        const { backtestEngine } = await import('../services/backtest-engine');
+
+        // Use symbol and resolution from outer scope (already resolved with fallbacks)
+        // Map resolution to backtest format (same as auto-backtest)
+        const resolutionMap: Record<string, string> = {
+          '1': '1m', '5': '5m', '15': '15m', '30': '30m',
+          '60': '1h', '120': '2h', '240': '4h', '1D': '1d'
+        };
+        const mappedResolution = resolutionMap[resolution] || `${resolution}m`;
+
+        // Backtest last 30 days
+        const endDate = new Date();
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - 30);
+
+        logger.info(`Running backtest for ${strategyId}: ${symbol} ${mappedResolution}`);
+
+        const backtestResult = await backtestEngine.runBacktest({
+          strategyId,
+          symbol,
+          resolution: mappedResolution as any,
+          startDate,
+          endDate,
+          initialCapital: 10000,
+          riskPerTrade: 0.02,
+          leverage: 10,
+          commission: 0.0004,
+        });
+
+        logger.info(`Backtest completed for ${strategyId}: ${backtestResult.metrics.totalTrades} trades, ${backtestResult.metrics.winRate.toFixed(2)}% win rate`);
+
+        // Update strategy metrics
+        await prisma.strategy.update({
+          where: { id: strategyId },
+          data: {
+            winRate: backtestResult.metrics.winRate,
+            roi: backtestResult.metrics.totalPnlPct,
+            riskReward: backtestResult.metrics.avgLoss > 0 ? backtestResult.metrics.avgWin / backtestResult.metrics.avgLoss : 0,
+            maxDrawdown: backtestResult.metrics.maxDrawdownPct,
+            sharpeRatio: backtestResult.metrics.sharpeRatio,
+            totalTrades: backtestResult.metrics.totalTrades,
+            profitFactor: backtestResult.metrics.profitFactor,
+          },
+        });
+
+        logger.info(`Strategy metrics updated for ${strategyId}`);
+      } catch (error) {
+        logger.error(`Background backtest failed for strategy ${strategyId}:`, error);
+      }
+    })();
+
+    // Return immediately with success
+    res.json({
+      success: true,
+      message: 'Backtest started successfully. Results will be available shortly.',
+      backtestId: `backtest-${strategyId}-${Date.now()}`
+    });
+
+  } catch (error) {
+    logger.error('Failed to start backtest:', error);
     next(error);
   }
 });
@@ -1556,7 +1833,14 @@ async function validateStrategyCode(code: string, config: any) {
 }
 
 function generateStrategyCode(name: string): string {
-  return name.toUpperCase().replace(/[^A-Z0-9]/g, '_') + '_V1';
+  const code = name.toUpperCase().replace(/[^A-Z0-9]/g, '_') + '_V1';
+
+  // Enforce maximum length to prevent PostgreSQL index size errors
+  if (code.length > 100) {
+    throw new Error(`Strategy code identifier too long (${code.length} chars). Maximum 100 characters allowed. Please use a shorter strategy name.`);
+  }
+
+  return code;
 }
 
 function incrementVersion(currentVersion: string): string {
@@ -1646,7 +1930,7 @@ function extractStrategyConfig(strategyCode: string): {
 // ============================================================================
 // SIMPLE UPLOAD ENDPOINT - For quant team's complete strategy files
 // ============================================================================
-router.post('/upload-simple', authenticate, upload.fields([
+router.post('/upload-simple', authenticate, requireQuantRole, upload.fields([
   { name: 'strategyFile', maxCount: 1 },
   { name: 'requirementsFile', maxCount: 1 }
 ]), async (req: AuthenticatedRequest, res, next) => {
@@ -1856,6 +2140,7 @@ router.post('/upload-simple', authenticate, upload.fields([
           isActive: false, // Will be activated after backtest
           isApproved: false,
           isMarketplace: false,
+          isPublic: true, // Default to PUBLIC for new strategies
           supportedPairs: mergedConfig.supportedPairs ? JSON.stringify(mergedConfig.supportedPairs) : null,
           timeframes: mergedConfig.timeframes ? JSON.stringify(mergedConfig.timeframes) : null,
           executionConfig: mergedConfig, // ✅ Store extracted + user config for live trading
@@ -1986,7 +2271,7 @@ router.post('/upload-simple', authenticate, upload.fields([
 });
 
 // Get strategy logs
-router.get('/:id/logs', authenticate, async (req: AuthenticatedRequest, res, next) => {
+router.get('/:id/logs', authenticate, requireQuantRole, async (req: AuthenticatedRequest, res, next) => {
   try {
     const userId = req.userId!;
     const strategyId = req.params.id;
@@ -2016,33 +2301,8 @@ router.get('/:id/logs', authenticate, async (req: AuthenticatedRequest, res, nex
       });
     }
 
-    // Get all log files sorted by modification time (most recent first)
-    const logFiles = fs.readdirSync(logsDir)
-      .filter(file => file.startsWith('trading_') && file.endsWith('.log'))
-      .map(file => ({
-        name: file,
-        path: path.join(logsDir, file),
-        mtime: fs.statSync(path.join(logsDir, file)).mtime
-      }))
-      .sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
-
-    // Get the most recent log file
-    if (logFiles.length === 0) {
-      return res.json({
-        success: true,
-        logs: [],
-        message: 'No log files found'
-      });
-    }
-
-    const latestLogFile = logFiles[0];
-    const logContent = fs.readFileSync(latestLogFile.path, 'utf8');
-    const logLines = logContent.split('\n')
-      .filter(line => line.trim().length > 0)
-      .slice(-Number(limit));  // Get last N lines
-
-    // Parse log lines into structured format
-    const parsedLogs = logLines.map(line => {
+    // Helper function to parse log lines
+    const parseLogLine = (line: string) => {
       // Format: 2025-10-14 13:45:00 - INFO - Message here
       const match = line.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) - (\w+) - (.+)$/);
       if (match) {
@@ -2053,49 +2313,671 @@ router.get('/:id/logs', authenticate, async (req: AuthenticatedRequest, res, nex
         };
       }
       return { timestamp: '', level: 'INFO', message: line };
-    });
+    };
 
-    // Also get error CSV if it exists
-    const errorCsvPath = path.join(logsDir, 'error_log.csv');
-    let errors = [];
+    // Helper function to parse CSV lines
+    const parseCsvLine = (line: string) => {
+      const parts = line.split(',');
+      return {
+        timestamp: parts[0] || '',
+        level: parts[1] || 'INFO',
+        message: parts[2] || '',
+        function: parts[3] || '',
+        line: parts[4] || ''
+      };
+    };
 
-    if (fs.existsSync(errorCsvPath)) {
-      const errorContent = fs.readFileSync(errorCsvPath, 'utf8');
-      const errorLines = errorContent.split('\n')
+    // Get all log files in the directory
+    const allFiles = fs.readdirSync(logsDir);
+    const logFilesData: any[] = [];
+
+    // 1. Read trading_bot.log
+    const tradingBotPath = path.join(logsDir, 'trading_bot.log');
+    if (fs.existsSync(tradingBotPath)) {
+      const content = fs.readFileSync(tradingBotPath, 'utf8');
+      const lines = content.split('\n')
+        .filter(line => line.trim().length > 0)
+        .slice(-Number(limit));
+
+      logFilesData.push({
+        name: 'trading_bot.log',
+        displayName: 'Trading Bot',
+        type: 'log',
+        content: lines.map(parseLogLine),
+        size: fs.statSync(tradingBotPath).size,
+        mtime: fs.statSync(tradingBotPath).mtime
+      });
+    }
+
+    // 2. Read live_trader_{strategyId}.csv files
+    const liveTraderFiles = allFiles.filter(f =>
+      f.startsWith('live_trader_') && f.endsWith('.csv')
+    );
+    liveTraderFiles.forEach(file => {
+      const filePath = path.join(logsDir, file);
+      const content = fs.readFileSync(filePath, 'utf8');
+      const lines = content.split('\n')
         .slice(1)  // Skip header
         .filter(line => line.trim().length > 0)
-        .slice(-Number(limit));  // Get last N errors
+        .slice(-Number(limit));
 
-      errors = errorLines.map(line => {
-        const parts = line.split(',');
-        return {
-          timestamp: parts[0] || '',
-          level: parts[1] || 'ERROR',
-          message: parts[2] || '',
-          function: parts[3] || '',
-          line: parts[4] || ''
-        };
+      logFilesData.push({
+        name: file,
+        displayName: 'Live Trader',
+        type: 'csv',
+        content: lines.map(parseCsvLine),
+        size: fs.statSync(filePath).size,
+        mtime: fs.statSync(filePath).mtime
+      });
+    });
+
+    // 3. Read print_output_{strategyId}.log files
+    const printOutputFiles = allFiles.filter(f =>
+      f.startsWith('print_output_') && f.endsWith('.log')
+    );
+    printOutputFiles.forEach(file => {
+      const filePath = path.join(logsDir, file);
+      const content = fs.readFileSync(filePath, 'utf8');
+      const lines = content.split('\n')
+        .filter(line => line.trim().length > 0)
+        .slice(-Number(limit));
+
+      logFilesData.push({
+        name: file,
+        displayName: 'Print Output',
+        type: 'text',
+        content: lines.map(line => ({ timestamp: '', level: 'INFO', message: line })),
+        size: fs.statSync(filePath).size,
+        mtime: fs.statSync(filePath).mtime
+      });
+    });
+
+    // 4. Read error_log.csv
+    const errorCsvPath = path.join(logsDir, 'error_log.csv');
+    if (fs.existsSync(errorCsvPath)) {
+      const content = fs.readFileSync(errorCsvPath, 'utf8');
+      const lines = content.split('\n')
+        .slice(1)  // Skip header
+        .filter(line => line.trim().length > 0)
+        .slice(-Number(limit));
+
+      logFilesData.push({
+        name: 'error_log.csv',
+        displayName: 'Errors',
+        type: 'csv',
+        content: lines.map(parseCsvLine),
+        size: fs.statSync(errorCsvPath).size,
+        mtime: fs.statSync(errorCsvPath).mtime
+      });
+    }
+
+    // Sort by modification time (most recent first)
+    logFilesData.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
+
+    // If no log files found
+    if (logFilesData.length === 0) {
+      return res.json({
+        success: true,
+        logFiles: [],
+        message: 'No log files found'
       });
     }
 
     res.json({
       success: true,
-      logs: parsedLogs,
-      errors,
+      logFiles: logFilesData,
       metadata: {
-        totalLogFiles: logFiles.length,
-        latestLogFile: latestLogFile.name,
-        latestLogTime: latestLogFile.mtime,
-        logFilesAvailable: logFiles.map(f => ({
-          name: f.name,
-          timestamp: f.mtime,
-          size: fs.statSync(f.path).size
-        }))
+        totalLogFiles: logFilesData.length,
+        latestUpdate: logFilesData[0].mtime
       }
     });
 
   } catch (error) {
     logger.error('Failed to retrieve strategy logs:', error);
+    next(error);
+  }
+});
+
+// Get strategy code
+router.get('/:id/code', authenticate, requireQuantRole, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const strategyId = req.params.id;
+
+    // Check if strategy exists
+    const strategy = await prisma.strategy.findUnique({
+      where: { id: strategyId },
+      select: { id: true, name: true, code: true }
+    });
+
+    if (!strategy) {
+      return res.status(404).json({
+        error: 'Strategy not found'
+      });
+    }
+
+    // Find the strategy file on disk
+    const strategiesDir = path.join(__dirname, '../../strategies');
+    const strategyDir = path.join(strategiesDir, strategyId);
+
+    // Look for Python files in the strategy directory
+    let strategyFilePath: string | null = null;
+
+    if (fs.existsSync(strategyDir)) {
+      const files = fs.readdirSync(strategyDir);
+      const pyFile = files.find(f => f.endsWith('.py') && f !== '__init__.py');
+
+      if (pyFile) {
+        strategyFilePath = path.join(strategyDir, pyFile);
+      }
+    }
+
+    // If file exists on disk, return it; otherwise return code from database
+    let code = strategy.code;
+    let fileName = `${strategy.name}.py`;
+
+    if (strategyFilePath && fs.existsSync(strategyFilePath)) {
+      code = fs.readFileSync(strategyFilePath, 'utf8');
+      fileName = path.basename(strategyFilePath);
+    }
+
+    res.json({
+      success: true,
+      code,
+      fileName,
+      strategyId,
+      strategyName: strategy.name
+    });
+
+  } catch (error) {
+    logger.error('Failed to get strategy code:', error);
+    next(error);
+  }
+});
+
+// Update strategy code
+router.put('/:id/code', authenticate, requireQuantRole, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const strategyId = req.params.id;
+    const { code } = req.body;
+
+    if (!code || typeof code !== 'string') {
+      return res.status(400).json({
+        error: 'Code is required and must be a string'
+      });
+    }
+
+    // Check if strategy exists
+    const strategy = await prisma.strategy.findUnique({
+      where: { id: strategyId },
+      select: { id: true, name: true }
+    });
+
+    if (!strategy) {
+      return res.status(404).json({
+        error: 'Strategy not found'
+      });
+    }
+
+    // ✅ Extract STRATEGY_CONFIG from the new code
+    const configExtraction = extractStrategyConfig(code);
+    const updateData: any = {
+      updatedAt: new Date()
+    };
+
+    if (configExtraction.success && configExtraction.config) {
+      // Get existing executionConfig and merge
+      const existingStrategy = await prisma.strategy.findUnique({
+        where: { id: strategyId },
+        select: { executionConfig: true }
+      });
+
+      const mergedConfig = {
+        ...(existingStrategy?.executionConfig as any || {}),
+        ...configExtraction.config
+      };
+
+      updateData.executionConfig = mergedConfig;
+
+      logger.info(
+        `✅ Extracted STRATEGY_CONFIG for ${strategyId}: ${configExtraction.extractedParams.join(', ')}`
+      );
+    } else {
+      logger.warn(
+        `⚠️ Failed to extract STRATEGY_CONFIG for ${strategyId}: ${configExtraction.error || 'Unknown error'}`
+      );
+    }
+
+    // Update database with executionConfig
+    await prisma.strategy.update({
+      where: { id: strategyId },
+      data: updateData
+    });
+
+    // Update file on disk
+    const strategiesDir = path.join(__dirname, '../../strategies');
+    const strategyDir = path.join(strategiesDir, strategyId);
+
+    if (fs.existsSync(strategyDir)) {
+      const files = fs.readdirSync(strategyDir);
+      const pyFile = files.find(f => f.endsWith('.py') && f !== '__init__.py');
+
+      if (pyFile) {
+        const strategyFilePath = path.join(strategyDir, pyFile);
+        fs.writeFileSync(strategyFilePath, code, 'utf8');
+
+        // Clear Python cache
+        const pycacheDir = path.join(strategyDir, '__pycache__');
+        if (fs.existsSync(pycacheDir)) {
+          fs.rmSync(pycacheDir, { recursive: true, force: true });
+        }
+      }
+    }
+
+    // ✅ Update Redis cache and sync subscriptions if executionConfig was updated
+    if (updateData.executionConfig) {
+      try {
+        const execConfig = updateData.executionConfig as any;
+
+        // Update strategy settings in Redis
+        await settingsService.updateStrategySettings(
+          strategyId,
+          execConfig,
+          true  // publishUpdate = true
+        );
+
+        logger.info(`✅ Updated Redis cache for strategy ${strategyId}`);
+
+        // ✅ CRITICAL: Sync subscriptions with NULL values (using defaults)
+        const subscriptions = await prisma.strategySubscription.findMany({
+          where: {
+            strategyId,
+            isActive: true,
+            riskPerTrade: null,  // Only subscribers using default
+          },
+        });
+
+        logger.info(
+          `📊 Found ${subscriptions.length} subscriptions using default risk_per_trade. ` +
+          `Syncing to new default: ${execConfig.risk_per_trade || 'N/A'}`
+        );
+
+        // Update Redis cache for each subscription
+        for (const sub of subscriptions) {
+          try {
+            await settingsService.updateSubscriptionSettings(
+              sub.userId,
+              strategyId,
+              {
+                risk_per_trade: execConfig.risk_per_trade,
+                leverage: execConfig.leverage,
+                max_positions: execConfig.max_positions,
+                max_daily_loss: execConfig.max_daily_loss,
+              }
+            );
+          } catch (subError) {
+            logger.error(
+              `❌ Failed to update subscription cache for user ${sub.userId}:`,
+              subError
+            );
+          }
+        }
+      } catch (redisError) {
+        logger.error(`❌ Failed to update Redis cache:`, redisError);
+        // Don't fail the request if Redis update fails
+      }
+    }
+
+    logger.info(`Strategy code updated: ${strategyId}`);
+
+    res.json({
+      success: true,
+      message: 'Strategy code updated successfully'
+    });
+
+  } catch (error) {
+    logger.error('Failed to update strategy code:', error);
+    next(error);
+  }
+});
+
+// COMMENTED OUT: Quick validate strategy code (syntax + AST checks, no execution)
+// Removed temporarily until PM2 log viewer is implemented
+/* router.post('/:id/validate-quick', authenticate, requireQuantRole, quickValidationLimiter, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const strategyId = req.params.id;
+    const { code } = req.body;
+
+    if (!code || typeof code !== 'string') {
+      return res.status(400).json({
+        error: 'Code is required and must be a string'
+      });
+    }
+
+    // Check if strategy exists
+    const strategy = await prisma.strategy.findUnique({
+      where: { id: strategyId },
+      select: { id: true, name: true }
+    });
+
+    if (!strategy) {
+      return res.status(404).json({
+        error: 'Strategy not found'
+      });
+    }
+
+    logger.info(`Running quick validation for strategy: ${strategyId}`);
+
+    // Execute quick validator
+    const validatorScript = path.join(__dirname, '../../python/quick_validator.py');
+
+    const validationPromise = new Promise<any>((resolve, reject) => {
+      const pythonProcess = spawn('python3', [validatorScript], {
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+
+      let stdout = '';
+      let stderr = '';
+      const timeout = setTimeout(() => {
+        pythonProcess.kill();
+        reject(new Error('Validation timeout after 10 seconds'));
+      }, 10000);
+
+      pythonProcess.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      pythonProcess.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      pythonProcess.on('close', (code) => {
+        clearTimeout(timeout);
+
+        if (stderr && !stdout) {
+          return reject(new Error(`Validation error: ${stderr}`));
+        }
+
+        try {
+          const result = JSON.parse(stdout);
+          resolve(result);
+        } catch (parseError) {
+          reject(new Error(`Failed to parse validation results: ${stdout}`));
+        }
+      });
+
+      pythonProcess.on('error', (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      });
+
+      // Send code to validator via stdin
+      pythonProcess.stdin.write(code);
+      pythonProcess.stdin.end();
+    });
+
+    const validationResult = await validationPromise;
+
+    logger.info(`Quick validation completed for ${strategyId}: ${validationResult.valid ? 'PASS' : 'FAIL'}`);
+
+    res.json({
+      success: true,
+      validation: validationResult,
+      strategyId,
+      strategyName: strategy.name
+    });
+
+  } catch (error) {
+    logger.error('Failed to validate strategy code:', error);
+    res.status(500).json({
+      error: 'Validation failed',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+*/
+
+// COMMENTED OUT: Full sandbox validation (executes code in Docker container)
+// Removed temporarily until PM2 log viewer is implemented
+/* router.post('/:id/validate-sandbox', authenticate, requireQuantRole, sandboxValidationLimiter, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const strategyId = req.params.id;
+    const { code, requirements } = req.body;
+
+    if (!code || typeof code !== 'string') {
+      return res.status(400).json({
+        error: 'Code is required and must be a string'
+      });
+    }
+
+    // Check if strategy exists
+    const strategy = await prisma.strategy.findUnique({
+      where: { id: strategyId },
+      select: { id: true, name: true }
+    });
+
+    if (!strategy) {
+      return res.status(404).json({
+        error: 'Strategy not found'
+      });
+    }
+
+    logger.info(`Running sandbox validation for strategy: ${strategyId}`);
+
+    // Import docker sandbox service
+    const { dockerSandbox } = await import('../services/docker-sandbox');
+
+    // Check if Docker is available
+    const dockerAvailable = await dockerSandbox.isDockerAvailable();
+    if (!dockerAvailable) {
+      return res.status(503).json({
+        error: 'Docker not available',
+        message: 'Sandbox validation requires Docker to be running'
+      });
+    }
+
+    // Execute in sandbox
+    const result = await dockerSandbox.executeCode(code, requirements || '', {
+      memoryLimit: 512,
+      cpuLimit: 0.5,
+      timeout: 30000,
+      networkDisabled: true
+    });
+
+    // Parse sandbox executor output
+    let validationResult = {
+      success: result.success,
+      errors: [],
+      warnings: [],
+      info: [],
+      classesFound: [],
+      methodsFound: {},
+      executionTime: result.executionTime,
+      resourceUsage: result.resourceUsage,
+      timedOut: result.timedOut
+    };
+
+    if (result.success && result.stdout) {
+      try {
+        const parsed = JSON.parse(result.stdout);
+        validationResult = {
+          ...validationResult,
+          success: parsed.success,
+          errors: parsed.errors || [],
+          warnings: parsed.warnings || [],
+          info: parsed.info || [],
+          classesFound: parsed.classes_found || [],
+          methodsFound: parsed.methods_found || {}
+        };
+      } catch (parseError) {
+        logger.error('Failed to parse sandbox output:', parseError);
+        validationResult.errors.push({
+          severity: 'error',
+          message: 'Failed to parse sandbox output',
+          details: result.stdout
+        });
+      }
+    } else if (result.error) {
+      validationResult.errors.push({
+        severity: 'error',
+        message: result.error
+      });
+    } else if (result.stderr) {
+      validationResult.errors.push({
+        severity: 'error',
+        message: 'Execution error',
+        details: result.stderr
+      });
+    }
+
+    logger.info(`Sandbox validation completed for ${strategyId}: ${validationResult.success ? 'PASS' : 'FAIL'}`);
+
+    // Audit log: Record sandbox execution
+    try {
+      await prisma.sandboxExecutionLog.create({
+        data: {
+          userId: req.userId!,
+          strategyId,
+          executionType: 'VALIDATION',
+          success: validationResult.success,
+          executionTime: validationResult.executionTime,
+          memoryUsed: validationResult.resourceUsage?.memoryUsedMB || null,
+          cpuUsage: validationResult.resourceUsage?.cpuPercent || null,
+          timedOut: validationResult.timedOut,
+          errorCount: validationResult.errors.length,
+          warningCount: validationResult.warnings.length,
+          classesFound: validationResult.classesFound.join(','),
+          metadata: JSON.stringify({
+            errors: validationResult.errors,
+            warnings: validationResult.warnings
+          })
+        }
+      }).catch(err => {
+        // Don't fail the request if audit logging fails
+        logger.error('Failed to create audit log:', err);
+      });
+    } catch (auditError) {
+      logger.error('Audit logging error:', auditError);
+    }
+
+    res.json({
+      success: true,
+      validation: validationResult,
+      strategyId,
+      strategyName: strategy.name
+    });
+
+  } catch (error) {
+    logger.error('Failed to run sandbox validation:', error);
+
+    // Audit log: Record failed attempt
+    try {
+      await prisma.sandboxExecutionLog.create({
+        data: {
+          userId: req.userId!,
+          strategyId: req.params.id,
+          executionType: 'VALIDATION',
+          success: false,
+          executionTime: 0,
+          errorCount: 1,
+          warningCount: 0,
+          metadata: JSON.stringify({
+            error: error instanceof Error ? error.message : 'Unknown error'
+          })
+        }
+      }).catch(() => {
+        // Silently fail audit logging
+      });
+    } catch (auditError) {
+      // Ignore audit logging errors
+    }
+
+    res.status(500).json({
+      error: 'Sandbox validation failed',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+*/
+
+// Get requirements.txt
+router.get('/:id/requirements', authenticate, requireQuantRole, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const strategyId = req.params.id;
+
+    // Check if strategy exists
+    const strategy = await prisma.strategy.findUnique({
+      where: { id: strategyId }
+    });
+
+    if (!strategy) {
+      return res.status(404).json({
+        error: 'Strategy not found'
+      });
+    }
+
+    const strategiesDir = path.join(__dirname, '../../strategies');
+    const strategyDir = path.join(strategiesDir, strategyId);
+    const requirementsPath = path.join(strategyDir, 'requirements.txt');
+
+    let requirements = '# Add your Python package dependencies here\n# Example:\n# pandas==2.0.0\n# numpy==1.24.0\n';
+
+    if (fs.existsSync(requirementsPath)) {
+      requirements = fs.readFileSync(requirementsPath, 'utf8');
+    }
+
+    res.json({
+      success: true,
+      requirements
+    });
+
+  } catch (error) {
+    logger.error('Failed to get requirements:', error);
+    next(error);
+  }
+});
+
+// Update requirements.txt
+router.put('/:id/requirements', authenticate, requireQuantRole, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const strategyId = req.params.id;
+    const { requirements } = req.body;
+
+    if (typeof requirements !== 'string') {
+      return res.status(400).json({
+        error: 'Requirements must be a string'
+      });
+    }
+
+    // Check if strategy exists
+    const strategy = await prisma.strategy.findUnique({
+      where: { id: strategyId }
+    });
+
+    if (!strategy) {
+      return res.status(404).json({
+        error: 'Strategy not found'
+      });
+    }
+
+    const strategiesDir = path.join(__dirname, '../../strategies');
+    const strategyDir = path.join(strategiesDir, strategyId);
+
+    if (!fs.existsSync(strategyDir)) {
+      fs.mkdirSync(strategyDir, { recursive: true });
+    }
+
+    const requirementsPath = path.join(strategyDir, 'requirements.txt');
+    fs.writeFileSync(requirementsPath, requirements, 'utf8');
+
+    logger.info(`Requirements updated: ${strategyId}`);
+
+    res.json({
+      success: true,
+      message: 'Requirements updated successfully'
+    });
+
+  } catch (error) {
+    logger.error('Failed to update requirements:', error);
     next(error);
   }
 });

@@ -1,4 +1,5 @@
 import express from 'express';
+import http from 'http';
 import cors from 'cors';
 import helmet from 'helmet';
 import session from 'express-session';
@@ -19,15 +20,38 @@ import { marketplaceRoutes } from './routes/marketplace';
 import { marketDataRoutes } from './routes/market-data';
 import { logsRoutes } from './routes/logs';
 import { executionAuditRoutes } from './routes/execution-audit';
+import { clientRoutes } from './routes/client';
+import { adminRoutes } from './routes/admin';
+import { strategyInviteRoutes } from './routes/strategy-invite';
 import { errorHandler } from './middleware/errorHandler';
 import { startHealthCheckMonitoring } from './services/strategyExecutor';
 import { startOrderMonitoring } from './workers/order-monitor';
+import { redisSyncService } from './services/strategy-execution/redis-sync-service';
+// COMMENTED OUT: Terminal session manager - removed until PM2 log viewer is implemented
+// import { terminalSessionManager } from './services/terminal-session-manager';
 import './config/passport'; // Initialize passport configuration
+// Import prisma (with cache sync extension applied)
+import './utils/database';
 
 dotenv.config();
 
+// Validate critical environment variables
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET || JWT_SECRET === 'your-super-secret-jwt-key') {
+  console.error('❌ FATAL: JWT_SECRET environment variable is not set or using default value!');
+  console.error('❌ Please set JWT_SECRET in your .env file');
+  console.error('❌ The backend cannot start without a proper JWT_SECRET');
+  process.exit(1);
+}
+
+// Log JWT_SECRET confirmation (first 10 chars only for security)
+console.log(`✅ JWT_SECRET loaded: ${JWT_SECRET.substring(0, 10)}... (${JWT_SECRET.length} chars)`);
+
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// Enable trust proxy for rate limiting behind reverse proxy
+app.set('trust proxy', true);
 
 // Security middleware with CSP configuration for OAuth
 app.use(helmet({
@@ -95,7 +119,7 @@ app.get('/health', (req, res) => {
 });
 
 // API routes
-app.use('/api/auth', authRoutes);
+app.use('/api/user', authRoutes);
 app.use('/api/broker', brokerRoutes);
 app.use('/api/strategy-upload', strategyUploadRoutes);
 app.use('/api/bot', botRoutes);
@@ -103,21 +127,31 @@ app.use('/api/webhooks', webhookRoutes);
 app.use('/api/positions', positionsRoutes);
 app.use('/api/strategies', strategyExecutionRoutes);
 app.use('/api/strategies', backtestProgressRoutes); // SSE progress streaming
+app.use('/api/strategies', strategyInviteRoutes); // Invite & access request routes
 app.use('/api/backtest', backtestRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/logs', logsRoutes);
 app.use('/api/execution/audit', executionAuditRoutes);
 app.use('/api/marketplace', marketplaceRoutes);
 app.use('/api/market-data', marketDataRoutes);
+app.use('/api/client', clientRoutes); // Client dashboard routes
+app.use('/api/admin', adminRoutes); // Admin dashboard routes
 
 // Error handling middleware
 app.use(errorHandler);
 
+// Create HTTP server
+const httpServer = http.createServer(app);
+
+// COMMENTED OUT: WebSocket server for terminal sessions - removed until PM2 log viewer is implemented
+// terminalSessionManager.initialize(httpServer);
+
 // Start server
-app.listen(PORT, () => {
+httpServer.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV}`);
   console.log(`🔒 CORS enabled for: ${process.env.FRONTEND_URL}`);
+  // console.log(`🔌 WebSocket server initialized for terminal sessions`);
 
   // Start health check monitoring for strategy executor
   startHealthCheckMonitoring();
@@ -126,6 +160,18 @@ app.listen(PORT, () => {
   // Start order monitoring for SL/TP
   startOrderMonitoring();
   console.log(`📊 Order monitoring service started`);
+
+  // Initialize Redis subscription cache from PostgreSQL (source of truth)
+  redisSyncService.hydrateAllSubscriptions()
+    .then(() => {
+      // Start periodic reconciliation (every 5 minutes)
+      redisSyncService.startPeriodicReconciliation(5);
+      console.log(`🔄 Redis subscription sync initialized`);
+    })
+    .catch((error) => {
+      console.error('❌ Failed to initialize Redis sync:', error);
+      // Don't crash the server - retry on next reconciliation cycle
+    });
 });
 
 export default app;

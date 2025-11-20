@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { RedeployModal } from '@/components/strategy/redeploy-modal';
 import {
   ArrowLeft,
   Play,
@@ -33,6 +34,7 @@ export default function SubscriptionDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [redeployModalOpen, setRedeployModalOpen] = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -61,6 +63,8 @@ export default function SubscriptionDetailPage() {
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load subscription details');
+      setSubscription(null); // Clear subscription on error to prevent showing stale/partial data
+      setStats(null);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -83,15 +87,14 @@ export default function SubscriptionDetailPage() {
     }
   };
 
-  const handleResume = async () => {
-    if (!token || !subscription) return;
+  const handleResume = () => {
+    if (!subscription) return;
+    setRedeployModalOpen(true);
+  };
 
-    try {
-      await StrategyExecutionAPI.resumeSubscription(subscription.id, token);
-      fetchSubscriptionDetails();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to resume subscription');
-    }
+  const handleRedeploySuccess = () => {
+    setRedeployModalOpen(false);
+    fetchSubscriptionDetails();
   };
 
   const handleCancel = async () => {
@@ -137,12 +140,32 @@ export default function SubscriptionDetailPage() {
     return (
       <div className="container mx-auto p-6">
         <div className="flex flex-col items-center justify-center h-64 space-y-4">
-          <h2 className="text-xl font-semibold">Subscription Not Found</h2>
-          <p className="text-muted-foreground">The requested subscription could not be found.</p>
-          <Button onClick={handleBack} variant="outline">
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Subscriptions
-          </Button>
+          {error ? (
+            <>
+              <AlertCircle className="h-12 w-12 text-destructive" />
+              <h2 className="text-xl font-semibold">Failed to Load Subscription</h2>
+              <p className="text-muted-foreground text-center max-w-md">{error}</p>
+              <div className="flex gap-2">
+                <Button onClick={handleRefresh} disabled={refreshing}>
+                  <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+                  Retry
+                </Button>
+                <Button onClick={handleBack} variant="outline">
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Back to Subscriptions
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <h2 className="text-xl font-semibold">Subscription Not Found</h2>
+              <p className="text-muted-foreground">The requested subscription could not be found.</p>
+              <Button onClick={handleBack} variant="outline">
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Back to Subscriptions
+              </Button>
+            </>
+          )}
         </div>
       </div>
     );
@@ -433,6 +456,16 @@ export default function SubscriptionDetailPage() {
             </CardDescription>
           </CardHeader>
         </Card>
+
+        {/* Redeploy Modal */}
+        {subscription && (
+          <RedeployModal
+            open={redeployModalOpen}
+            onOpenChange={setRedeployModalOpen}
+            subscription={subscription}
+            onSuccess={handleRedeploySuccess}
+          />
+        )}
       </div>
     </div>
   );

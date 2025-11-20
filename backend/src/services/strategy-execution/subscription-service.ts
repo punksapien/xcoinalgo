@@ -15,10 +15,10 @@ interface CreateSubscriptionParams {
   userId: string
   strategyId: string
   capital: number
-  riskPerTrade: number
-  leverage?: number
-  maxPositions?: number
-  maxDailyLoss?: number
+  riskPerTrade?: number  // Optional - NULL means use strategy default
+  leverage?: number       // Optional - NULL means use strategy default
+  maxPositions?: number   // Optional - NULL means use strategy default
+  maxDailyLoss?: number   // Optional - NULL means use strategy default
   slAtrMultiplier?: number
   tpAtrMultiplier?: number
   brokerCredentialId: string
@@ -41,6 +41,28 @@ interface SubscriptionWithStrategy extends StrategySubscription {
 
 class SubscriptionService {
   /**
+   * Resolve subscription settings by merging user overrides with strategy defaults
+   * NULL values = use strategy config default
+   */
+  private resolveSubscriptionSettings(
+    subscription: StrategySubscription & { strategy?: { executionConfig: any } }
+  ): {
+    riskPerTrade: number
+    leverage: number
+    maxPositions: number
+    maxDailyLoss: number
+  } {
+    const strategyConfig = subscription.strategy?.executionConfig as any || {}
+
+    return {
+      riskPerTrade: subscription.riskPerTrade ?? strategyConfig.risk_per_trade ?? 0.02,
+      leverage: subscription.leverage ?? strategyConfig.leverage ?? 10,
+      maxPositions: subscription.maxPositions ?? strategyConfig.max_positions ?? 1,
+      maxDailyLoss: subscription.maxDailyLoss ?? strategyConfig.max_daily_loss ?? 0.05,
+    }
+  }
+
+  /**
    * Create a new subscription for a user
    */
   async createSubscription(
@@ -50,10 +72,10 @@ class SubscriptionService {
       userId,
       strategyId,
       capital,
-      riskPerTrade,
-      leverage = 1,
-      maxPositions = 1,
-      maxDailyLoss = 0.05,
+      riskPerTrade,  // Can be undefined = use strategy default
+      leverage,       // Can be undefined = use strategy default
+      maxPositions,   // Can be undefined = use strategy default
+      maxDailyLoss,   // Can be undefined = use strategy default
       slAtrMultiplier,
       tpAtrMultiplier,
       brokerCredentialId,
@@ -72,12 +94,6 @@ class SubscriptionService {
         },
       })
 
-      if (existing) {
-        throw new Error(
-          `User ${userId} is already subscribed to strategy ${strategyId}`
-        )
-      }
-
       // Get strategy to check if this is first subscriber
       const strategy = await prisma.strategy.findUnique({
         where: { id: strategyId },
@@ -92,8 +108,6 @@ class SubscriptionService {
         throw new Error(`Strategy ${strategyId} not found`)
       }
 
-      const isFirstSubscriber = strategy.subscriberCount === 0
-
       // Infer trading type if not provided
       const execCfg: any = (strategy?.executionConfig as any) || {}
       const inferredTradingType: 'spot' | 'futures' = tradingType
@@ -101,25 +115,76 @@ class SubscriptionService {
         : (execCfg.symbol?.startsWith('B-') || !!execCfg.supportsFutures)
           ? 'futures' : 'spot'
 
-      // Create subscription in database
-      const subscription = await prisma.strategySubscription.create({
-        data: {
-          userId,
-          strategyId,
-          capital,
-          riskPerTrade,
-          leverage,
-          maxPositions,
-          maxDailyLoss,
-          slAtrMultiplier,
-          tpAtrMultiplier,
-          brokerCredentialId,
-          tradingType: inferredTradingType,
-          marginCurrency: marginCurrency || 'USDT',
-          isActive: true,
-          isPaused: false,
-        },
-      })
+      let subscription: StrategySubscription
+      let isReactivation = false
+
+      if (existing) {
+        // If subscription exists and is active, throw error
+        if (existing.isActive) {
+          throw new Error(
+            `User ${userId} is already subscribed to strategy ${strategyId}`
+          )
+        }
+
+        // If subscription exists but is cancelled (isActive: false), reactivate it
+        console.log(
+          `Reactivating cancelled subscription ${existing.id} for user ${userId} ` +
+          `to strategy ${strategyId}`
+        )
+
+        subscription = await prisma.strategySubscription.update({
+          where: { id: existing.id },
+          data: {
+            // Update all settings - undefined = NULL = use strategy default
+            capital,
+            riskPerTrade: riskPerTrade !== undefined ? riskPerTrade : null,
+            leverage: leverage !== undefined ? leverage : null,
+            maxPositions: maxPositions !== undefined ? maxPositions : null,
+            maxDailyLoss: maxDailyLoss !== undefined ? maxDailyLoss : null,
+            slAtrMultiplier,
+            tpAtrMultiplier,
+            brokerCredentialId,
+            tradingType: inferredTradingType,
+            marginCurrency: marginCurrency || 'USDT',
+            // Reactivate subscription
+            isActive: true,
+            isPaused: false,
+            subscribedAt: new Date(),
+            unsubscribedAt: null,
+            pausedAt: null,
+            // Reset stats for new subscription period
+            totalTrades: 0,
+            winningTrades: 0,
+            losingTrades: 0,
+            totalPnl: 0,
+          },
+        })
+
+        isReactivation = true
+      } else {
+        // Create new subscription
+        // Store NULL for undefined values = use strategy default
+        subscription = await prisma.strategySubscription.create({
+          data: {
+            userId,
+            strategyId,
+            capital,
+            riskPerTrade: riskPerTrade !== undefined ? riskPerTrade : null,
+            leverage: leverage !== undefined ? leverage : null,
+            maxPositions: maxPositions !== undefined ? maxPositions : null,
+            maxDailyLoss: maxDailyLoss !== undefined ? maxDailyLoss : null,
+            slAtrMultiplier,
+            tpAtrMultiplier,
+            brokerCredentialId,
+            tradingType: inferredTradingType,
+            marginCurrency: marginCurrency || 'USDT',
+            isActive: true,
+            isPaused: false,
+          },
+        })
+      }
+
+      const isFirstSubscriber = strategy.subscriberCount === 0
 
       // Increment subscriber count
       await prisma.strategy.update({
@@ -129,47 +194,163 @@ class SubscriptionService {
         },
       })
 
-      // Initialize subscription settings in Redis
+      // Resolve final settings (merge user overrides with strategy defaults)
+      const resolvedSettings = this.resolveSubscriptionSettings({
+        ...subscription,
+        strategy: { executionConfig: strategy.executionConfig }
+      })
+
+      // Initialize subscription settings in Redis with resolved values
       await settingsService.initializeSubscription(userId, strategyId, {
         capital,
-        risk_per_trade: riskPerTrade,
-        leverage,
-        max_positions: maxPositions,
-        max_daily_loss: maxDailyLoss,
+        risk_per_trade: resolvedSettings.riskPerTrade,
+        leverage: resolvedSettings.leverage,
+        max_positions: resolvedSettings.maxPositions,
+        max_daily_loss: resolvedSettings.maxDailyLoss,
         sl_atr_multiplier: slAtrMultiplier,
         tp_atr_multiplier: tpAtrMultiplier,
         broker_credential_id: brokerCredentialId,
         is_active: true,
       })
 
+      console.log(
+        `📊 Subscription settings initialized for ${userId}:\n` +
+        `   Risk/Trade: ${resolvedSettings.riskPerTrade} ${subscription.riskPerTrade === null ? '(strategy default)' : '(custom)'}\n` +
+        `   Leverage: ${resolvedSettings.leverage}x ${subscription.leverage === null ? '(strategy default)' : '(custom)'}`
+      )
+
       // If first subscriber, register strategy in registry
-      if (isFirstSubscriber && strategy.executionConfig) {
-        const config = strategy.executionConfig as any
+      if (isFirstSubscriber) {
+        let config = strategy.executionConfig as any
 
-        // Support both 'symbol' and 'pair' fields
-        const symbol = config.symbol || config.pair
+        // 🔧 AUTO-SYNC: If executionConfig is missing or incomplete, extract from Python file
+        const needsSync = !config || !config.pair || !config.resolution
 
-        if (symbol && config.resolution) {
-          // ✅ NEW: Initialize strategy settings in Redis with ALL parameters from executionConfig
-          await settingsService.initializeStrategy(
-            strategyId,
-            config,  // This includes ALL STRATEGY_CONFIG parameters (st_period, ema_fast_len, etc.)
-            1
+        if (needsSync) {
+          console.warn(
+            `⚠️  Strategy ${strategyId} missing executionConfig or pair/resolution. ` +
+            `Attempting auto-sync from Python file...`
           )
 
-          console.log(
-            `Initialized strategy ${strategyId} settings in Redis with ${Object.keys(config).length} parameters`
-          )
+          try {
+            // Import dependencies
+            const fs = await import('fs')
+            const path = await import('path')
+            const { extractStrategyConfig } = await import('../../utils/strategy-config-extractor')
 
-          await strategyRegistry.registerStrategy(
-            strategyId,
-            symbol,
-            config.resolution
-          )
+            // Find Python file
+            const strategiesDir = path.join(__dirname, '../../../strategies')
+            const strategyDir = path.join(strategiesDir, strategyId)
 
-          console.log(
-            `Registered strategy ${strategyId} for ${symbol}/${config.resolution} ` +
-            `(first subscriber)`
+            if (fs.existsSync(strategyDir)) {
+              const files = fs.readdirSync(strategyDir)
+              const pythonFile = files.find((f: string) => f.endsWith('.py'))
+
+              if (pythonFile) {
+                const pythonFilePath = path.join(strategyDir, pythonFile)
+                const strategyCode = fs.readFileSync(pythonFilePath, 'utf8')
+
+                // Extract config
+                const configExtraction = extractStrategyConfig(strategyCode)
+
+                if (configExtraction.success && configExtraction.config) {
+                  // Merge extracted config with existing (preserve things like minMargin)
+                  const extractedConfig = configExtraction.config
+                  const mergedConfig = {
+                    ...extractedConfig,
+                    ...(config || {})
+                  }
+
+                  // Ensure pair/resolution are from extracted config
+                  if (extractedConfig.pair) mergedConfig.pair = extractedConfig.pair
+                  if (extractedConfig.resolution) mergedConfig.resolution = extractedConfig.resolution
+
+                  // Update database
+                  await prisma.strategy.update({
+                    where: { id: strategyId },
+                    data: { executionConfig: mergedConfig }
+                  })
+
+                  config = mergedConfig
+                  console.log(
+                    `✅ Auto-synced config from Python file: ` +
+                    `pair=${config.pair}, resolution=${config.resolution}`
+                  )
+                } else {
+                  console.error(
+                    `❌ Failed to extract STRATEGY_CONFIG from ${pythonFile}. ` +
+                    `Strategy will NOT be registered with scheduler.`
+                  )
+                }
+              } else {
+                console.error(
+                  `❌ No Python file found in ${strategyDir}. ` +
+                  `Strategy will NOT be registered with scheduler.`
+                )
+              }
+            } else {
+              console.error(
+                `❌ Strategy directory not found: ${strategyDir}. ` +
+                `Strategy will NOT be registered with scheduler.`
+              )
+            }
+          } catch (syncError) {
+            console.error(
+              `❌ Auto-sync failed for strategy ${strategyId}:`,
+              syncError instanceof Error ? syncError.message : String(syncError)
+            )
+          }
+        }
+
+        // Proceed with registration if we now have valid config
+        if (config) {
+          // Support both 'symbol' and 'pair' fields
+          const symbol = config.symbol || config.pair
+
+          if (symbol && config.resolution) {
+            try {
+              // ✅ Initialize strategy settings in Redis with ALL parameters from executionConfig
+              await settingsService.initializeStrategy(
+                strategyId,
+                config,  // This includes ALL STRATEGY_CONFIG parameters (st_period, ema_fast_len, etc.)
+                1
+              )
+
+              console.log(
+                `Initialized strategy ${strategyId} settings in Redis with ${Object.keys(config).length} parameters`
+              )
+
+              await strategyRegistry.registerStrategy(
+                strategyId,
+                symbol,
+                config.resolution
+              )
+
+              console.log(
+                `✅ Registered strategy ${strategyId} for ${symbol}/${config.resolution} ` +
+                `(first subscriber)`
+              )
+            } catch (regError) {
+              console.error(
+                `❌ Failed to register strategy ${strategyId} with scheduler:`,
+                regError instanceof Error ? regError.message : String(regError)
+              )
+              console.error(
+                `⚠️  WARNING: Subscription created but strategy will NOT execute! ` +
+                `Manual intervention required.`
+              )
+              // Don't throw - subscription is still created, just not scheduled
+            }
+          } else {
+            console.error(
+              `❌ Strategy ${strategyId} missing pair (${symbol}) or resolution (${config.resolution}). ` +
+              `Cannot register with scheduler. Subscription created but strategy will NOT execute!`
+            )
+          }
+        } else {
+          console.error(
+            `❌ Strategy ${strategyId} has no executionConfig even after auto-sync attempt. ` +
+            `Subscription created but strategy will NOT execute!`
           )
         }
       }
@@ -182,7 +363,7 @@ class SubscriptionService {
       })
 
       console.log(
-        `Created subscription ${subscription.id} for user ${userId} ` +
+        `${isReactivation ? 'Reactivated' : 'Created'} subscription ${subscription.id} for user ${userId} ` +
         `on strategy ${strategyId}`
       )
 
@@ -329,6 +510,10 @@ class SubscriptionService {
 
   /**
    * Get active subscribers for a strategy
+   * Includes strategy executionConfig for resolving defaults
+   *
+   * NOTE: This method reads from PostgreSQL (source of truth)
+   * Redis sync service ensures Redis cache stays in sync
    */
   async getActiveSubscribers(
     strategyId: string
@@ -341,6 +526,13 @@ class SubscriptionService {
           isPaused: false,
         },
         include: {
+          strategy: {
+            select: {
+              id: true,
+              name: true,
+              executionConfig: true,
+            },
+          },
           brokerCredential: {
             select: {
               id: true,

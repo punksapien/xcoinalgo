@@ -404,6 +404,8 @@ class LiveTrader:
         Returns:
             Position size (quantity)
         """
+        MIN_QUANTITY = Decimal('0.007')  # Minimum quantity for ETH futures
+
         risk_amount = capital * risk_per_trade
         distance = abs(entry_price - stop_loss) / entry_price
         notional = risk_amount * leverage
@@ -411,6 +413,12 @@ class LiveTrader:
 
         # Round to instrument precision
         adjusted_quantity = (Decimal(str(quantity)) // self.qty_increment) * self.qty_increment
+
+        # Enforce minimum quantity
+        if Decimal('0') < adjusted_quantity < MIN_QUANTITY:
+            logging.warning(f"Calculated quantity {adjusted_quantity} below minimum {MIN_QUANTITY}, adjusting to minimum")
+            adjusted_quantity = MIN_QUANTITY
+
         return float(adjusted_quantity)
 
     def place_order_for_subscriber(
@@ -467,9 +475,14 @@ class LiveTrader:
         except Exception as e:
             logging.error(f"User {user_id}: Failed to place order. Error: {e}", exc_info=True)
 
-    def check_for_new_signal(self, df: pd.DataFrame):
+    def check_for_new_signal(self, df: pd.DataFrame, user_input_balance: Optional[float] = None):
         """
         Check for entry signals and place orders for ALL subscribers.
+
+        Args:
+            df: DataFrame with price data and generated signals
+            user_input_balance: Optional capital from subscription modal (for new deployment format)
+                               Falls back to subscriber['capital'] if not provided
         """
         if df.empty:
             return
@@ -501,7 +514,16 @@ class LiveTrader:
 
         # Place orders for ALL subscribers
         for subscriber in self.subscribers:
-            self.place_order_for_subscriber(subscriber, signal, entry_price, stop_loss, take_profit)
+            # Use user_input_balance if provided, otherwise fall back to subscriber's capital
+            if user_input_balance is not None:
+                # Override subscriber capital with the parameter value
+                subscriber_with_capital = {**subscriber, 'capital': user_input_balance}
+                logging.info(f"Using subscription modal capital: {user_input_balance} for user {subscriber.get('user_id')}")
+            else:
+                # Use capital from subscriber dict (backward compatible)
+                subscriber_with_capital = subscriber
+
+            self.place_order_for_subscriber(subscriber_with_capital, signal, entry_price, stop_loss, take_profit)
 
     def backtest(self) -> Dict[str, Any]:
         """

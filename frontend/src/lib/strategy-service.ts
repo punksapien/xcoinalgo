@@ -14,6 +14,7 @@ export interface Strategy {
   marginCurrency?: string;
   deploymentCount: number;
   subscriberCount?: number;
+  isSubscribed?: boolean;
   createdAt: string;
   features?: {
     indicators: string[];
@@ -24,6 +25,14 @@ export interface Strategy {
   };
   timeframes?: string[];
   supportedPairs?: string[];
+  // Visibility and access control
+  isPublic?: boolean;
+  accessStatus?: 'APPROVED' | 'PENDING' | 'REJECTED' | null;
+  isOwned?: boolean;
+  // Execution configuration
+  executionConfig?: {
+    minMargin?: number;
+  };
 }
 
 interface CachedData {
@@ -39,11 +48,13 @@ interface FilterOptions {
   author?: string;
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
+  page?: number;
+  limit?: number;
 }
 
 class StrategyService {
   private cache: CachedData | null = null;
-  private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+  private readonly CACHE_DURATION = 2 * 1000; // 2 seconds - balance between real-time updates and performance
   private searchIndex: Map<string, Set<number>> = new Map();
   private strategies: Strategy[] = [];
   private fetchPromise: Promise<void> | null = null;
@@ -52,20 +63,24 @@ class StrategyService {
     // Don't initialize synchronously - fetch on demand
   }
 
-  private async initializeData() {
+  private async initializeData(token?: string) {
     // Prevent multiple simultaneous fetches
     if (this.fetchPromise) {
       return this.fetchPromise;
     }
 
-    this.fetchPromise = this.fetchStrategiesFromAPI();
+    this.fetchPromise = this.fetchStrategiesFromAPI(1, 1000, token);
     await this.fetchPromise;
     this.fetchPromise = null;
   }
 
-  private async fetchStrategiesFromAPI() {
+  private async fetchStrategiesFromAPI(page: number = 1, limit: number = 1000, token?: string) {
     try {
-      const response = await fetch('/api/marketplace');
+      const headers: HeadersInit = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      const response = await fetch(`/api/marketplace?page=${page}&limit=${limit}`, { headers });
       if (!response.ok) {
         console.error('Failed to fetch strategies from API');
         this.strategies = [];
@@ -89,9 +104,14 @@ class StrategyService {
         marginRequired: s.marginRequired as number | undefined,
         deploymentCount: (s.subscriberCount as number) || 0,
         subscriberCount: (s.subscriberCount as number) || 0,
+        isSubscribed: s.isSubscribed as boolean | undefined,
         createdAt: s.createdAt as string,
         timeframes: (s.timeframes as string[]) || [],
         supportedPairs: (s.supportedPairs as string[]) || [],
+        isPublic: s.isPublic as boolean | undefined,
+        accessStatus: s.accessStatus as 'APPROVED' | 'PENDING' | 'REJECTED' | null | undefined,
+        isOwned: s.isOwned as boolean | undefined,
+        executionConfig: s.executionConfig as { minMargin?: number } | undefined,
       }));
 
       this.buildSearchIndex();
@@ -278,13 +298,13 @@ class StrategyService {
   }
 
   // Public API methods
-  async getStrategies(options: FilterOptions = {}): Promise<{
+  async getStrategies(options: FilterOptions = {}, token?: string): Promise<{
     strategies: Strategy[];
     total: number;
   }> {
     // Ensure data is loaded
     if (this.strategies.length === 0 || !this.isCacheValid()) {
-      await this.initializeData();
+      await this.initializeData(token);
     }
 
     let matchingIndices = this.fastSearch(options.search || '');
@@ -336,6 +356,13 @@ class StrategyService {
 
     const strategy = this.strategies.find(s => s.id === id);
     return strategy || null;
+  }
+
+  // Force cache invalidation (for manual refresh)
+  invalidateCache(): void {
+    this.cache = null;
+    this.strategies = [];
+    this.searchIndex.clear();
   }
 
   // Performance monitoring

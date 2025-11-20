@@ -46,17 +46,91 @@ class StrategyRegistry {
         },
         select: {
           id: true,
+          name: true,
           executionConfig: true,
         },
       })
 
       console.log(`Found ${strategies.length} active strategies`)
 
-      // Register each strategy
+      // 🔧 AUTO-SYNC: Ensure all strategies have complete config before registration
       for (const strategy of strategies) {
-        const config = strategy.executionConfig as any
-        if (config?.symbol && config?.resolution) {
-          await this.registerStrategy(strategy.id, config.symbol, config.resolution)
+        let config = strategy.executionConfig as any
+        const needsSync = !config || !config.pair || !config.resolution
+
+        if (needsSync) {
+          console.warn(`⚠️  Strategy ${strategy.name} missing config. Auto-syncing from Python file...`)
+
+          try {
+            const fs = await import('fs')
+            const path = await import('path')
+            const { extractStrategyConfig } = await import('../../utils/strategy-config-extractor')
+
+            const strategiesDir = path.join(__dirname, '../../../strategies')
+            const strategyDir = path.join(strategiesDir, strategy.id)
+
+            if (fs.existsSync(strategyDir)) {
+              const files = fs.readdirSync(strategyDir)
+              const pythonFile = files.find((f: string) => f.endsWith('.py'))
+
+              if (pythonFile) {
+                const pythonFilePath = path.join(strategyDir, pythonFile)
+                const strategyCode = fs.readFileSync(pythonFilePath, 'utf8')
+                const extraction = extractStrategyConfig(strategyCode)
+
+                if (extraction.success && extraction.config) {
+                  // Merge: Preserve admin-set values (like minMargin), use Python file for technical params
+                  const extractedConfig = extraction.config
+                  const existingConfig = (strategy.executionConfig as Record<string, any>) || {}
+
+                  const mergedConfig = {
+                    ...extractedConfig,     // Start with Python file defaults
+                    ...existingConfig,      // Preserve admin-set values like minMargin
+                  }
+
+                  // Critical technical parameters MUST come from Python file (not overrideable)
+                  const technicalParams = ['pair', 'resolution', 'margin_currency', 'base_resolution',
+                                          'signal_resolution', 'exit_resolution', 'is_multi_resolution',
+                                          'dema_len', 'rsi_len', 'rsi_ma_len', 'swing_lookback',
+                                          'sl_pct', 'tp_pct', 'trailing_activation_pct', 'trailing_move_pct',
+                                          'trailing_pct', 'commission_rate', 'gst_rate']
+
+                  technicalParams.forEach(param => {
+                    if (extractedConfig[param] !== undefined) {
+                      mergedConfig[param] = extractedConfig[param]
+                    }
+                  })
+
+                  // Update database with merged config
+                  await prisma.strategy.update({
+                    where: { id: strategy.id },
+                    data: { executionConfig: mergedConfig }
+                  })
+
+                  config = mergedConfig
+                  console.log(`✅ Auto-synced ${extraction.extractedParams.length} parameters, preserved admin overrides for ${strategy.name}`)
+                } else {
+                  console.error(`❌ Config extraction failed for ${strategy.name}`)
+                }
+              }
+            }
+          } catch (syncError) {
+            console.error(`❌ Auto-sync failed for ${strategy.name}:`, syncError)
+          }
+        }
+
+        // Sync config to Redis via settingsService
+        if (config && Object.keys(config).length > 0) {
+          const { settingsService } = await import('./settings-service')
+          await settingsService.initializeStrategy(strategy.id, config, 1)
+        }
+
+        // Register strategy if has required fields
+        const symbol = config?.symbol || config?.pair
+        if (symbol && config?.resolution) {
+          await this.registerStrategy(strategy.id, symbol, config.resolution)
+        } else {
+          console.error(`❌ Cannot register ${strategy.name} - missing pair/resolution even after sync`)
         }
       }
 
@@ -352,6 +426,101 @@ class StrategyRegistry {
       errors.push(errorMsg)
       console.error('Cleanup failed:', error)
       return { cleaned, errors }
+    }
+  }
+
+  /**
+   * 🔄 RECONCILIATION: Sync Redis cache with database
+   * Validates Redis against DB bidirectionally:
+   * 1. Removes entries in Redis but not in DB (orphaned)
+   * 2. Adds entries in DB but not in Redis (missing)
+   *
+   * Called periodically (every 5 min) to auto-heal cache drift
+   */
+  async reconcileWithDatabase(): Promise<{ orphaned: number; missing: number; errors: string[] }> {
+    console.log('🔄 Starting cache reconciliation...')
+    let orphanedCount = 0
+    let missingCount = 0
+    const errors: string[] = []
+
+    try {
+      // STEP 1: Remove orphaned entries (in Redis but not in DB)
+      const candleKeys = await redis.keys('candle:*')
+
+      for (const candleKey of candleKeys) {
+        const members = await redis.smembers(candleKey)
+
+        for (const strategyId of members) {
+          // Skip empty/invalid entries
+          if (!strategyId || strategyId.trim() === '') {
+            await redis.srem(candleKey, strategyId)
+            orphanedCount++
+            continue
+          }
+
+          // Check if strategy exists in DB and is active
+          const strategy = await prisma.strategy.findUnique({
+            where: { id: strategyId },
+            select: {
+              id: true,
+              isActive: true,
+              executionConfig: true
+            }
+          })
+
+          if (!strategy || !strategy.isActive) {
+            await redis.srem(candleKey, strategyId)
+            console.log(`  🗑️  Removed orphaned strategy ${strategyId} from ${candleKey}`)
+            orphanedCount++
+          }
+        }
+
+        // Clean up empty candle keys
+        const remainingMembers = await redis.smembers(candleKey)
+        if (remainingMembers.length === 0) {
+          await redis.del(candleKey)
+          console.log(`  🗑️  Removed empty candle key: ${candleKey}`)
+        }
+      }
+
+      // STEP 2: Add missing entries (in DB but not in Redis)
+      const activeStrategies = await prisma.strategy.findMany({
+        where: {
+          isActive: true,
+          subscriberCount: { gt: 0 }
+        },
+        select: {
+          id: true,
+          executionConfig: true
+        }
+      })
+
+      for (const strategy of activeStrategies) {
+        const config = strategy.executionConfig as any
+        const symbol = config?.symbol || config?.pair
+        const resolution = config?.resolution
+
+        if (!symbol || !resolution) {
+          continue
+        }
+
+        const candleKey = this.getCandleKey(symbol, resolution)
+        const isMember = await redis.sismember(candleKey, strategy.id)
+
+        if (!isMember) {
+          await this.registerStrategy(strategy.id, symbol, resolution)
+          console.log(`  ➕ Added missing strategy ${strategy.id} to ${candleKey}`)
+          missingCount++
+        }
+      }
+
+      console.log(`✅ Reconciliation complete. Orphaned: ${orphanedCount}, Missing: ${missingCount}`)
+      return { orphaned: orphanedCount, missing: missingCount, errors }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      errors.push(errorMsg)
+      console.error('❌ Reconciliation failed:', error)
+      return { orphaned: orphanedCount, missing: missingCount, errors }
     }
   }
 

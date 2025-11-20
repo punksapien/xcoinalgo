@@ -7,6 +7,7 @@ import { StrategyExecutionAPI, type Subscription } from '@/lib/api/strategy-exec
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { RedeployModal } from '@/components/strategy/redeploy-modal';
 import {
   Play,
   Pause,
@@ -18,7 +19,8 @@ import {
   TrendingUp,
   Users,
   Clock,
-  Activity
+  Activity,
+  Trash2
 } from 'lucide-react';
 
 interface LiveStats {
@@ -37,8 +39,10 @@ export default function SubscriptionsPage() {
   const [subscriptions, setSubscriptions] = useState<SubscriptionWithLiveStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<'all' | 'active' | 'paused'>('all');
+  const [filter, setFilter] = useState<'all' | 'active' | 'paused' | 'cancelled'>('all');
   const [refreshing, setRefreshing] = useState(false);
+  const [redeployModalOpen, setRedeployModalOpen] = useState(false);
+  const [selectedSubscription, setSelectedSubscription] = useState<SubscriptionWithLiveStats | null>(null);
   const { token, isAuthenticated } = useAuth();
   const router = useRouter();
 
@@ -88,15 +92,15 @@ export default function SubscriptionsPage() {
     }
   };
 
-  const handleResume = async (subscriptionId: string) => {
-    if (!token) return;
+  const handleResume = (subscription: SubscriptionWithLiveStats) => {
+    setSelectedSubscription(subscription);
+    setRedeployModalOpen(true);
+  };
 
-    try {
-      await StrategyExecutionAPI.resumeSubscription(subscriptionId, token);
-      fetchSubscriptions();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to resume subscription');
-    }
+  const handleRedeploySuccess = () => {
+    setRedeployModalOpen(false);
+    setSelectedSubscription(null);
+    fetchSubscriptions();
   };
 
   const handleCancel = async (subscriptionId: string) => {
@@ -115,9 +119,10 @@ export default function SubscriptionsPage() {
   };
 
   const filteredSubscriptions = subscriptions.filter(sub => {
-    if (filter === 'all') return true;
-    if (filter === 'active') return sub.isActive && !sub.isPaused;
-    if (filter === 'paused') return sub.isPaused;
+    if (filter === 'all') return sub.isActive; // Show only active subscriptions (includes paused)
+    if (filter === 'active') return sub.isActive && !sub.isPaused; // Only actively trading
+    if (filter === 'paused') return sub.isActive && sub.isPaused; // Only paused
+    if (filter === 'cancelled') return !sub.isActive; // Only cancelled/unsubscribed
     return true;
   });
 
@@ -167,7 +172,7 @@ export default function SubscriptionsPage() {
 
         {/* Filter Tabs */}
         <div className="flex space-x-1 bg-muted p-1 rounded-lg w-fit">
-          {(['all', 'active', 'paused'] as const).map((filterOption) => (
+          {(['all', 'active', 'paused', 'cancelled'] as const).map((filterOption) => (
             <button
               key={filterOption}
               onClick={() => setFilter(filterOption)}
@@ -178,7 +183,8 @@ export default function SubscriptionsPage() {
               }`}
             >
               {filterOption === 'all' ? 'All' :
-               filterOption === 'active' ? 'Active' : 'Paused'}
+               filterOption === 'active' ? 'Active' :
+               filterOption === 'paused' ? 'Paused' : 'History'}
             </button>
           ))}
         </div>
@@ -209,7 +215,7 @@ export default function SubscriptionsPage() {
                   : 'Try changing your filter to see other subscriptions'}
               </p>
               {subscriptions.length === 0 && (
-                <Button onClick={() => router.push('/dashboard/strategies')}>
+                <Button onClick={() => router.push('/dashboard')}>
                   Browse Strategies
                 </Button>
               )}
@@ -246,7 +252,7 @@ export default function SubscriptionsPage() {
                         <DollarSign className="h-3 w-3" />
                         <span className="text-xs">Capital</span>
                       </div>
-                      <p className="font-semibold">${subscription.capital.toLocaleString()}</p>
+                      <p className="font-semibold">₹{subscription.capital.toLocaleString()}</p>
                     </div>
                     <div className="bg-secondary/20 rounded-lg p-3">
                       <div className="flex items-center gap-2 text-muted-foreground mb-1">
@@ -278,7 +284,7 @@ export default function SubscriptionsPage() {
                         <div>
                           <p className="text-xs text-muted-foreground">Total P&L</p>
                           <p className={`font-bold ${subscription.liveStats.totalPnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            ${subscription.liveStats.totalPnl.toFixed(2)}
+                            ₹{subscription.liveStats.totalPnl.toFixed(2)}
                           </p>
                         </div>
                         <div>
@@ -330,11 +336,22 @@ export default function SubscriptionsPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => handleResume(subscription.id)}
+                        onClick={() => handleResume(subscription)}
                         className="flex-1"
                       >
                         <Play className="h-4 w-4 mr-1" />
                         Resume
+                      </Button>
+                    )}
+                    {subscription.isActive && (
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => handleCancel(subscription.id)}
+                        className="flex-1"
+                      >
+                        <Trash2 className="h-4 w-4 mr-1" />
+                        Unsubscribe
                       </Button>
                     )}
                     <Button
@@ -404,7 +421,7 @@ export default function SubscriptionsPage() {
                   <DollarSign className="h-5 w-5 text-purple-500" />
                   <div>
                     <div className={`text-2xl font-bold ${subscriptions.reduce((sum, s) => sum + (s.liveStats?.totalPnl || 0), 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      ${subscriptions.reduce((sum, s) => sum + (s.liveStats?.totalPnl || 0), 0).toFixed(2)}
+                      ₹{subscriptions.reduce((sum, s) => sum + (s.liveStats?.totalPnl || 0), 0).toFixed(2)}
                     </div>
                     <div className="text-sm text-gray-600">Total P&L</div>
                   </div>
@@ -412,6 +429,16 @@ export default function SubscriptionsPage() {
               </CardContent>
             </Card>
           </div>
+        )}
+
+        {/* Redeploy Modal */}
+        {selectedSubscription && (
+          <RedeployModal
+            open={redeployModalOpen}
+            onOpenChange={setRedeployModalOpen}
+            subscription={selectedSubscription}
+            onSuccess={handleRedeploySuccess}
+          />
         )}
       </div>
     </div>

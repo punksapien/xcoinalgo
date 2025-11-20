@@ -103,10 +103,10 @@ router.post('/:id/subscribe', authenticate, async (req: AuthenticatedRequest, re
       marginCurrency
     } = req.body;
 
-    // Validate required fields
-    if (!capital || !riskPerTrade || !brokerCredentialId) {
+    // Validate required fields (only capital and broker required - others use strategy defaults)
+    if (!capital || !brokerCredentialId) {
       return res.status(400).json({
-        error: 'Missing required fields: capital, riskPerTrade, brokerCredentialId'
+        error: 'Missing required fields: capital, brokerCredentialId'
       });
     }
 
@@ -125,12 +125,36 @@ router.post('/:id/subscribe', authenticate, async (req: AuthenticatedRequest, re
       });
     }
 
+    // Fetch strategy to get defaults and validate balance
+    const strategy = await prisma.strategy.findUnique({
+      where: { id: strategyId },
+      select: {
+        executionConfig: true,
+        versions: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: { configData: true }
+        }
+      }
+    });
+
+    if (!strategy) {
+      return res.status(404).json({
+        error: 'Strategy not found'
+      });
+    }
+
+    // Get strategy defaults for optional parameters
+    const execCfg: any = (strategy.executionConfig as any) || {};
+    const latestVersion = strategy.versions[0];
+    const configData = (latestVersion?.configData as any) || {};
+
+    // Use provided values or fall back to strategy defaults
+    const finalRiskPerTrade = riskPerTrade ?? configData.risk_per_trade ?? execCfg.risk_per_trade ?? 0.02;
+    const finalLeverage = leverage ?? configData.leverage ?? execCfg.leverage ?? 10;
+
     // Futures-only balance check (all strategies use futures)
     try {
-      const strategy = await prisma.strategy.findUnique({
-        where: { id: strategyId },
-        select: { executionConfig: true }
-      });
 
       const execCfg: any = (strategy?.executionConfig as any) || {};
       const symbol: string | undefined = execCfg.executionConfig?.symbol || execCfg.pair;
@@ -142,19 +166,20 @@ router.post('/:id/subscribe', authenticate, async (req: AuthenticatedRequest, re
           brokerCredential.apiSecret
         );
 
-        // Calculate available balance: balance - (locked_balance + cross_order_margin + cross_user_margin)
+        // Calculate available balance
+        // Note: CoinDCX's 'balance' field already represents AVAILABLE balance (not locked in positions)
+        // 'locked_balance' is separate funds locked in open positions/orders
         const calculateAvailable = (wallet: any): number => {
           const balance = Number(wallet.balance || 0);
-          const locked = Number(wallet.locked_balance || 0);
           const crossOrder = Number(wallet.cross_order_margin || 0);
           const crossUser = Number(wallet.cross_user_margin || 0);
-          return balance - (locked + crossOrder + crossUser);
+          return balance - (crossOrder + crossUser);
         };
 
-        // Find which wallet user has (prefer USDT, fallback to INR)
+        // Find which wallet user has (prefer INR for Indian users, fallback to USDT)
         const usdtWallet = wallets.find(w => (w as any).currency_short_name === 'USDT');
         const inrWallet = wallets.find(w => (w as any).currency_short_name === 'INR');
-        const primaryWallet = usdtWallet || inrWallet;
+        const primaryWallet = inrWallet || usdtWallet;
 
         if (!primaryWallet) {
           return res.status(400).json({
@@ -202,13 +227,13 @@ router.post('/:id/subscribe', authenticate, async (req: AuthenticatedRequest, re
       });
     }
 
-    // Create subscription
+    // Create subscription (use final values with defaults)
     const result = await subscriptionService.createSubscription({
       userId,
       strategyId,
       capital,
-      riskPerTrade,
-      leverage,
+      riskPerTrade: finalRiskPerTrade,
+      leverage: finalLeverage,
       maxPositions,
       maxDailyLoss,
       slAtrMultiplier,
@@ -225,8 +250,8 @@ router.post('/:id/subscribe', authenticate, async (req: AuthenticatedRequest, re
         strategyId,
         isFirstSubscriber: result.isFirstSubscriber,
         capital,
-        riskPerTrade,
-        leverage
+        riskPerTrade: finalRiskPerTrade,
+        leverage: finalLeverage
       }
     });
   } catch (error) {

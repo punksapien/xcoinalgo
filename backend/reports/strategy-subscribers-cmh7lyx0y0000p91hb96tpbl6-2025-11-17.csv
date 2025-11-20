@@ -1,0 +1,28 @@
+subscriberId,userEmail,userName,capital,riskPerTrade,leverage,maxPositions,tradingType,marginCurrency,isActive,isPaused,subscribedAt,totalTrades,openPositions,closedTrades,winningTrades,losingTrades,winRate,totalPnl,avgPnl,largestWin,largestLoss,profitFactor
+cmi1lt1nr000rp9jbfy7orw8q,suryasg11@gmail.com,Surya sg,20000,0.1,0,0,spot,USDT,true,false,2025-11-16T10:59:45.448Z,0,0,0,0,0,0,0,0,0,0,0
+cmhxhm2pp000gp9r0pxuzi3gs,thorat.shekhar@gmail.com,Shekhar Thorat,19000,0.1,0,0,spot,USDT,true,false,2025-11-14T14:17:05.511Z,0,0,0,0,0,0,0,0,0,0,0
+cmhm38c5b000zp93fl7n14ig3,20bcm064@nirmauni.ac.in,Rishabh ,10000,0.4,0,0,spot,USDT,false,true,2025-11-14T09:51:10.569Z,0,0,0,0,0,0,0,0,0,0,0
+cmhyj7ejp001lp9r0iq3cpls7,mahavirgnr@gmail.com,Niket Shah,25000,0.1,0,0,spot,USDT,true,false,2025-11-14T07:23:37.957Z,0,0,0,0,0,0,0,0,0,0,0
+cmhx1f4p0000pp9u7ca3ntbog,shripadregs@gmail.com,SHRIPAD REGE,10000,0.1,15,0,spot,USDT,true,false,2025-11-13T06:17:59.172Z,0,0,0,0,0,0,0,0,0,0,0
+cmhvz7ajx0007p93ax2e849jw,saifmalik781@gmail.com,MYZELY DIGITECH PVT LTD,20000,0.1,0,0,spot,USDT,true,true,2025-11-12T12:28:08.109Z,0,0,0,0,0,0,0,0,0,0,0
+cmhvsu6pl0003p93aiysl4t0b,sunil.thakur66@gmail.com,Sunil Kumar ,10000,0.1,0,0,spot,USDT,true,false,2025-11-12T09:29:58.905Z,0,0,0,0,0,0,0,0,0,0,0
+cmhfmse3b000kp9l41rhun363,prachirajput2511@gmail.com,PRACHI RAJPUT,5000,0.2,20,0,spot,USDT,false,true,2025-11-11T07:18:49.191Z,0,0,0,0,0,0,0,0,0,0,0
+cmhomx9ef0010p94bvtb1i76z,sharathnagaraj@gmail.com,N/A,10000,0.1,0,0,spot,USDT,true,false,2025-11-10T15:05:55.795Z,0,0,0,0,0,0,0,0,0,0,0
+cmht308ms000bp9dngchq1kyj,upendra31289@gmail.com,N/A,5000,0.1,15,0,spot,USDT,true,false,2025-11-10T11:51:18.964Z,0,0,0,0,0,0,0,0,0,0,0
+cmhk75omn000cp93f6f4hplwm,narayan.sawant108@gmail.com,N/A,10000,0.05,0,0,spot,USDT,false,false,2025-11-09T16:28:45.371Z,0,0,0,0,0,0,0,0,0,0,0
+cmhqc96200016p9b12oakns65,future4investmentss@gmail.com,N/A,4000,0.06,15,0,spot,USDT,false,false,2025-11-08T13:46:53.544Z,0,0,0,0,0,0,0,0,0,0,0
+cmhpywicp0014p9b1y9x1xtra,drashwinmarwaha@gmail.com,N/A,10000,0.1,0,0,spot,USDT,true,false,2025-11-08T07:33:07.946Z,0,0,0,0,0,0,0,0,0,0,0
+cmh8psygn0009p91h63asq4ff,nishchay.patel@coindcx.com,Nishchay Patel,200,0.05,0,0,spot,USDT,false,false,2025-11-06T11:08:34.681Z,0,0,0,0,0,0,0,0,0,0,0
+cmhm0hqxw000vp93f672xy46i,nageshk11@gmail.com,N/A,10000,0.1,0,0,spot,USDT,true,false,2025-11-05T13:06:33.765Z,0,0,0,0,0,0,0,0,0,0,0
+cmhlujsfk000pp93fgsjcdz4n,kanhucharana1993@gmail.com,N/A,10000,0.1,0,0,spot,USDT,true,false,2025-11-05T10:20:11.312Z,0,0,0,0,0,0,0,0,0,0,0
+cmhkk9aqs000ip93fv547zju6,garg.m77@gmail.com,N/A,10000,0.1,0,0,spot,USDT,true,false,2025-11-04T12:44:19.492Z,0,0,0,0,0,0,0,0,0,0,0
+cmhjezytn0004p93fr7ljpm8q,neepahinndocha@gmail.com,N/A,10000,0.1,0,0,spot,USDT,true,false,2025-11-03T17:29:19.883Z,0,0,0,0,0,0,0,0,0,0,0
+cmhiy8ed5000gp9vnwjr1l70x,sreepadagopi@gmail.com,N/A,10000,0.1,0,0,spot,USDT,true,false,2025-11-03T09:39:59.801Z,0,0,0,0,0,0,0,0,0,0,0
+cmheizm7x0002p9l440qdu0sb,learningsamkon@gmail.com,N/A,10000,0.1,0,0,futures,INR,true,false,2025-10-31T07:22:11.133Z,0,0,0,0,0,0,0,0,0,0,0
+cmhdmgy7s000lp9m97kbqjf0g,prateekmodi91@gmail.com,N/A,10000,0.1,0,0,futures,INR,true,false,2025-10-30T16:11:52.505Z,0,0,0,0,0,0,0,0,0,0,0
+cmhddddhs000gp9m9lkg72bjq,satya.kokku74@gmail.com,N/A,10000,0.1,0,0,futures,INR,true,false,2025-10-30T11:57:09.137Z,0,0,0,0,0,0,0,0,0,0,0
+cmhdcmg6l000cp9m9conzq8fn,rabdulhakeem@gmail.com,N/A,10000,0.1,0,0,futures,INR,true,true,2025-10-30T11:36:12.909Z,0,0,0,0,0,0,0,0,0,0,0
+cmhdcm1ee000ap9m92jam4xyb,heenuthegreat@gmail.com,N/A,10000,0.1,0,0,futures,INR,true,false,2025-10-30T11:35:53.751Z,0,0,0,0,0,0,0,0,0,0,0
+cmhax6w7k000mp91hwnrgxlv6,manish19862003@gmail.com,Manish Sharma ,10000,0.1,0,0,futures,INR,true,false,2025-10-28T18:48:40.592Z,0,0,0,0,0,0,0,0,0,0,0
+cmh8wncd1000hp91hiix0d3ru,neozyan140682@gmail.com,N/A,10000,0.1,0,0,futures,INR,true,false,2025-10-27T08:57:56.054Z,0,0,0,0,0,0,0,0,0,0,0
+cmh8qwdjz000bp91hbz1365to,mukeshdodeja@gmail.com,Mukesh Rameshlal Dodeja,10000,0.1,0,0,futures,INR,true,false,2025-10-27T06:16:59.808Z,0,0,0,0,0,0,0,0,0,0,0

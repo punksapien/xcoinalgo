@@ -17,6 +17,7 @@ import { eventBus } from '../../lib/event-bus'
 import { formatIntervalKey, computeLockTTL, validateExecutionTiming } from '../../lib/time-utils'
 import { spawn } from 'child_process'
 import path from 'path'
+import fs from 'fs'
 import CoinDCXClient from '../coindcx-client'
 import { Logger } from '../../utils/logger'
 import { strategyEnvironmentManager } from '../strategy-environment-manager'
@@ -138,20 +139,22 @@ class ExecutionCoordinator {
 
       console.log(`Executing strategy for ${subscribers.length} active subscribers`)
 
-      // Check strategy type and get strategy code
+      // Get strategy type from database
       const strategy = await prisma.strategy.findUnique({
         where: { id: strategyId },
-        include: {
-          versions: {
-            orderBy: { createdAt: 'desc' },
-            take: 1,
-            select: { strategyCode: true }
-          }
-        }
+        select: { strategyType: true }
       })
 
       const strategyType = strategy?.strategyType
-      const strategyCode = strategy?.versions?.[0]?.strategyCode || ''
+
+      // Read strategy code from disk (source of truth)
+      let strategyCode = ''
+      try {
+        strategyCode = this.getStrategyCodeFromDisk(strategyId)
+      } catch (error) {
+        logger.error(`Failed to read strategy code from disk for ${strategyId}:`, error)
+        throw new Error(`Strategy code not found on disk: ${error}`)
+      }
 
       // Multi-tenant strategies use our wrapper
       const isMultiTenant = strategyType === 'multi_tenant'
@@ -398,6 +401,39 @@ class ExecutionCoordinator {
   }
 
   /**
+   * Read strategy code from disk (source of truth)
+   * Finds the Python file in the strategy directory
+   */
+  private getStrategyCodeFromDisk(strategyId: string): string {
+    const strategiesDir = path.join(__dirname, '../../../strategies')
+    const strategyDir = path.join(strategiesDir, strategyId)
+
+    if (!fs.existsSync(strategyDir)) {
+      throw new Error(`Strategy directory not found: ${strategyDir}`)
+    }
+
+    // Find all .py files in the directory
+    const files = fs.readdirSync(strategyDir)
+    const pyFiles = files.filter(f => f.endsWith('.py'))
+
+    if (pyFiles.length === 0) {
+      throw new Error(`No Python file found in strategy directory: ${strategyDir}`)
+    }
+
+    if (pyFiles.length > 1) {
+      logger.warn(`Multiple Python files found in ${strategyDir}, using first one: ${pyFiles[0]}`)
+    }
+
+    // Read the first .py file
+    const pyFilePath = path.join(strategyDir, pyFiles[0])
+    const strategyCode = fs.readFileSync(pyFilePath, 'utf8')
+
+    logger.info(`Read strategy code from disk: ${pyFilePath} (${strategyCode.length} bytes)`)
+
+    return strategyCode
+  }
+
+  /**
    * Execute Python strategy subprocess
    */
   private async executePythonStrategy(
@@ -536,14 +572,19 @@ class ExecutionCoordinator {
       }
 
       // Prepare subscribers data (with API keys)
-      const subscribersData = subscribers.map(sub => ({
-        user_id: sub.userId,
-        api_key: sub.brokerCredential?.apiKey || '',
-        api_secret: sub.brokerCredential?.apiSecret || '',
-        capital: sub.capital || 10000,
-        risk_per_trade: sub.riskPerTrade || 0.02,
-        leverage: sub.leverage || 10
-      }))
+      // Resolve settings: NULL values use strategy.executionConfig defaults
+      const subscribersData = subscribers.map(sub => {
+        const strategyConfig = sub.strategy?.executionConfig as any || {}
+
+        return {
+          user_id: sub.userId,
+          api_key: sub.brokerCredential?.apiKey || '',
+          api_secret: sub.brokerCredential?.apiSecret || '',
+          capital: sub.capital || 10000,
+          risk_per_trade: sub.riskPerTrade ?? strategyConfig.risk_per_trade ?? 0.02,
+          leverage: sub.leverage ?? strategyConfig.leverage ?? 10
+        }
+      })
 
       // Prepare input for Python script
       // Add strategy_id to settings for LiveTrader compatibility
@@ -593,7 +634,42 @@ class ExecutionCoordinator {
         }
 
         try {
-          const result = JSON.parse(stdout)
+          // Try to parse stdout as JSON
+          let result
+          try {
+            result = JSON.parse(stdout)
+          } catch (parseError) {
+            // JSON parsing failed - likely due to stdout pollution from print() statements
+            console.warn(`⚠️ Direct JSON parse failed, attempting recovery...`)
+
+            // Try to extract the last valid JSON object from stdout
+            // Look for the last occurrence of a complete JSON object
+            const jsonMatch = stdout.match(/\{[\s\S]*\}$/);
+            if (jsonMatch) {
+              console.warn(`⚠️ Found JSON at position ${jsonMatch.index} (${stdout.length - jsonMatch.index} bytes)`)
+
+              if (jsonMatch.index > 0) {
+                const pollutionLength = jsonMatch.index
+                const pollutedContent = stdout.substring(0, Math.min(200, pollutionLength))
+                console.warn(`⚠️ Stdout pollution detected: ${pollutionLength} bytes before JSON`)
+                console.warn(`⚠️ Polluted content preview: ${pollutedContent}${pollutionLength > 200 ? '...' : ''}`)
+              }
+
+              result = JSON.parse(jsonMatch[0])
+              console.log(`✅ Successfully recovered JSON from polluted stdout`)
+            } else {
+              // Could not find JSON, try alternative recovery
+              const firstBrace = stdout.indexOf('{')
+              const lastBrace = stdout.lastIndexOf('}')
+              if (firstBrace >= 0 && lastBrace > firstBrace) {
+                const jsonStr = stdout.substring(firstBrace, lastBrace + 1)
+                result = JSON.parse(jsonStr)
+                console.log(`✅ Recovered JSON using brace matching`)
+              } else {
+                throw parseError // Re-throw original error if recovery failed
+              }
+            }
+          }
 
           if (!result.success) {
             console.error('Multi-tenant execution failed:', result.error)
@@ -611,8 +687,10 @@ class ExecutionCoordinator {
             error: result.error
           })
         } catch (error) {
-          console.error(`Failed to parse multi-tenant wrapper output:`, error)
-          console.error(`stdout: ${stdout}`)
+          console.error(`❌ Failed to parse multi-tenant wrapper output:`, error)
+          console.error(`📊 stdout length: ${stdout.length} bytes`)
+          console.error(`📄 stdout preview (first 500 chars): ${stdout.substring(0, 500)}`)
+          console.error(`📄 stdout preview (last 500 chars): ${stdout.substring(Math.max(0, stdout.length - 500))}`)
           resolve({
             success: false,
             signal: null,
@@ -963,22 +1041,32 @@ class ExecutionCoordinator {
     stopLoss?: number,
     leverage: number = 1
   ): number {
+    const MIN_QUANTITY = 0.007  // Minimum quantity for ETH futures
+
+    let positionSize: number
+
     // If no stop loss, use fixed percentage of capital
     if (!stopLoss) {
       const riskAmount = capital * riskPerTrade
-      return (riskAmount * leverage) / entryPrice
+      positionSize = (riskAmount * leverage) / entryPrice
+    } else {
+      // Calculate position size based on stop loss distance
+      const riskAmount = capital * riskPerTrade
+      const stopLossDistance = Math.abs(entryPrice - stopLoss)
+      const riskPerUnit = stopLossDistance
+
+      if (riskPerUnit === 0) {
+        return 0
+      }
+
+      positionSize = (riskAmount / riskPerUnit) * leverage
     }
 
-    // Calculate position size based on stop loss distance
-    const riskAmount = capital * riskPerTrade
-    const stopLossDistance = Math.abs(entryPrice - stopLoss)
-    const riskPerUnit = stopLossDistance
-
-    if (riskPerUnit === 0) {
-      return 0
+    // Enforce minimum quantity
+    if (positionSize > 0 && positionSize < MIN_QUANTITY) {
+      console.warn(`Calculated quantity ${positionSize.toFixed(4)} below minimum ${MIN_QUANTITY}, adjusting to minimum`)
+      return MIN_QUANTITY
     }
-
-    const positionSize = (riskAmount / riskPerUnit) * leverage
 
     return positionSize
   }

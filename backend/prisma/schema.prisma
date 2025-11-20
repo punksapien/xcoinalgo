@@ -8,34 +8,67 @@ datasource db {
 }
 
 model User {
-  id          String   @id @default(cuid())
-  email       String   @unique
-  password    String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id       String  @id @default(cuid())
+  email    String  @unique
+  password String? // Nullable for OAuth-only users
+  googleId String? @unique // Google OAuth ID
+
+  // Profile information
+  name        String? // Full name (nullable for existing users, but required in frontend)
+  phoneNumber String? // Phone number (optional)
+
+  // Email verification
+  emailVerified           DateTime?
+  verificationToken       String?   @unique
+  verificationTokenExpiry DateTime?
+
+  // Password reset
+  resetPasswordToken  String?   @unique
+  resetPasswordExpiry DateTime?
+
+  role      UserRole @default(REGULAR)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   brokerCredentials     BrokerCredential[]
-  botDeployments        BotDeployment[]        // Legacy
+  botDeployments        BotDeployment[] // Legacy
   strategySubscriptions StrategySubscription[] // New multi-tenant
   strategyReviews       StrategyReview[]
   apiKeys               ApiKey[]
 
+  // Client dashboard relations
+  ownedStrategies    Strategy[] @relation("OwnedStrategies") // Strategies owned by client
+  authoredStrategies Strategy[] @relation("AuthoredStrategies") // Strategies authored/created by this user
+  createdInviteLinks StrategyInviteLink[] // Invite links created by client
+  accessRequests     StrategyAccessRequest[] @relation("RequestedByUser") // Access requests made by user
+  approvedRequests   StrategyAccessRequest[] @relation("ApprovedByUser") // Access requests approved by client
+
+  // Email monitoring
+  emailLogs EmailLog[]
+
   @@map("users")
 }
 
-model ApiKey {
-  id          String   @id @default(cuid())
-  userId      String
-  name        String   // Descriptive name for the key (e.g., "My Laptop CLI")
-  keyHash     String   @unique // bcrypt hash of the actual API key
-  keyPrefix   String   // First 8 chars for display (e.g., "xcoin_abc")
-  lastUsedAt  DateTime?
-  expiresAt   DateTime?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+enum UserRole {
+  REGULAR
+  QUANT
+  CLIENT
+  ADMIN
+}
 
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+model ApiKey {
+  id         String    @id @default(cuid())
+  userId     String
+  name       String // Descriptive name for the key (e.g., "My Laptop CLI")
+  keyHash    String    @unique // bcrypt hash of the actual API key
+  keyPrefix  String // First 8 chars for display (e.g., "xcoin_abc")
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  isActive   Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([keyHash])
@@ -43,14 +76,14 @@ model ApiKey {
 }
 
 model BrokerCredential {
-  id            String   @id @default(cuid())
-  userId        String
-  brokerName    String   @default("coindcx")
-  apiKey        String   // encrypted
-  apiSecret     String   // encrypted
-  isActive      Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id         String   @id @default(cuid())
+  userId     String
+  brokerName String   @default("coindcx")
+  apiKey     String // encrypted
+  apiSecret  String // encrypted
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   user                  User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
   strategySubscriptions StrategySubscription[] // New multi-tenant
@@ -60,79 +93,83 @@ model BrokerCredential {
 }
 
 model Strategy {
-  id              String   @id @default(cuid())
-  name            String
-  code            String
-  description     String?
+  id                  String  @id @default(cuid())
+  name                String
+  code                String  @db.VarChar(100)
+  description         String?
   detailedDescription String?
-  author          String
-  version         String   @default("1.0.0")
-  instrument      String
-  tags            String   @default("")
+  author              String  // Display name (kept for backward compatibility)
+  authorId            String? // Link to User who created the strategy
+  version             String  @default("1.0.0")
+  instrument          String
+  tags                String  @default("") @db.Text
+
+  // Client ownership (for client dashboard)
+  clientId String? // Links strategy to client who owns it
 
   // Git integration
-  gitRepository   String?
-  gitBranch       String?  @default("main")
-  gitCommitHash   String?
+  gitRepository     String?
+  gitBranch         String? @default("main")
+  gitCommitHash     String?
   gitPullRequestUrl String?
 
   // File structure
-  strategyPath    String?  // Path to strategy.py file (renamed from scriptPath)
-  configPath      String?  // Path to config.yaml
+  strategyPath     String? // Path to strategy.py file (renamed from scriptPath)
+  configPath       String? // Path to config.yaml
   requirementsPath String? // Path to requirements.txt
   backtestDataPath String? // Path to backtest results
 
   // Validation status
   validationStatus StrategyValidationStatus @default(PENDING)
-  validationErrors String?
+  validationErrors String?                  @db.Text
   lastValidatedAt  DateTime?
 
   // Basic metrics (from latest backtest)
-  winRate         Float?
-  riskReward      Float?
-  maxDrawdown     Float?
-  roi             Float?
-  marginRequired  Float?
-  marginCurrency  String?  @default("INR") // "USDT" for futures, "INR" for spot
+  winRate        Float?
+  riskReward     Float?
+  maxDrawdown    Float?
+  roi            Float?
+  marginRequired Float?
+  marginCurrency String? @default("INR") // "USDT" for futures, "INR" for spot
 
   // Enhanced metrics
-  sharpeRatio     Float?
-  totalTrades     Int?
-  avgTradeReturn  Float?
-  profitFactor    Float?
+  sharpeRatio    Float?
+  totalTrades    Int?
+  avgTradeReturn Float?
+  profitFactor   Float?
 
   // Strategy metadata
-  supportedPairs  Json?    // Array of supported trading pairs
-  timeframes      Json?    // Array of supported timeframes
-  strategyType    String?  // e.g., "momentum", "mean-reversion", etc.
-  complexity      StrategyComplexity @default(MEDIUM)
+  supportedPairs Json? // Array of supported trading pairs
+  timeframes     Json? // Array of supported timeframes
+  strategyType   String? // e.g., "momentum", "mean-reversion", etc.
+  complexity     StrategyComplexity @default(MEDIUM)
 
   // Trading type support
-  supportsFutures Boolean  @default(false)
-  supportsSpot    Boolean  @default(true)
+  supportsFutures Boolean @default(false)
+  supportsSpot    Boolean @default(true)
 
   // Status and deployment
-  isActive        Boolean  @default(false) // Changed default to false
-  isApproved      Boolean  @default(false) // Requires approval for production
-  isFeatured      Boolean  @default(false)
-  deploymentCount Int      @default(0)
+  isActive        Boolean @default(false) // Changed default to false
+  isApproved      Boolean @default(false) // Requires approval for production
+  isFeatured      Boolean @default(false)
+  deploymentCount Int     @default(0)
 
   // Performance tracking
-  totalPnl        Float?   @default(0)
-  totalUsers      Int      @default(0)
-  avgUserRating   Float?
+  totalPnl      Float? @default(0)
+  totalUsers    Int    @default(0)
+  avgUserRating Float?
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  lastDeployedAt  DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  lastDeployedAt DateTime?
 
   // Multi-tenant execution fields
-  subscriberCount Int      @default(0)
-  isPublic        Boolean  @default(false) // Can others subscribe?
-  isMarketplace   Boolean  @default(false) // Listed in marketplace?
+  subscriberCount Int     @default(0)
+  isPublic        Boolean @default(false) // Can others subscribe?
+  isMarketplace   Boolean @default(false) // Listed in marketplace?
 
   // Execution parameters (stored as JSON for flexibility)
-  executionConfig Json?    // { pair, resolution, lookbackPeriod, indicators, etc. }
+  executionConfig Json? // { pair, resolution, lookbackPeriod, indicators, etc. }
 
   // Relations
   versions        StrategyVersion[]
@@ -140,94 +177,102 @@ model Strategy {
   botDeployments  BotDeployment[] // Legacy - will migrate to subscriptions
   reviews         StrategyReview[]
   subscriptions   StrategySubscription[] // New multi-tenant model
-  executions      StrategyExecution[]    // Execution history
+  executions      StrategyExecution[] // Execution history
+
+  // Client dashboard relations
+  client         User?                   @relation("OwnedStrategies", fields: [clientId], references: [id], onDelete: SetNull)
+  authorUser     User?                   @relation("AuthoredStrategies", fields: [authorId], references: [id], onDelete: SetNull)
+  inviteLinks    StrategyInviteLink[] // Invite links for private access
+  accessRequests StrategyAccessRequest[] // Access requests for private strategies
 
   @@unique([code, version])
+  @@index([clientId])
+  @@index([authorId])
   @@map("strategies")
 }
 
 model StrategyVersion {
-  id              String   @id @default(cuid())
-  strategyId      String
-  version         String
-  changeLog       String?
-  gitCommitHash   String?
+  id            String  @id @default(cuid())
+  strategyId    String
+  version       String
+  changeLog     String?
+  gitCommitHash String?
 
   // File snapshots
-  strategyCode    String   // Full strategy code
-  configData      Json?    // Configuration data
-  requirements    String?  // Requirements.txt content
+  strategyCode String // Full strategy code
+  configData   Json? // Configuration data
+  requirements String? // Requirements.txt content
 
   // Validation
-  isValidated     Boolean  @default(false)
+  isValidated      Boolean @default(false)
   validationErrors String?
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  strategy        Strategy @relation(fields: [strategyId], references: [id], onDelete: Cascade)
+  strategy Strategy @relation(fields: [strategyId], references: [id], onDelete: Cascade)
 
   @@unique([strategyId, version])
   @@map("strategy_versions")
 }
 
 model BacktestResult {
-  id              String   @id @default(cuid())
-  strategyId      String
-  version         String   @default("1.0.0")
+  id         String @id @default(cuid())
+  strategyId String
+  version    String @default("1.0.0")
 
   // Backtest parameters
-  startDate       DateTime
-  endDate         DateTime
-  initialBalance  Float
-  timeframe       String
+  startDate      DateTime
+  endDate        DateTime
+  initialBalance Float
+  timeframe      String
 
   // Performance metrics
-  finalBalance    Float
-  totalReturn     Float
-  totalReturnPct  Float
-  maxDrawdown     Float
-  sharpeRatio     Float
-  winRate         Float
-  profitFactor    Float
-  totalTrades     Int
-  avgTrade        Float
+  finalBalance   Float
+  totalReturn    Float
+  totalReturnPct Float
+  maxDrawdown    Float
+  sharpeRatio    Float
+  winRate        Float
+  profitFactor   Float
+  totalTrades    Int
+  avgTrade       Float
 
   // Advanced metrics
-  volatility      Float?
-  calmarRatio     Float?
-  sortinoRatio    Float?
+  volatility          Float?
+  calmarRatio         Float?
+  sortinoRatio        Float?
   maxDrawdownDuration Int?
 
   // Detailed results
-  equityCurve     Json     // Time series of equity values
-  tradeHistory    Json     // Array of all trades
-  monthlyReturns  Json     // Monthly performance breakdown
+  equityCurve    Json // Time series of equity values
+  tradeHistory   Json // Array of all trades
+  monthlyReturns Json // Monthly performance breakdown
 
   // Metadata
-  backtestDuration Float   // How long the backtest took to run
-  dataQuality     String? // Data quality assessment
+  backtestDuration Float // How long the backtest took to run
+  dataQuality      String? // Data quality assessment
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  strategy        Strategy @relation(fields: [strategyId], references: [id], onDelete: Cascade)
+  strategy Strategy @relation(fields: [strategyId], references: [id], onDelete: Cascade)
 
   @@map("backtest_results")
 }
 
 model StrategyReview {
-  id          String   @id @default(cuid())
-  strategyId  String
-  userId      String
-  rating      Int      // 1-5 stars
-  comment     String?
+  id         String  @id @default(cuid())
+  strategyId String
+  userId     String
+  rating     Int // 1-5 stars
+  comment    String?
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  strategy    Strategy @relation(fields: [strategyId], references: [id], onDelete: Cascade)
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  strategy Strategy @relation(fields: [strategyId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([strategyId, userId])
   @@map("strategy_reviews")
@@ -249,42 +294,42 @@ enum StrategyComplexity {
 }
 
 model BotDeployment {
-  id                String   @id @default(cuid())
-  userId            String
-  strategyId        String
+  id         String @id @default(cuid())
+  userId     String
+  strategyId String
 
   // Execution management (replaces Docker/PM2)
-  executionInterval Int      @default(300) // Interval in seconds (default 5 minutes)
-  nextExecutionAt   DateTime?
-  executionCount    Int      @default(0)
+  executionInterval     Int       @default(300) // Interval in seconds (default 5 minutes)
+  nextExecutionAt       DateTime?
+  executionCount        Int       @default(0)
   lastExecutionDuration Float? // Last execution time in seconds
-  status            BotStatus @default(STOPPED)
+  status                BotStatus @default(STOPPED)
 
   // Configuration
-  leverage          Int      @default(10)
-  riskPerTrade      Float    @default(0.005)
-  marginCurrency    String   @default("USDT")
+  leverage       Int    @default(10)
+  riskPerTrade   Float  @default(0.005)
+  marginCurrency String @default("USDT")
 
   // Monitoring
-  deployedAt        DateTime @default(now())
-  lastHeartbeat     DateTime?
-  restartCount      Int      @default(0)
-  errorMessage      String?
+  deployedAt    DateTime  @default(now())
+  lastHeartbeat DateTime?
+  restartCount  Int       @default(0)
+  errorMessage  String?
 
   // Execution stats
-  successfulExecutions Int    @default(0)
-  failedExecutions     Int    @default(0)
-  avgExecutionTime     Float  @default(0)
+  successfulExecutions Int   @default(0)
+  failedExecutions     Int   @default(0)
+  avgExecutionTime     Float @default(0)
 
   // Lifecycle
-  startedAt         DateTime?
-  stoppedAt         DateTime?
+  startedAt DateTime?
+  stoppedAt DateTime?
 
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  strategy          Strategy @relation(fields: [strategyId], references: [id])
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  strategy Strategy @relation(fields: [strategyId], references: [id])
 
   @@unique([userId, strategyId])
   @@map("bot_deployments")
@@ -301,12 +346,12 @@ enum BotStatus {
 }
 
 model ProcessLog {
-  id            String   @id @default(cuid())
+  id              String   @id @default(cuid())
   botDeploymentId String
-  level         String
-  message       String
-  metadata      Json?
-  createdAt     DateTime @default(now())
+  level           String
+  message         String
+  metadata        Json?
+  createdAt       DateTime @default(now())
 
   @@index([botDeploymentId])
   @@map("process_logs")
@@ -317,51 +362,53 @@ model ProcessLog {
 // ============================================
 
 model StrategySubscription {
-  id           String   @id @default(cuid())
-  userId       String
-  strategyId   String
+  id         String @id @default(cuid())
+  userId     String
+  strategyId String
 
   // User-specific execution settings
-  capital          Float
-  riskPerTrade     Float
-  leverage         Int      @default(1)
-  maxPositions     Int      @default(1)
-  maxDailyLoss     Float    @default(0.05)
+  // NULL = use strategy default, non-NULL = manual override
+  capital      Float
+  riskPerTrade Float? // NULL = use strategy.executionConfig.risk_per_trade
+  leverage     Int?   // NULL = use strategy.executionConfig.leverage
+  maxPositions Int?   // NULL = use strategy.executionConfig.max_positions or default(1)
+  maxDailyLoss Float? // NULL = use strategy.executionConfig.max_daily_loss or default(0.05)
 
   // Risk management overrides (optional)
-  slAtrMultiplier  Float?
-  tpAtrMultiplier  Float?
+  slAtrMultiplier Float?
+  tpAtrMultiplier Float?
 
   // Futures trading settings
-  tradingType          String   @default("spot") // "spot" or "futures"
-  marginCurrency       String   @default("USDT") // "USDT", "INR", etc.
-  marginConversionRate Float?                     // For INR->USDT conversion (e.g., 93.0)
-  positionMarginType   String   @default("isolated") // "isolated" or "cross"
+  tradingType          String @default("spot") // "spot" or "futures"
+  marginCurrency       String @default("USDT") // "USDT", "INR", etc.
+  marginConversionRate Float? // For INR->USDT conversion (e.g., 93.0)
+  positionMarginType   String @default("isolated") // "isolated" or "cross"
 
   // Credentials reference (not raw keys)
-  brokerCredentialId String
+  // Nullable to allow credential deletion while preserving subscription history
+  brokerCredentialId String?
 
   // Status and lifecycle
-  isActive         Boolean  @default(true)
-  isPaused         Boolean  @default(false)
-  subscribedAt     DateTime @default(now())
-  pausedAt         DateTime?
-  unsubscribedAt   DateTime?
+  isActive       Boolean   @default(true)
+  isPaused       Boolean   @default(false)
+  subscribedAt   DateTime  @default(now())
+  pausedAt       DateTime?
+  unsubscribedAt DateTime?
 
   // Execution stats
-  totalTrades      Int      @default(0)
-  winningTrades    Int      @default(0)
-  losingTrades     Int      @default(0)
-  totalPnl         Float    @default(0)
+  totalTrades   Int   @default(0)
+  winningTrades Int   @default(0)
+  losingTrades  Int   @default(0)
+  totalPnl      Float @default(0)
 
   // Relations
   user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   strategy         Strategy          @relation(fields: [strategyId], references: [id], onDelete: Cascade)
-  brokerCredential BrokerCredential  @relation(fields: [brokerCredentialId], references: [id])
+  brokerCredential BrokerCredential? @relation(fields: [brokerCredentialId], references: [id], onDelete: SetNull)
   trades           Trade[]
 
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([userId, strategyId])
   @@index([strategyId, isActive])
@@ -370,35 +417,35 @@ model StrategySubscription {
 }
 
 model StrategyExecution {
-  id               String   @id @default(cuid())
-  strategyId       String
+  id         String @id @default(cuid())
+  strategyId String
 
   // Execution metadata
-  executedAt       DateTime
-  intervalKey      String   // e.g., "2025-10-06T12:05:00Z"
-  workerId         String   // Which worker executed
-  duration         Float    // Execution time in seconds
+  executedAt  DateTime
+  intervalKey String // e.g., "2025-10-06T12:05:00Z"
+  workerId    String // Which worker executed
+  duration    Float // Execution time in seconds
 
   // Market data at execution
-  symbol           String
-  resolution       String
-  closePrice       Float?
+  symbol     String
+  resolution String
+  closePrice Float?
 
   // Signal generated
-  signalType       String?  // "LONG", "SHORT", "CLOSE_LONG", "CLOSE_SHORT", "HOLD"
-  confidence       Float?   // 0.0 to 1.0
-  indicators       Json?    // Snapshot of indicator values
+  signalType String? // "LONG", "SHORT", "CLOSE_LONG", "CLOSE_SHORT", "HOLD"
+  confidence Float? // 0.0 to 1.0
+  indicators Json? // Snapshot of indicator values
 
   // Execution result
-  status           String   // "success", "failed", "skipped", "no_signal"
-  subscribersCount Int      @default(0)
-  tradesGenerated  Int      @default(0)
+  status           String // "success", "failed", "skipped", "no_signal"
+  subscribersCount Int     @default(0)
+  tradesGenerated  Int     @default(0)
   error            String?
 
   // Relations
-  strategy         Strategy @relation(fields: [strategyId], references: [id], onDelete: Cascade)
+  strategy Strategy @relation(fields: [strategyId], references: [id], onDelete: Cascade)
 
-  createdAt        DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@index([strategyId, executedAt])
   @@index([intervalKey])
@@ -406,61 +453,195 @@ model StrategyExecution {
 }
 
 model Trade {
-  id                    String   @id @default(cuid())
-  subscriptionId        String
-  executionId           String?  // Optional link to StrategyExecution
+  id             String  @id @default(cuid())
+  subscriptionId String
+  executionId    String? // Optional link to StrategyExecution
 
   // Trade details
-  symbol                String
-  side                  String   // "buy", "sell" or "LONG", "SHORT"
-  quantity              Float
-  entryPrice            Float
+  symbol     String
+  side       String // "buy", "sell" or "LONG", "SHORT"
+  quantity   Float
+  entryPrice Float
 
   // Risk management
-  stopLoss              Float?
-  takeProfit            Float?
+  stopLoss   Float?
+  takeProfit Float?
 
   // Order details
-  orderType             String   @default("market") // "market", "limit"
-  orderId               String?  // Exchange order ID (spot)
+  orderType String  @default("market") // "market", "limit"
+  orderId   String? // Exchange order ID (spot)
 
   // Futures-specific fields
-  positionId            String?  // CoinDCX position ID (futures only)
-  leverage              Int?     // Leverage used (futures only)
-  marginCurrency        String?  // Margin currency (USDT, INR)
-  liquidationPrice      Float?   // Liquidation price (futures only)
-  tradingType           String   @default("spot") // "spot" or "futures"
+  positionId       String? // CoinDCX position ID (futures only)
+  leverage         Int? // Leverage used (futures only)
+  marginCurrency   String? // Margin currency (USDT, INR)
+  liquidationPrice Float? // Liquidation price (futures only)
+  tradingType      String  @default("spot") // "spot" or "futures"
 
   // Execution result
-  status                String   // "OPEN", "CLOSED", "pending", "filled", "partial", "rejected", "cancelled"
-  filledQuantity        Float?
-  filledPrice           Float?
-  filledAt              DateTime?
+  status         String // "OPEN", "CLOSED", "pending", "filled", "partial", "rejected", "cancelled"
+  filledQuantity Float?
+  filledPrice    Float?
+  filledAt       DateTime?
 
   // Exit details
-  exitPrice             Float?
-  exitedAt              DateTime?
-  exitReason            String?  // "stop_loss", "take_profit", "signal", "manual", "liquidation"
+  exitPrice  Float?
+  exitedAt   DateTime?
+  exitReason String? // "stop_loss", "take_profit", "signal", "manual", "liquidation"
 
   // PnL tracking
-  pnl                   Float?
-  pnlPercentage         Float?
-  pnlPct                Float?   // Alternative percentage field
-  fees                  Float    @default(0)
+  pnl           Float?
+  pnlPercentage Float?
+  pnlPct        Float? // Alternative percentage field
+  fees          Float  @default(0)
 
   // Metadata
-  signalConfidence      Float?
-  metadata              Json?    // Additional trade data (order IDs, etc.)
+  signalConfidence Float?
+  metadata         Json? // Additional trade data (order IDs, etc.)
 
   // Relations
-  subscription          StrategySubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  subscription StrategySubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
 
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([subscriptionId, createdAt])
   @@index([symbol, createdAt])
   @@index([status])
   @@index([positionId])
   @@map("trades")
+}
+
+// ============================================
+// Client Dashboard Models
+// ============================================
+
+model StrategyInviteLink {
+  id         String           @id @default(cuid())
+  strategyId String
+  inviteCode String           @unique // URL-safe random code (e.g., "abc123xyz")
+  type       InviteLinkType   @default(PERMANENT) // ONE_TIME or PERMANENT
+
+  // Ownership and management
+  createdByUserId String
+
+  // Status
+  isActive  Boolean   @default(true)
+  revokedAt DateTime?
+
+  // Usage tracking
+  usageCount Int @default(0) // How many times link was used
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  strategy       Strategy                @relation(fields: [strategyId], references: [id], onDelete: Cascade)
+  createdBy      User                    @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
+  accessRequests StrategyAccessRequest[] // Requests made via this link
+
+  @@index([strategyId])
+  @@index([inviteCode])
+  @@map("strategy_invite_links")
+}
+
+enum InviteLinkType {
+  ONE_TIME
+  PERMANENT
+}
+
+model StrategyAccessRequest {
+  id           String @id @default(cuid())
+  strategyId   String
+  userId       String // User requesting access
+  inviteLinkId String // Which invite link was used
+
+  // Request status
+  status AccessRequestStatus @default(PENDING)
+
+  // Approval tracking
+  respondedAt       DateTime?
+  respondedByUserId String? // Client who approved/rejected
+  rejectionReason   String? // Optional reason for rejection
+
+  // Request metadata
+  requestedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  strategy    Strategy           @relation(fields: [strategyId], references: [id], onDelete: Cascade)
+  user        User               @relation("RequestedByUser", fields: [userId], references: [id], onDelete: Cascade)
+  inviteLink  StrategyInviteLink @relation(fields: [inviteLinkId], references: [id], onDelete: Cascade)
+  respondedBy User?              @relation("ApprovedByUser", fields: [respondedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, strategyId]) // One request per user per strategy
+  @@index([strategyId, status])
+  @@index([userId, status])
+  @@map("strategy_access_requests")
+}
+
+enum AccessRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// ============================================
+// Email Monitoring & Logging
+// ============================================
+
+model EmailLog {
+  id        String @id @default(cuid())
+  userId    String?
+  email     String
+  emailType EmailType
+
+  // Resend integration
+  resendEmailId String? // ID returned by Resend API
+
+  // Email content metadata
+  subject   String?
+  otpCode   String? // Store OTP for debugging (encrypted in production)
+
+  // Delivery tracking
+  status        EmailStatus @default(PENDING)
+  statusMessage String? // Error message or delivery info
+
+  // Timestamps
+  sentAt      DateTime  @default(now())
+  deliveredAt DateTime? // Updated by webhook
+  bouncedAt   DateTime? // Updated by webhook
+  openedAt    DateTime? // Updated by webhook (if tracking enabled)
+
+  // Metadata
+  ipAddress  String? // IP of user who triggered email
+  userAgent  String? // User agent of requester
+  retryCount Int     @default(0)
+
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, emailType])
+  @@index([email, emailType])
+  @@index([status, sentAt])
+  @@index([resendEmailId])
+  @@map("email_logs")
+}
+
+enum EmailType {
+  VERIFICATION
+  PASSWORD_RESET
+  WELCOME
+  NOTIFICATION
+}
+
+enum EmailStatus {
+  PENDING    // Email queued/sending
+  SENT       // Accepted by Resend
+  DELIVERED  // Confirmed delivered
+  BOUNCED    // Hard bounce (invalid email)
+  FAILED     // Send failed
+  OPENED     // User opened email
 }

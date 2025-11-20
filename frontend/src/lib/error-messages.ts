@@ -67,7 +67,7 @@ const errorMessageMap: Record<string, UserFriendlyError> = {
     title: 'Strategy Not Available',
     message: 'This strategy is not available or has been disabled. Please choose a different strategy.',
     actionText: 'View Strategies',
-    actionLink: '/dashboard/strategies',
+    actionLink: '/dashboard',
   },
   'User .* is already subscribed to strategy': {
     type: ErrorType.BUSINESS_LOGIC,

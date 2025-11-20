@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, Suspense } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useAuth } from '@/lib/auth';
 import { strategyService, Strategy } from '@/lib/strategy-service';
 import { SubscribeModal } from '@/components/strategy/subscribe-modal';
-import { Search, Filter, TrendingUp, Users, Bot, Clock, Target, TrendingDown, Zap } from 'lucide-react';
+import { Search, Filter, TrendingUp, Users, Bot, Clock, Target, TrendingDown, Zap, RefreshCw, AlertTriangle } from 'lucide-react';
 
 function DashboardContent() {
   const [strategies, setStrategies] = useState<Strategy[]>([]);
@@ -22,10 +22,12 @@ function DashboardContent() {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [subscribeModalOpen, setSubscribeModalOpen] = useState(false);
   const [selectedStrategy, setSelectedStrategy] = useState<Strategy | null>(null);
+  const [displayedCount, setDisplayedCount] = useState(12);
+  const [itemsPerPage] = useState(12);
 
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { login } = useAuth();
+  const { login, token } = useAuth();
 
   // Handle OAuth callback
   useEffect(() => {
@@ -56,14 +58,14 @@ function DashboardContent() {
         tags: selectedTags.join(','),
         sortBy,
         sortOrder
-      });
+      }, token || undefined);
       setStrategies(result.strategies);
     } catch (error) {
       console.error('Error fetching strategies:', error);
     } finally {
       setLoading(false);
     }
-  }, [searchTerm, selectedTags, sortBy, sortOrder]);
+  }, [searchTerm, selectedTags, sortBy, sortOrder, token]);
 
   // Fetch tags
   const fetchTags = useCallback(async () => {
@@ -96,6 +98,29 @@ function DashboardContent() {
     };
   }, [debouncedSearch]);
 
+  // Calculate displayed strategies (for "Load More" pattern)
+  const displayedStrategies = strategies.slice(0, displayedCount);
+  const hasMore = displayedCount < strategies.length;
+
+  // Reset displayed count when filters change
+  useEffect(() => {
+    setDisplayedCount(12);
+  }, [searchTerm, selectedTags, sortBy, sortOrder]);
+
+  // Load more handler
+  const handleLoadMore = () => {
+    setDisplayedCount(prev => Math.min(prev + itemsPerPage, strategies.length));
+  };
+
+  // Manual refresh handler - forces cache invalidation
+  const handleRefresh = useCallback(async () => {
+    setLoading(true);
+    // Force re-fetch by clearing the service cache
+    strategyService.invalidateCache();
+    await fetchStrategies();
+    setLoading(false);
+  }, [fetchStrategies]);
+
   const toggleTag = useCallback((tag: string) => {
     setSelectedTags(prev =>
       prev.includes(tag)
@@ -125,6 +150,23 @@ function DashboardContent() {
       return <Target className="h-4 w-4 text-blue-500" />;
     }
     return <Bot className="h-4 w-4 text-primary" />;
+  }, []);
+
+  const getTimeAgo = useCallback((dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInMs = now.getTime() - date.getTime();
+    const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
+    const diffInMonths = Math.floor(diffInDays / 30);
+
+    if (diffInDays < 1) return 'today';
+    if (diffInDays === 1) return 'yesterday';
+    if (diffInDays < 7) return `${diffInDays} days ago`;
+    if (diffInDays < 30) return `${Math.floor(diffInDays / 7)} weeks ago`;
+    if (diffInMonths === 1) return 'about 1 month ago';
+    if (diffInMonths < 12) return `about ${diffInMonths} months ago`;
+    const diffInYears = Math.floor(diffInMonths / 12);
+    return diffInYears === 1 ? 'about 1 year ago' : `about ${diffInYears} years ago`;
   }, []);
 
   const handleStrategyClick = useCallback((strategyId: string) => {
@@ -235,122 +277,150 @@ function DashboardContent() {
         {/* Results Counter */}
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
-            {loading ? 'Searching...' : `Found ${strategies.length} strategies`}
+            {loading ? 'Searching...' : `Found ${strategies.length} strategies${strategies.length !== displayedStrategies.length ? ` (Showing ${displayedStrategies.length})` : ''}`}
           </p>
-          {loading && (
-            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
-          )}
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={loading}
+              className="gap-2"
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+            {loading && (
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+            )}
+          </div>
         </div>
 
         {/* Strategy Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {strategies.map((strategy) => (
+          {displayedStrategies.map((strategy) => (
             <Card
               key={strategy.id}
-              className="card-hover cursor-pointer border-border/50 hover:border-primary/30 transition-all duration-200"
+              className="group card-hover cursor-pointer border-border/50 hover:border-primary/50 hover:shadow-lg transition-all duration-300 hover:-translate-y-1 relative overflow-visible"
               onClick={() => handleStrategyClick(strategy.id)}
             >
-              <CardHeader className="pb-3">
-                <div className="flex justify-between items-start">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      {getStrategyTypeIcon(strategy.tags)}
-                      <CardTitle className="text-lg text-foreground leading-tight">{strategy.name}</CardTitle>
-                    </div>
-                    <p className="text-sm text-muted-foreground font-mono">{strategy.code}</p>
-                  </div>
-                  <Badge variant="outline" className="text-xs border-primary/30 text-primary">
-                    {strategy.instrument}
+              {/* Private Badge Overlay - Only shown for private strategies */}
+              {!strategy.isPublic && (
+                <div className="absolute -top-2 -right-2 z-10">
+                  <Badge className="text-xs px-3 py-1 bg-yellow-600 text-white border-2 border-background shadow-lg font-semibold">
+                    PRIVATE
                   </Badge>
                 </div>
-                <p className="text-sm text-muted-foreground line-clamp-2 mt-2">
-                  {strategy.description}
-                </p>
-              </CardHeader>
+              )}
 
-              <CardContent className="space-y-4">
-                {/* Author */}
-                <div className="flex items-center space-x-2">
-                  <Users className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm text-foreground">{strategy.author}</span>
+              <CardHeader className="pb-3">
+                {/* Top Row: Strategy Code Badge */}
+                <div className="mb-3">
+                  <Badge className="text-xs px-2 py-1 bg-primary/10 text-primary border border-primary/30 font-mono uppercase">
+                    {strategy.code}
+                  </Badge>
                 </div>
 
-                {/* Key Metrics */}
-                <div className="grid grid-cols-2 gap-3 text-sm">
+                {/* Strategy Title with Icon */}
+                <div className="flex items-center gap-2 mb-3">
+                  {getStrategyTypeIcon(strategy.tags)}
+                  <CardTitle className="text-lg text-foreground leading-tight group-hover:text-primary transition-colors">{strategy.name}</CardTitle>
+                </div>
+
+                {/* Author and Timestamp Row */}
+                <div className="flex items-center gap-3 text-xs text-muted-foreground mb-2">
+                  <div className="flex items-center gap-1">
+                    <Users className="h-3 w-3" />
+                    <span>{strategy.author}</span>
+                  </div>
+                  <span>•</span>
+                  <div className="flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    <span>{getTimeAgo(strategy.createdAt)}</span>
+                  </div>
+                </div>
+
+                {/* Trading Pair and Deployments */}
+                <div className="flex items-center gap-3 text-xs mb-3">
+                  <span className="text-muted-foreground">• {strategy.instrument}</span>
+                  <div className="flex items-center gap-1 text-green-600">
+                    <Zap className="h-3 w-3" />
+                    <span className="font-medium">{strategy.deploymentCount} deployments</span>
+                  </div>
+                </div>
+
+                {/* Description (optional - keeping it minimal) */}
+                {strategy.description && (
+                  <p className="text-sm text-muted-foreground line-clamp-2 mb-3">
+                    {strategy.description}
+                  </p>
+                )}
+              </CardHeader>
+
+              <CardContent className="space-y-3">
+                {/* Key Metrics Grid (2x2) */}
+                <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
-                    <p className="text-muted-foreground">Win Rate</p>
-                    <p className="font-semibold text-primary">
+                    <div className="flex items-center gap-1 mb-1">
+                      <TrendingUp className="h-3 w-3 text-green-600" />
+                      <p className="text-muted-foreground text-xs">Win Rate</p>
+                    </div>
+                    <p className="font-semibold text-green-600 text-base">
                       {formatPercentage(strategy.winRate)}
                     </p>
                   </div>
                   <div>
-                    <p className="text-muted-foreground">ROI</p>
-                    <p className="font-semibold text-accent">
+                    <div className="flex items-center gap-1 mb-1">
+                      <Target className="h-3 w-3 text-yellow-600" />
+                      <p className="text-muted-foreground text-xs">ROI</p>
+                    </div>
+                    <p className="font-semibold text-yellow-600 text-base">
                       {formatPercentage(strategy.roi)}
                     </p>
                   </div>
                   <div>
-                    <p className="text-muted-foreground">Risk/Reward</p>
-                    <p className="font-semibold text-foreground">{strategy.riskReward?.toFixed(1) || 'N/A'}</p>
+                    <div className="flex items-center gap-1 mb-1">
+                      <TrendingUp className="h-3 w-3 text-muted-foreground" />
+                      <p className="text-muted-foreground text-xs">Risk/Reward</p>
+                    </div>
+                    <p className="font-semibold text-foreground text-base">
+                      {strategy.riskReward?.toFixed(2) || 'N/A'}
+                    </p>
                   </div>
                   <div>
-                    <p className="text-muted-foreground">Max Drawdown</p>
-                    <p className="font-semibold text-destructive">
-                      {formatPercentage(strategy.maxDrawdown)}
+                    <div className="flex items-center gap-1 mb-1">
+                      <AlertTriangle className="h-3 w-3 text-red-600" />
+                      <p className="text-muted-foreground text-xs">Max Drawdown</p>
+                    </div>
+                    <p className="font-semibold text-red-600 text-base">
+                      {strategy.maxDrawdown ? `₹${(strategy.maxDrawdown * 100).toFixed(2)}` : 'N/A'}
                     </p>
                   </div>
                 </div>
 
-                {/* Additional Features */}
-                {strategy.features && (
-                  <div className="border-t border-border/50 pt-3">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Clock className="h-3 w-3 text-muted-foreground" />
-                      <span className="text-xs text-muted-foreground">Timeframes:</span>
-                      <span className="text-xs text-foreground">{strategy.features.timeframes.join(', ')}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Target className="h-3 w-3 text-muted-foreground" />
-                      <span className="text-xs text-muted-foreground">Leverage:</span>
-                      <span className="text-xs text-foreground">{strategy.features.leverage}x</span>
-                    </div>
+                {/* Min Margin */}
+                <div className="pt-2">
+                  <p className="text-xs text-muted-foreground">Min Margin</p>
+                  <p className="font-semibold text-foreground">
+                    ₹{((strategy.executionConfig as Record<string, unknown>)?.minMargin as number ?? 10000).toLocaleString()}
+                  </p>
+                </div>
+
+                {/* Tags - Compact */}
+                {strategy.tags && strategy.tags.trim() && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {strategy.tags.split(',').map(tag => tag.trim()).filter(tag => tag).slice(0, 3).map((tag, index) => (
+                      <Badge key={index} variant="secondary" className="text-[10px] py-0 px-1.5">
+                        {tag}
+                      </Badge>
+                    ))}
                   </div>
                 )}
 
-                {/* Margin Required */}
-                <div className="border-t border-border/50 pt-3">
-                  <p className="text-xs text-muted-foreground">Min Margin</p>
-                  <p className="font-semibold text-foreground">{formatCurrency(strategy.marginRequired, strategy.marginCurrency)}</p>
-                </div>
-
-                {/* Tags */}
-                <div className="flex flex-wrap gap-1">
-                  {strategy.tags && strategy.tags.trim() ? (
-                    <>
-                      {strategy.tags.split(',').map(tag => tag.trim()).filter(tag => tag).slice(0, 3).map((tag, index) => (
-                        <Badge key={index} variant="secondary" className="text-xs hover:bg-primary/10 transition-colors">
-                          {tag}
-                        </Badge>
-                      ))}
-                      {strategy.tags.split(',').length > 3 && (
-                        <Badge variant="secondary" className="text-xs hover:bg-primary/10 transition-colors">
-                          +{strategy.tags.split(',').length - 3}
-                        </Badge>
-                      )}
-                    </>
-                  ) : (
-                    <Badge variant="secondary" className="text-xs">
-                      No tags
-                    </Badge>
-                  )}
-                </div>
-
-                {/* Deployment Count */}
-                <div className="flex items-center justify-between text-sm">
-                  <span className="flex items-center space-x-1 text-muted-foreground">
-                    <TrendingUp className="h-3 w-3" />
-                    <span>{strategy.deploymentCount} active</span>
-                  </span>
+                {/* Active Deployments Footer */}
+                <div className="flex items-center gap-1 text-xs text-muted-foreground pt-2">
+                  <Zap className="h-3 w-3 text-yellow-500" />
+                  <span>{strategy.deploymentCount} active deployments</span>
                 </div>
 
                 {/* Action Buttons */}
@@ -358,23 +428,51 @@ function DashboardContent() {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="flex-1 hover:bg-primary/5 hover:border-primary/50 transition-all"
-                    onClick={(e) => handleViewDetails(strategy.id, e)}
+                    className="flex-1 hover:bg-primary/5 hover:border-primary/50 transition-all duration-200"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      router.push(`/dashboard/strategy/${strategy.id}`);
+                    }}
                   >
                     View Details
                   </Button>
-                  <Button
-                    size="sm"
-                    className="flex-1 bg-primary hover:bg-primary/90 transition-all hover:scale-105"
-                    onClick={(e) => handleDeployBot(strategy, e)}
-                  >
-                    Deploy Bot Now
-                  </Button>
+                  {strategy.isSubscribed ? (
+                    <Button
+                      size="sm"
+                      className="flex-1 bg-muted text-muted-foreground cursor-not-allowed"
+                      disabled
+                    >
+                      Deployed
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      className="flex-1 bg-green-600 hover:bg-green-700 text-white transition-all duration-200 hover:scale-105 hover:shadow-lg"
+                      onClick={(e) => handleDeployBot(strategy, e)}
+                    >
+                      <Zap className="h-3 w-3 mr-1" />
+                      Deploy Now
+                    </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>
           ))}
         </div>
+
+        {/* Load More Button */}
+        {hasMore && (
+          <div className="flex justify-center mt-8">
+            <Button
+              onClick={handleLoadMore}
+              variant="outline"
+              size="lg"
+              className="min-w-[200px] hover:bg-primary/10 hover:border-primary transition-all"
+            >
+              Load More Strategies
+            </Button>
+          </div>
+        )}
 
         {/* Empty State */}
         {strategies.length === 0 && !loading && (
@@ -407,6 +505,14 @@ function DashboardContent() {
             onOpenChange={setSubscribeModalOpen}
             strategyId={selectedStrategy.id}
             strategyName={selectedStrategy.name}
+            strategyMetrics={{
+              minMargin: (selectedStrategy.executionConfig as Record<string, unknown>)?.minMargin as number ?? 10000,
+              winRate: selectedStrategy.winRate,
+              roi: selectedStrategy.roi,
+              riskReward: selectedStrategy.riskReward,
+              maxDrawdown: selectedStrategy.maxDrawdown,
+            }}
+            strategyConfig={selectedStrategy.executionConfig}
             onSuccess={handleSubscribeSuccess}
           />
         )}
@@ -415,13 +521,5 @@ function DashboardContent() {
 }
 
 export default function DashboardPage() {
-  return (
-    <Suspense fallback={
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-      </div>
-    }>
-      <DashboardContent />
-    </Suspense>
-  );
+  return <DashboardContent />;
 }

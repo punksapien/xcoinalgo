@@ -170,22 +170,23 @@ router.get('/futures-balance', authenticate, async (req: AuthenticatedRequest, r
         brokerCredential.apiSecret
       );
 
-      // Calculate available balance: balance - (locked_balance + cross_order_margin + cross_user_margin)
-      // Matches Python implementation
+      // Calculate available balance
+      // Note: CoinDCX's 'balance' field already represents AVAILABLE balance (not locked in positions)
+      // 'locked_balance' is separate funds locked in open positions/orders
+      // So we only subtract cross margins from available balance
       const calculateAvailable = (wallet: any): number => {
-        const balance = Number(wallet.balance || 0);
-        const locked = Number(wallet.locked_balance || 0);
+        const balance = Number(wallet.balance || 0); // Already available, not locked
         const crossOrder = Number(wallet.cross_order_margin || 0);
         const crossUser = Number(wallet.cross_user_margin || 0);
-        return balance - (locked + crossOrder + crossUser);
+        return balance - (crossOrder + crossUser);
       };
 
       // Find primary futures wallet (USDT or INR)
       const usdtWallet = wallets.find((w: any) => w.currency_short_name === 'USDT');
       const inrWallet = wallets.find((w: any) => w.currency_short_name === 'INR');
 
-      // Use whichever wallet exists (prefer USDT if both exist)
-      const primaryWallet = usdtWallet || inrWallet;
+      // Use whichever wallet exists (prefer INR for Indian users)
+      const primaryWallet = inrWallet || usdtWallet;
       const currency = primaryWallet?.currency_short_name || 'USDT';
       const totalAvailable = primaryWallet ? calculateAvailable(primaryWallet) : 0;
 
@@ -277,6 +278,65 @@ router.delete('/keys', authenticate, async (req: AuthenticatedRequest, res, next
       return res.status(400).json({
         error: 'Cannot delete credentials while you have active bot deployments. Please stop all bots first.'
       });
+    }
+
+    // Check if user has any active strategy subscriptions using these credentials
+    const brokerCredential = await prisma.brokerCredential.findUnique({
+      where: {
+        userId_brokerName: {
+          userId,
+          brokerName: 'coindcx'
+        }
+      },
+      select: {
+        id: true
+      }
+    });
+
+    if (brokerCredential) {
+      // Check for any active subscriptions (including paused ones)
+      // Active means isActive: true, which includes both trading and paused strategies
+      const activeSubscriptions = await prisma.strategySubscription.findMany({
+        where: {
+          userId,
+          brokerCredentialId: brokerCredential.id,
+          isActive: true  // This includes both actively trading and paused subscriptions
+        },
+        include: {
+          strategy: {
+            select: {
+              name: true
+            }
+          }
+        }
+      });
+
+      if (activeSubscriptions.length > 0) {
+        const activeCount = activeSubscriptions.filter(sub => !sub.isPaused).length;
+        const pausedCount = activeSubscriptions.filter(sub => sub.isPaused).length;
+        const strategyNames = activeSubscriptions.map(sub =>
+          `${sub.strategy.name}${sub.isPaused ? ' (paused)' : ''}`
+        ).join(', ');
+
+        let errorMsg = `Cannot delete credentials while you have ${activeSubscriptions.length} subscription(s): ${strategyNames}. `;
+        if (activeCount > 0 && pausedCount > 0) {
+          errorMsg += 'Please unsubscribe from all strategies first (including paused ones).';
+        } else if (pausedCount > 0) {
+          errorMsg += 'Please unsubscribe from these paused strategies first, or they will resume trading when credentials are reconnected.';
+        } else {
+          errorMsg += 'Please unsubscribe from these active strategies first.';
+        }
+
+        return res.status(400).json({
+          error: errorMsg,
+          activeSubscriptions: activeSubscriptions.map(sub => ({
+            id: sub.id,
+            strategyName: sub.strategy.name,
+            isPaused: sub.isPaused,
+            status: sub.isPaused ? 'paused' : 'active'
+          }))
+        });
+      }
     }
 
     // Delete credentials

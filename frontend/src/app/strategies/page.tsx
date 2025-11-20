@@ -18,8 +18,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useAuth } from '@/lib/auth';
+import { useRoleGuard } from '@/lib/use-role-guard';
 import { showErrorToast, showSuccessToast } from '@/lib/toast-utils';
 import { apiClient, ApiError } from '@/lib/api-client';
+import { LogViewerModal } from '@/components/LogViewerModal';
 import {
   Plus,
   Search,
@@ -27,6 +29,7 @@ import {
   Power,
   PowerOff,
   Eye,
+  EyeOff,
   Loader2,
   FileCode,
   Calendar,
@@ -34,6 +37,15 @@ import {
   AlertCircle,
   CheckCircle2
 } from "lucide-react";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination";
 
 interface Strategy {
   id: string;
@@ -44,6 +56,7 @@ interface Strategy {
   version: string;
   isActive: boolean;
   isMarketplace: boolean;
+  isPublic: boolean;
   tags: string;
   instrument: string;
   createdAt: string;
@@ -60,6 +73,7 @@ interface Strategy {
 export default function StrategyManagementPage() {
   const router = useRouter();
   const { token, hasHydrated } = useAuth();
+  const { isAuthorized, isChecking } = useRoleGuard('QUANT');
 
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [loading, setLoading] = useState(true);
@@ -68,12 +82,17 @@ export default function StrategyManagementPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedStrategy, setSelectedStrategy] = useState<Strategy | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [logViewerOpen, setLogViewerOpen] = useState(false);
+  const [logViewerStrategy, setLogViewerStrategy] = useState<Strategy | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(10);
 
   const fetchStrategies = useCallback(async () => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
       params.append('all', 'true'); // Get both active and inactive
+      params.append('limit', '1000'); // Get all strategies (increase from default 10)
       if (statusFilter !== 'all') {
         params.append('status', statusFilter);
       }
@@ -181,9 +200,41 @@ export default function StrategyManagementPage() {
     }
   };
 
+  const handleToggleVisibility = async (strategy: Strategy) => {
+    if (!token) return;
+
+    setActionLoading(strategy.id);
+
+    try {
+      const data = await apiClient.patch<{ message?: string; isPublic: boolean }>(
+        `/api/strategy-upload/${strategy.id}/toggle-visibility`
+      );
+
+      showSuccessToast(
+        'Visibility Updated',
+        data.message || `Strategy is now ${data.isPublic ? 'PUBLIC' : 'PRIVATE'}`
+      );
+      fetchStrategies();
+    } catch (error) {
+      console.error('Toggle visibility failed:', error);
+      if (error instanceof ApiError && error.status !== 401) {
+        showErrorToast('Action Failed', error.message);
+      } else if (!(error instanceof ApiError)) {
+        showErrorToast('Action Failed', 'Failed to update strategy visibility');
+      }
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const confirmDelete = (strategy: Strategy) => {
     setSelectedStrategy(strategy);
     setDeleteDialogOpen(true);
+  };
+
+  const openLogViewer = (strategy: Strategy) => {
+    setLogViewerStrategy(strategy);
+    setLogViewerOpen(true);
   };
 
   const filteredStrategies = strategies.filter(strategy => {
@@ -199,6 +250,18 @@ export default function StrategyManagementPage() {
 
     return matchesSearch && matchesStatus;
   });
+
+  // Calculate pagination
+  const totalPages = Math.ceil(filteredStrategies.length / itemsPerPage);
+  const paginatedStrategies = filteredStrategies.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter]);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -247,8 +310,8 @@ export default function StrategyManagementPage() {
     );
   };
 
-  // Show loading while hydrating or fetching
-  if (!hasHydrated || loading) {
+  // Show loading while checking role or hydrating or fetching
+  if (isChecking || !hasHydrated || loading) {
     return (
       <div className="container mx-auto p-6">
         <div className="flex items-center justify-center h-64">
@@ -256,6 +319,11 @@ export default function StrategyManagementPage() {
         </div>
       </div>
     );
+  }
+
+  // If not authorized, don't render anything (role guard will redirect)
+  if (!isAuthorized) {
+    return null;
   }
 
   return (
@@ -322,7 +390,7 @@ export default function StrategyManagementPage() {
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Deployed</p>
+                <p className="text-sm text-muted-foreground">Total Subscribers</p>
                 <p className="text-2xl font-bold text-blue-500">
                   {strategies.reduce((sum, s) => sum + (s.deploymentCount || 0), 0)}
                 </p>
@@ -363,7 +431,7 @@ export default function StrategyManagementPage() {
         <CardHeader>
           <CardTitle>All Strategies</CardTitle>
           <CardDescription>
-            {filteredStrategies.length} {filteredStrategies.length === 1 ? 'strategy' : 'strategies'} found
+            {filteredStrategies.length} {filteredStrategies.length === 1 ? 'strategy' : 'strategies'} found (Page {currentPage} of {totalPages || 1})
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -394,13 +462,13 @@ export default function StrategyManagementPage() {
                     <th className="text-left py-3 px-4 font-medium">Strategy</th>
                     <th className="text-left py-3 px-4 font-medium">Status</th>
                     <th className="text-left py-3 px-4 font-medium">Performance</th>
-                    <th className="text-left py-3 px-4 font-medium">Deployments</th>
+                    <th className="text-left py-3 px-4 font-medium">Subscribers</th>
                     <th className="text-left py-3 px-4 font-medium">Updated</th>
                     <th className="text-right py-3 px-4 font-medium">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredStrategies.map((strategy) => (
+                  {paginatedStrategies.map((strategy) => (
                     <tr key={strategy.id} className="border-b hover:bg-secondary/20">
                       <td className="py-4 px-4">
                         <div>
@@ -417,7 +485,15 @@ export default function StrategyManagementPage() {
                         </div>
                       </td>
                       <td className="py-4 px-4">
-                        {getBacktestStatusBadge(strategy)}
+                        <div className="flex flex-col gap-1">
+                          {getBacktestStatusBadge(strategy)}
+                          <Badge
+                            variant={strategy.isPublic ? 'default' : 'secondary'}
+                            className="text-xs w-fit"
+                          >
+                            {strategy.isPublic ? 'Public' : 'Private'}
+                          </Badge>
+                        </div>
                       </td>
                       <td className="py-4 px-4">
                         <div className="space-y-1 text-sm">
@@ -452,10 +528,10 @@ export default function StrategyManagementPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => router.push(`/dashboard/strategy/${strategy.id}`)}
-                            title="View Details"
+                            onClick={() => router.push(`/strategies/${strategy.id}/edit`)}
+                            title="Edit Code"
                           >
-                            <Eye className="h-4 w-4" />
+                            <FileCode className="h-4 w-4" />
                           </Button>
 
                           <Button
@@ -477,11 +553,27 @@ export default function StrategyManagementPage() {
                           <Button
                             variant="ghost"
                             size="sm"
+                            onClick={() => handleToggleVisibility(strategy)}
+                            disabled={actionLoading === strategy.id}
+                            title={strategy.isPublic ? 'Make Private' : 'Make Public'}
+                          >
+                            {actionLoading === strategy.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : strategy.isPublic ? (
+                              <Eye className="h-4 w-4 text-blue-500" />
+                            ) : (
+                              <EyeOff className="h-4 w-4 text-gray-500" />
+                            )}
+                          </Button>
+
+                          <Button
+                            variant="ghost"
+                            size="sm"
                             onClick={() => confirmDelete(strategy)}
                             disabled={actionLoading === strategy.id || strategy.deploymentCount > 0}
                             title={
                               strategy.deploymentCount > 0
-                                ? 'Cannot delete - has active deployments'
+                                ? 'Cannot delete - has active subscribers'
                                 : 'Delete Strategy'
                             }
                           >
@@ -493,6 +585,67 @@ export default function StrategyManagementPage() {
                   ))}
                 </tbody>
               </table>
+
+              {/* Pagination */}
+              {filteredStrategies.length > itemsPerPage && (
+                <Pagination className="mt-6">
+                  <PaginationContent>
+                    <PaginationItem>
+                      <PaginationPrevious
+                        href="#"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          if (currentPage > 1) setCurrentPage(currentPage - 1);
+                        }}
+                        className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                      />
+                    </PaginationItem>
+
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+                      if (
+                        page === 1 ||
+                        page === totalPages ||
+                        (page >= currentPage - 1 && page <= currentPage + 1)
+                      ) {
+                        return (
+                          <PaginationItem key={page}>
+                            <PaginationLink
+                              href="#"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                setCurrentPage(page);
+                              }}
+                              isActive={currentPage === page}
+                              className="cursor-pointer"
+                            >
+                              {page}
+                            </PaginationLink>
+                          </PaginationItem>
+                        );
+                      }
+                      if (page === currentPage - 2 || page === currentPage + 2) {
+                        return (
+                          <PaginationItem key={page}>
+                            <PaginationEllipsis />
+                          </PaginationItem>
+                        );
+                      }
+                      return null;
+                    })}
+
+                    <PaginationItem>
+                      <PaginationNext
+                        href="#"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          if (currentPage < totalPages) setCurrentPage(currentPage + 1);
+                        }}
+                        className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                      />
+                    </PaginationItem>
+                  </PaginationContent>
+                </Pagination>
+              )}
             </div>
           )}
         </CardContent>
@@ -509,8 +662,8 @@ export default function StrategyManagementPage() {
               {selectedStrategy?.deploymentCount && selectedStrategy.deploymentCount > 0 && (
                 <div className="mt-3 p-3 bg-red-50 dark:bg-red-900/10 rounded-lg border border-red-200 dark:border-red-800">
                   <p className="text-red-700 dark:text-red-400 font-medium">
-                    ⚠️ This strategy has {selectedStrategy.deploymentCount} active deployment(s).
-                    Please stop all deployments before deleting.
+                    ⚠️ This strategy has {selectedStrategy.deploymentCount} active subscriber(s).
+                    Please contact subscribers to stop their deployments before deleting.
                   </p>
                 </div>
               )}
@@ -538,6 +691,19 @@ export default function StrategyManagementPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Log Viewer Modal */}
+      {logViewerStrategy && (
+        <LogViewerModal
+          isOpen={logViewerOpen}
+          onClose={() => {
+            setLogViewerOpen(false);
+            setLogViewerStrategy(null);
+          }}
+          strategyId={logViewerStrategy.id}
+          strategyName={logViewerStrategy.name}
+        />
+      )}
     </div>
   );
 }

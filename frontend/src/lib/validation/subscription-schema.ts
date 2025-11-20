@@ -12,32 +12,30 @@ export const subscriptionConfigSchema = z.object({
 
   riskPerTrade: z
     .number({ message: 'Risk per trade must be a number' })
-    .min(0.001, 'Minimum risk per trade is 0.1%')
-    .max(0.1, 'Maximum risk per trade is 10%')
-    .positive('Risk per trade must be positive'),
+    .min(0.01, 'Minimum risk per trade is 0.01 (1%)')
+    .max(0.55, 'Maximum risk per trade is 0.55 (55%)')
+    .positive('Risk per trade must be positive')
+    .optional(), // Optional - undefined = use strategy default
 
   leverage: z
     .number({ message: 'Leverage must be a number' })
     .int('Leverage must be a whole number')
     .min(1, 'Minimum leverage is 1x')
     .max(100, 'Maximum leverage is 100x')
-    .optional()
-    .default(1),
+    .optional(), // Optional - undefined = use strategy default
 
   maxPositions: z
     .number({ message: 'Max positions must be a number' })
     .int('Max positions must be a whole number')
     .min(1, 'At least 1 position is required')
     .max(10, 'Maximum 10 concurrent positions allowed')
-    .optional()
-    .default(1),
+    .optional(),
 
   maxDailyLoss: z
     .number({ message: 'Max daily loss must be a number' })
     .min(0.01, 'Minimum max daily loss is 1%')
     .max(0.2, 'Maximum max daily loss is 20%')
-    .optional()
-    .default(0.05),
+    .optional(),
 
   slAtrMultiplier: z
     .number({ message: 'Stop loss ATR multiplier must be a number' })

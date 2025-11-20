@@ -9,7 +9,7 @@ interface AuthCheckProps {
 }
 
 export default function AuthCheck({ children }: AuthCheckProps) {
-  const { isAuthenticated, checkAuth } = useAuth();
+  const { isAuthenticated, checkAuth, startPeriodicRefresh, stopPeriodicRefresh } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -22,8 +22,16 @@ export default function AuthCheck({ children }: AuthCheckProps) {
   useEffect(() => {
     if (!isAuthenticated) {
       router.push('/login');
+    } else {
+      // Start periodic refresh when authenticated
+      startPeriodicRefresh();
     }
-  }, [isAuthenticated, router]);
+
+    // Cleanup: stop periodic refresh when component unmounts
+    return () => {
+      stopPeriodicRefresh();
+    };
+  }, [isAuthenticated, router, startPeriodicRefresh, stopPeriodicRefresh]);
 
   if (!isAuthenticated) {
     return (

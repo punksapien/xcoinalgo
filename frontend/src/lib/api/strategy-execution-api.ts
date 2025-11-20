@@ -16,13 +16,14 @@ const API_BASE_URL = typeof window === 'undefined' ? 'http://localhost:3001' : '
 
 export interface SubscriptionConfig {
   capital: number;
-  riskPerTrade: number;
-  leverage?: number;
-  maxPositions?: number;
-  maxDailyLoss?: number;
-  slAtrMultiplier?: number;
-  tpAtrMultiplier?: number;
+  riskPerTrade: number;          // Required (no default)
+  leverage: number;               // Required (no default)
   brokerCredentialId: string;
+  // Optional fields (backend will apply defaults):
+  maxPositions?: number;          // Backend default: 1
+  maxDailyLoss?: number;          // Backend default: 0.05
+  slAtrMultiplier?: number;       // Backend default: 2.0
+  tpAtrMultiplier?: number;       // Backend default: 2.5
 }
 
 export interface Subscription {

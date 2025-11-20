@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  strategy-sandbox:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: strategy-sandbox:latest
+    container_name: strategy-sandbox
+
+    # Resource limits
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: 0.5
+
+    # Security settings
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+    # Network isolation
+    network_mode: none
+
+    # Volumes
+    volumes:
+      - /tmp  # Ephemeral temp directory
+
+    # Environment
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+
+    # Keep container running for exec commands
+    command: tail -f /dev/null

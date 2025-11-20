@@ -1,8 +1,8 @@
 'use client'
 
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useEffect, useState, useMemo } from 'react'
-import { ArrowLeft, Calendar, Users, Award, Activity, TrendingUp, Code, Clock, Download } from 'lucide-react'
+import { ArrowLeft, Calendar, Users, Award, Activity, TrendingUp, Code, Clock, Download, Lock, ShieldAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -282,16 +282,61 @@ const StrategyHeader = ({
 export default function StrategyDetailPage() {
   const params = useParams()
   const router = useRouter()
-  const { token } = useAuth()
+  const searchParams = useSearchParams()
+  const { token, isQuant, isAdmin } = useAuth()
   const [strategy, setStrategy] = useState<StrategyData | null>(null)
   const [userSubscription, setUserSubscription] = useState<UserSubscription | null>(null)
   const [loading, setLoading] = useState(true)
   const [subscribeModalOpen, setSubscribeModalOpen] = useState(false)
-  const [showingUSD, setShowingUSD] = useState(true)
+  const [showingUSD, setShowingUSD] = useState(false)
   const [reportMultiplier, setReportMultiplier] = useState(1)
   const [currentPage, setCurrentPage] = useState(1)
   const [searchQuery, setSearchQuery] = useState('')
+  const [errorType, setErrorType] = useState<'not-found' | 'private' | null>(null)
+  const [showBacktestBanner, setShowBacktestBanner] = useState(false)
+  const [backtestStartTime, setBacktestStartTime] = useState<number | null>(null)
+  const [elapsedTime, setElapsedTime] = useState(0)
   const itemsPerPage = 10
+
+  // Check if user is admin or quant (only they should see backtest status)
+  const canSeeBacktestProgress = isQuant() || isAdmin()
+
+  // Check if backtest was just triggered
+  useEffect(() => {
+    if (searchParams.get('backtestRunning') === 'true' && canSeeBacktestProgress) {
+      setShowBacktestBanner(true)
+      setBacktestStartTime(Date.now())
+    }
+  }, [searchParams, canSeeBacktestProgress])
+
+  // Update elapsed time every second when backtest is running
+  useEffect(() => {
+    if (!showBacktestBanner || !backtestStartTime) return
+
+    const interval = setInterval(() => {
+      setElapsedTime(Math.floor((Date.now() - backtestStartTime) / 1000))
+    }, 1000)
+
+    return () => clearInterval(interval)
+  }, [showBacktestBanner, backtestStartTime])
+
+  // Poll for backtest completion every 5 seconds
+  useEffect(() => {
+    if (!showBacktestBanner) return
+
+    const pollInterval = setInterval(async () => {
+      // Refresh strategy data to check if backtest updated
+      await fetchStrategy()
+
+      // If backtest has been running for more than 2 minutes, auto-dismiss
+      if (elapsedTime > 120) {
+        setShowBacktestBanner(false)
+        setBacktestStartTime(null)
+      }
+    }, 5000)
+
+    return () => clearInterval(pollInterval)
+  }, [showBacktestBanner, elapsedTime])
 
   useEffect(() => {
     fetchStrategy()
@@ -300,6 +345,7 @@ export default function StrategyDetailPage() {
   const fetchStrategy = async () => {
     try {
       setLoading(true)
+      setErrorType(null)
       const strategyId = params.id as string
 
       // Fetch strategy details from marketplace API
@@ -320,9 +366,20 @@ export default function StrategyDetailPage() {
         if (token && data.strategy) {
           await checkSubscription(data.strategy.id)
         }
+      } else {
+        // Determine error type based on status code
+        if (response.status === 403) {
+          setErrorType('private')
+        } else if (response.status === 404) {
+          setErrorType('not-found')
+        } else {
+          // Default to not-found for other errors
+          setErrorType('not-found')
+        }
       }
     } catch (error) {
       console.error('Failed to fetch strategy:', error)
+      setErrorType('not-found')
     } finally {
       setLoading(false)
     }
@@ -359,7 +416,7 @@ export default function StrategyDetailPage() {
   }
 
   const handleBack = () => {
-    router.push('/dashboard/strategies')
+    router.push('/dashboard')
   }
 
   const handleSubscribe = () => {
@@ -599,13 +656,85 @@ export default function StrategyDetailPage() {
   if (!strategy) {
     return (
       <div className="container mx-auto p-6">
-        <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
-          <h2 className="text-xl font-semibold">Strategy Not Found</h2>
-          <p className="text-muted-foreground">The requested strategy could not be found.</p>
-          <Button onClick={handleBack} variant="outline">
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Strategies
-          </Button>
+        <div className="flex items-center justify-center min-h-[600px]">
+          <Card className="max-w-md w-full border-border/50 shadow-lg">
+            <CardContent className="pt-8 pb-8">
+              {errorType === 'private' ? (
+                // Private Strategy Error
+                <div className="flex flex-col items-center text-center space-y-6">
+                  <div className="p-4 bg-yellow-100 dark:bg-yellow-900/20 rounded-full">
+                    <Lock className="h-12 w-12 text-yellow-600 dark:text-yellow-500" />
+                  </div>
+                  <div className="space-y-2">
+                    <h2 className="text-2xl font-bold text-foreground">Private Strategy</h2>
+                    <p className="text-muted-foreground leading-relaxed">
+                      This strategy is private and only accessible to authorized users.
+                    </p>
+                  </div>
+                  <div className="w-full pt-2 space-y-3">
+                    <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                      <div className="flex items-start gap-3">
+                        <ShieldAlert className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+                        <div className="text-sm text-left">
+                          <p className="font-medium text-blue-900 dark:text-blue-100 mb-1">
+                            Need Access?
+                          </p>
+                          <p className="text-blue-700 dark:text-blue-300">
+                            Contact the strategy creator or check the marketplace for public strategies.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-3 w-full pt-2">
+                    <Button
+                      onClick={handleBack}
+                      variant="outline"
+                      className="flex-1"
+                    >
+                      <ArrowLeft className="h-4 w-4 mr-2" />
+                      Back to Strategies
+                    </Button>
+                    <Button
+                      onClick={() => router.push('/dashboard')}
+                      className="flex-1 bg-primary hover:bg-primary/90"
+                    >
+                      Browse Marketplace
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                // Not Found Error
+                <div className="flex flex-col items-center text-center space-y-6">
+                  <div className="p-4 bg-red-100 dark:bg-red-900/20 rounded-full">
+                    <Activity className="h-12 w-12 text-red-600 dark:text-red-500" />
+                  </div>
+                  <div className="space-y-2">
+                    <h2 className="text-2xl font-bold text-foreground">Strategy Not Found</h2>
+                    <p className="text-muted-foreground leading-relaxed">
+                      The requested strategy could not be found. It may have been removed or the link is incorrect.
+                    </p>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-3 w-full pt-4">
+                    <Button
+                      onClick={handleBack}
+                      variant="outline"
+                      className="flex-1"
+                    >
+                      <ArrowLeft className="h-4 w-4 mr-2" />
+                      Back to Strategies
+                    </Button>
+                    <Button
+                      onClick={() => router.push('/dashboard')}
+                      className="flex-1 bg-primary hover:bg-primary/90"
+                    >
+                      Browse Marketplace
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
       </div>
     )
@@ -622,6 +751,49 @@ export default function StrategyDetailPage() {
           onSubscribe={handleSubscribe}
           userSubscription={userSubscription || undefined}
         />
+
+        {/* Backtest Running Banner - Only visible to ADMIN/QUANT */}
+        {showBacktestBanner && canSeeBacktestProgress && (
+          <Card className="border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20">
+            <CardContent className="py-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                  <div>
+                    <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                      Backtest Running • {elapsedTime}s elapsed
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => {
+                      setShowBacktestBanner(false)
+                      setBacktestStartTime(null)
+                      fetchStrategy()
+                    }}
+                    variant="outline"
+                    size="sm"
+                    className="border-blue-300 dark:border-blue-700 text-xs"
+                  >
+                    Refresh
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setShowBacktestBanner(false)
+                      setBacktestStartTime(null)
+                    }}
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs"
+                  >
+                    Dismiss
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Backtest Results Section */}
         {backtest ? (

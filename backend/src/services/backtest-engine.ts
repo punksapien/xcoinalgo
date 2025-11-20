@@ -423,14 +423,20 @@ class BacktestEngine {
             logger.info(`Derived requirements from config.dependencies (${deps.length} packages)`)
           }
         }
-        if (reqString && reqString.trim().length > 0) {
-          const { uvEnvManager } = await import('./python-env')
-          const env = uvEnvManager.ensureEnv(reqString)
-          pythonCmd = env.pythonPath || pythonCmd
-          logger.info(`Using python interpreter: ${pythonCmd}`)
-        } else {
-          logger.info('No requirements provided; using system python3')
+        // Use default requirements if strategy has none
+        if (!reqString || reqString.trim().length === 0) {
+          reqString = `pandas>=2.0.0
+numpy>=1.24.0
+pandas-ta>=0.3.14b
+requests>=2.31.0
+loguru>=0.7.0`
+          logger.info('Using default backtest requirements')
         }
+
+        const { uvEnvManager } = await import('./python-env')
+        const env = uvEnvManager.ensureEnv(reqString)
+        pythonCmd = env.pythonPath || pythonCmd
+        logger.info(`Using python interpreter: ${pythonCmd}`)
       } catch (e) {
         logger.warn(`UV env setup failed or skipped: ${e}`)
       }

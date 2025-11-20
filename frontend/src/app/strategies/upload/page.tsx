@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from '@/lib/auth';
+import { useRoleGuard } from '@/lib/use-role-guard';
 import { showErrorToast, showSuccessToast, showInfoToast } from '@/lib/toast-utils';
 import { useBacktestProgress } from '@/hooks/useBacktestProgress';
 import { BacktestProgressBar } from '@/components/BacktestProgressBar';
@@ -52,7 +53,8 @@ interface BacktestMetrics {
 
 export default function StrategyUploadPage() {
   const router = useRouter();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
+  const { isAuthorized, isChecking } = useRoleGuard('QUANT');
 
   const [file, setFile] = useState<File | null>(null);
   const [requirementsFile, setRequirementsFile] = useState<File | null>(null);
@@ -61,7 +63,7 @@ export default function StrategyUploadPage() {
     description: '',
     pair: '',  // Don't hardcode - will be populated from STRATEGY_CONFIG
     resolution: '',  // Don't hardcode - will be populated from STRATEGY_CONFIG
-    author: '',
+    author: '',  // Allow manual input for author name
     tags: '',
   });
 
@@ -170,7 +172,6 @@ export default function StrategyUploadPage() {
                 ...prev,
                 pair: data.extractedConfig.pair || prev.pair,
                 resolution: data.extractedConfig.resolution || prev.resolution,
-                author: data.extractedConfig.author || prev.author,
                 description: data.extractedConfig.description || prev.description,
                 tags: Array.isArray(data.extractedConfig.tags)
                   ? data.extractedConfig.tags.join(', ')
@@ -282,7 +283,8 @@ export default function StrategyUploadPage() {
         description: config.description,
         pair: config.pair,
         resolution: config.resolution,
-        author: config.author || 'Quant Team',
+        author: config.author.trim() || user?.name || 'Quant Team',
+        authorId: user?.id,
         tags: config.tags.split(',').map(t => t.trim()).filter(t => t),
       }));
 
@@ -342,6 +344,22 @@ export default function StrategyUploadPage() {
       setUploading(false);
     }
   };
+
+  // Show loading while checking role
+  if (isChecking) {
+    return (
+      <div className="container mx-auto p-6">
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      </div>
+    );
+  }
+
+  // If not authorized, don't render anything (role guard will redirect)
+  if (!isAuthorized) {
+    return null;
+  }
 
   return (
     <div className="container mx-auto p-6 max-w-4xl">
@@ -675,9 +693,12 @@ export default function StrategyUploadPage() {
               id="author"
               value={config.author}
               onChange={(e) => setConfig({ ...config, author: e.target.value })}
-              placeholder="Your name or team"
+              placeholder={user?.name || 'Quant Team'}
               disabled={uploading || backtestRunning}
             />
+            <p className="text-xs text-muted-foreground mt-1">
+              Enter the author name for this strategy
+            </p>
           </div>
 
           <div>

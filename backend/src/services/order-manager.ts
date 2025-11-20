@@ -198,10 +198,15 @@ class OrderManager {
     exitReason: string
   ): Promise<void> {
     try {
+      if (!trade.subscription.brokerCredential) {
+        logger.error(`Missing broker credentials for trade ${trade.id}`)
+        return
+      }
+
       const { apiKey, apiSecret } = trade.subscription.brokerCredential
 
       if (!apiKey || !apiSecret) {
-        logger.error(`Missing credentials for trade ${trade.id}`)
+        logger.error(`Missing API credentials for trade ${trade.id}`)
         return
       }
 

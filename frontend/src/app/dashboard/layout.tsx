@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { Sidebar } from '@/components/layout/sidebar';
 import { useAuth } from '@/lib/auth';
+import { useProfileCompletion } from '@/lib/hooks/useProfileCompletion';
 import { Menu, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -13,11 +14,18 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, isAuthenticated, hasHydrated } = useAuth();
+  const { user, isAuthenticated, hasHydrated, checkAuth, startPeriodicRefresh, stopPeriodicRefresh } = useAuth();
   const { data: session, status: sessionStatus } = useSession();
   const router = useRouter();
+  const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
+
+  // Check if user needs to complete their profile
+  useProfileCompletion();
+
+  // Check if we're in a sub-dashboard (admin or client) which has its own layout
+  const isSubDashboard = pathname?.startsWith('/dashboard/admin') || pathname?.startsWith('/dashboard/client');
 
   useEffect(() => {
     // Wait for Zustand to hydrate before checking auth
@@ -40,6 +48,21 @@ export default function DashboardLayout({
     return () => clearTimeout(timer);
   }, [user, isAuthenticated, session, sessionStatus, router, hasHydrated]);
 
+  // Periodic refresh: Check auth on mount and start periodic refresh
+  useEffect(() => {
+    if (isAuthenticated) {
+      // Check auth immediately on mount to get fresh user data
+      checkAuth();
+      // Start periodic refresh (every 5 minutes)
+      startPeriodicRefresh();
+    }
+
+    // Cleanup: stop periodic refresh when component unmounts
+    return () => {
+      stopPeriodicRefresh();
+    };
+  }, [isAuthenticated, checkAuth, startPeriodicRefresh, stopPeriodicRefresh]);
+
   if (isChecking || sessionStatus === 'loading') {
     return (
       <div className="flex items-center justify-center h-screen bg-background">
@@ -54,6 +77,11 @@ export default function DashboardLayout({
 
   if (!hasNextAuthSession && !hasZustandAuth) {
     return null;
+  }
+
+  // If we're in a sub-dashboard (admin or client), just render children (they have their own layout)
+  if (isSubDashboard) {
+    return <>{children}</>;
   }
 
   return (

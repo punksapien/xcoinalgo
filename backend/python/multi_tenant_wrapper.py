@@ -24,6 +24,7 @@ import logging
 import traceback
 import csv
 import os
+import inspect
 from datetime import datetime
 from typing import Dict, Any, List
 from io import StringIO
@@ -108,6 +109,57 @@ class LogCapture:
         logger.addHandler(list_handler)
 
 
+def _convert_settings_types(settings: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Convert string values from Redis to proper types automatically.
+
+    This is a generalized solution that detects numeric strings and converts them
+    to int or float as appropriate, without needing hardcoded field lists.
+
+    Some fields must remain as strings even if they look numeric (e.g., resolution "15").
+    """
+    converted = {}
+
+    # Fields that should ALWAYS remain as strings, even if they look numeric
+    keep_as_string = {
+        'resolution',  # API expects "15" not 15
+        'pair',        # Symbol pair like "B-ETH_USDT"
+        'name',        # Strategy name
+        'author',      # Author name
+        'tags',        # Tags
+        'margin_currency',  # "INR" or "USDT"
+        'user_id',     # User ID
+        'api_key',     # API credentials
+        'api_secret',  # API credentials
+    }
+
+    for key, value in settings.items():
+        if isinstance(value, str):
+            # Check if this field should stay as string
+            if key in keep_as_string:
+                converted[key] = value
+            else:
+                # Try to automatically detect and convert numeric strings
+                try:
+                    # First try int (for values like "10", "5", "100")
+                    if '.' not in value and 'e' not in value.lower() and 'E' not in value:
+                        # Looks like an integer
+                        int_val = int(value)
+                        converted[key] = int_val
+                    else:
+                        # Has decimal point or scientific notation - treat as float
+                        float_val = float(value)
+                        converted[key] = float_val
+                except (ValueError, AttributeError):
+                    # Not a number - keep as string
+                    converted[key] = value
+        else:
+            # Already the right type
+            converted[key] = value
+
+    return converted
+
+
 def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCapture) -> Dict[str, Any]:
     """
     Execute quant team's strategy for multiple subscribers.
@@ -147,6 +199,9 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
         strategy_code = input_data.get('strategy_code')
         settings = input_data.get('settings', {})
         subscribers = input_data.get('subscribers', [])
+
+        # Convert string values from Redis to proper types
+        settings = _convert_settings_types(settings)
 
         if not strategy_code:
             raise ValueError("Missing strategy_code in input")
@@ -205,30 +260,36 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
 
         logging.info(f"📝 Additional logs: {trading_bot_log_path}, {error_log_path}")
 
-        # ✅ Redirect print() statements to file
+        # ✅ Redirect print() statements to file ONLY (prevent stdout pollution)
         class PrintLogger:
             def __init__(self, filename):
                 self.terminal = sys.stdout
                 self.log = open(filename, 'a')
 
             def write(self, message):
-                self.terminal.write(message)  # Still show in console
-                self.log.write(message)  # Also write to file
+                # DO NOT write to terminal - this pollutes stdout and breaks JSON parsing
+                # Only write to log file
+                self.log.write(message)
                 self.log.flush()
 
             def flush(self):
-                self.terminal.flush()
+                # Only flush log file, not terminal
                 self.log.flush()
 
         sys.stdout = PrintLogger(print_log_file)
 
+        # ✅ Also redirect stderr to prevent error output pollution
+        sys.stderr = PrintLogger(error_log_path)
+
         logging.info(f"📝 Logging to: {log_file}")
         logging.info(f"📝 Print output to: {print_log_file}")
+        logging.info(f"📝 Error output to: {error_log_path}")
 
         exec_scope = {
             '__builtins__': __builtins__,
             'logging': logging,
             'sys': sys,
+            'CsvHandler': CsvHandler,  # ✅ Make CsvHandler available to quant team for custom logs
         }
 
         # Import common dependencies that quant team uses
@@ -285,6 +346,16 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
 
         LiveTrader = exec_scope['LiveTrader']
 
+        # Extract STRATEGY_CONFIG if defined (for multi-resolution support)
+        strategy_config = exec_scope.get('STRATEGY_CONFIG', {})
+        is_multi_resolution = strategy_config.get('is_multi_resolution', False)
+
+        if is_multi_resolution:
+            logging.info(f"📐 Multi-resolution strategy detected:")
+            logging.info(f"   Signal Resolution: {strategy_config.get('signal_resolution')}")
+            logging.info(f"   Exit Resolution: {strategy_config.get('exit_resolution')}")
+            logging.info(f"   Base Resolution: {strategy_config.get('base_resolution', settings.get('resolution'))}")
+
         logging.info("✅ Strategy classes loaded successfully")
 
         # ====================================================================
@@ -310,22 +381,124 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
         logging.info(f"   Fetched {len(df)} candles")
 
         # ====================================================================
-        # STEP 3: Generate signals ONCE (same for all subscribers)
+        # STEP 3: Generate signals (BOTH 5m Exit and 15m Entry)
+        # ====================================================================
+        # NOTE: Original multi-resolution code commented out on 2025-11-10 10:19 AM ASIA/KOLKATA TZ
+        # Previous implementation attempted to handle multi-resolution but was causing syntax errors
+        #
+        # Commented out original code:
+        # logging.info("🧠 Generating signals...")
+        # Multi-resolution signal generation
+        # if is_multi_resolution:
+        #     from strategy_helpers import resample_ohlcv
+        #     signal_resolution = strategy_config.get('signal_resolution')
+        #     base_resolution = strategy_config.get('base_resolution', settings.get('resolution'))
+        #     if signal_resolution and signal_resolution != base_resolution:
+        #         logging.info(f"   Resampling {base_resolution} → {signal_resolution} for entry signals...")
+        #         df_signal = resample_ohlcv(df, base_resolution, signal_resolution)
+        #         df_signal_indicators = temp_trader.generate_signals(df_signal, settings)
+        #         signal_cols = [col for col in df_signal_indicators.columns
+        #                        if 'signal' in col.lower() or col in ['stop_loss', 'take_profit']]
+        #         logging.info(f"   Forward-filling signal columns: {signal_cols}")
+        #         df_copy = df.copy()
+        #         if 'time' in df_copy.columns:
+        #             df_copy = df_copy.set_index('time')
+        #         df_signal_copy = df_signal_indicators.copy()
+        #         if 'time' in df_signal_copy.columns:
+        #             df_signal_copy = df_signal_copy.set_index('time')
+        #         for col in signal_cols:
+        #             if col in df_signal_copy.columns:
+        #                 df_copy[col] = df_signal_copy[col].reindex(df_copy.index, method='ffill')
+        #         df_with_signals = df_copy.reset_index()
+        #         logging.info(f"   ✅ Signals generated on {signal_resolution}, applied to {base_resolution}")
+        #     else:
+        #         df_with_signals = temp_trader.generate_signals(df, settings)
+        # else:
+        #     df_with_signals = temp_trader.generate_signals(df, settings)
+        # if df_with_signals is None or (hasattr(df_with_signals, 'empty') and df_with_signals.empty):
+        #     raise ValueError("Signal generation returned empty dataframe")
+        # logging.info("✅ Signals generated")
         # ====================================================================
         logging.info("🧠 Generating signals...")
 
-        # Use the LiveTrader instance's inherited generate_signals method
-        df_with_signals = temp_trader.generate_signals(df, settings)
+        # FIRST: Generate 5m indicators (for TSL / exit logic)
+        logging.info("  Generating 5m indicators for exit logic (e.g., Trailingsl)...")
+        # We use the base 'df' for this. Must be a copy.
+        df_with_5m_indicators = temp_trader.generate_signals(df.copy(), settings)
+
+        # Robustness Check: Ensure the 5m indicator was generated
+        if 'Trailingsl' not in df_with_5m_indicators.columns:
+            logging.warning(f"  FATAL: 'Trailingsl' not found after generating {settings.get('base_resolution')}m indicators. Aborting.")
+            #raise ValueError("Strategy's generate_signals did not produce 'Trailingsl' column on 5m data")
+        else:
+            logging.info(f"  ✅ {settings.get('base_resolution')}m 'Trailingsl' generated.")
+
+        # SECOND: Generate 15m signals (for entry logic)
+        if is_multi_resolution:
+            from strategy_helpers import resample_ohlcv
+
+            signal_resolution = strategy_config.get('signal_resolution')
+            base_resolution = strategy_config.get('base_resolution', settings.get('resolution'))
+
+            if signal_resolution and signal_resolution != base_resolution:
+                logging.info(f"  Resampling {base_resolution} -> {signal_resolution} for entry signals...")
+
+                # Resample to signal resolution
+                df_signal = resample_ohlcv(df, base_resolution, signal_resolution)
+
+                # Generate signals on resampled timeframe
+                df_15m_signals = temp_trader.generate_signals(df_signal.copy(), settings)
+
+                # Identify ONLY the entry signal columns
+                signal_cols = [col for col in df_15m_signals.columns
+                               if 'signal' in col.lower()] # e.g., long_signal, short_signal
+
+                if not signal_cols:
+                     logging.warning("  No 'signal' columns found in 15m data. Entry may not work.")
+                else:
+                     logging.info(f"  Forward-filling entry signal columns: {signal_cols}")
+
+                # Use the 5m dataframe (which has 'Trailingsl') as the base
+                df_with_signals = df_with_5m_indicators.copy()
+                if 'time' in df_with_signals.columns:
+                    df_with_signals = df_with_signals.set_index('time')
+
+                df_15m_copy = df_15m_signals.copy()
+                if 'time' in df_15m_copy.columns:
+                    df_15m_copy = df_15m_copy.set_index('time')
+
+                # Forward-fill each 15m entry signal onto the 5m dataframe
+                for col in signal_cols:
+                    if col in df_15m_copy.columns:
+                        df_with_signals[col] = df_15m_copy[col].reindex(df_with_signals.index, method='ffill')
+                    else:
+                        # Ensure column exists even if empty (e.g., 'short_signal' not present)
+                        if col not in df_with_signals.columns:
+                            df_with_signals[col] = False
+
+
+                df_with_signals = df_with_signals.reset_index()
+
+                logging.info(f"  ✅ {settings.get('signal_resolution')}m entry signals merged onto 5m indicator data.")
+            else:
+                # Signal resolution same as base
+                df_with_signals = df_with_5m_indicators
+        else:
+            # Single resolution path
+            df_with_signals = df_with_5m_indicators
 
         if df_with_signals is None or (hasattr(df_with_signals, 'empty') and df_with_signals.empty):
             raise ValueError("Signal generation returned empty dataframe")
 
-        logging.info("✅ Signals generated")
+        logging.info("✅ All signals generated and merged")
+
 
         # ====================================================================
         # STEP 4: Execute strategy for EACH subscriber with their credentials
         # ====================================================================
-        logging.info(f"💼 Processing {len(subscribers)} subscribers...")
+        logging.info(f"\n{'='*50}")
+        logging.info(f"Cycle Start - In Position: Checking for {len(subscribers)} subscribers")
+        logging.info(f"{'='*50}")
 
         subscribers_processed = 0
         trades_attempted = 0
@@ -333,7 +506,6 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
 
         for idx, subscriber in enumerate(subscribers, 1):
             user_id = subscriber.get('user_id')
-            logging.info(f"\n   [{idx}/{len(subscribers)}] Processing user {user_id}...")
 
             try:
                 # Create subscriber-specific settings
@@ -348,12 +520,60 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
                 }
 
                 # Initialize LiveTrader for this subscriber
-                # (their __init__ sets up self.client with their credentials)
+                # (their __init__ sets up self.client with their credentials and loads state)
                 subscriber_trader = LiveTrader(settings=subscriber_settings)
 
-                # Execute their check_for_new_signal method
-                # (this contains all their custom trading logic)
-                subscriber_trader.check_for_new_signal(df_with_signals)
+                # Log user position status
+                logging.info(f"\n   [{idx}/{len(subscribers)}] Processing user {user_id} - In Position: {subscriber_trader.in_position}")
+
+                # ✅ Position-aware execution: Call the appropriate method based on state
+                if subscriber_trader.in_position:
+                    # ✅ SYNC CHECK: Verify position still exists on exchange before managing it
+                    try:
+                        positions = subscriber_trader.client.list_positions(
+                            margin_currency_short_name=[subscriber_settings['margin_currency']]
+                        )
+                        active_pos = next(
+                            (p for p in positions if p['pair'] == subscriber_settings['pair'] and p['active_pos'] != 0.0),
+                            None
+                        )
+
+                        if not active_pos:
+                            logging.info(f"   Position closed manually or externally. Resetting state.")
+                            subscriber_trader._reset_state()
+                            # Skip position management since there's no position
+                            subscribers_processed += 1
+                            logging.info(f"   ✅ User {user_id} processed successfully (state reset)")
+                            continue
+                    except Exception as e:
+                        logging.error(f"   Error checking position on exchange: {e}")
+                        # Continue with position management if API call fails
+                        pass
+
+                    # User has an open position - manage it (check TP/SL, trailing stop, etc.)
+                    if hasattr(subscriber_trader, 'check_and_manage_position'):
+                        subscriber_trader.check_and_manage_position(df_with_signals)
+                    else:
+                        logging.warning(f"   Strategy missing check_and_manage_position method, skipping position management")
+                else:
+                    # User not in position - check for new entry signals
+                    # Get capital for position sizing
+                    capital = subscriber.get('capital', None)
+
+                    # Check if strategy accepts user_input_balance parameter (backward compatibility)
+                    sig = inspect.signature(subscriber_trader.check_for_new_signal)
+                    accepts_capital_param = 'user_input_balance' in sig.parameters
+
+                    # Execute their check_for_new_signal method
+                    if accepts_capital_param and capital is not None:
+                        # New strategy format - pass capital as parameter
+                        logging.info(f"   Calling check_for_new_signal with user_input_balance={capital}")
+                        subscriber_trader.check_for_new_signal(df_with_signals, user_input_balance=capital)
+                    else:
+                        # Old strategy format - backward compatible
+                        if not accepts_capital_param:
+                            logging.info(f"   Using backward compatible call (strategy doesn't accept user_input_balance)")
+                        subscriber_trader.check_for_new_signal(df_with_signals)
 
                 subscribers_processed += 1
                 trades_attempted += 1
@@ -370,10 +590,14 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
         # ====================================================================
         # STEP 5: Return results
         # ====================================================================
-        logging.info(f"\n🏁 Multi-Tenant Execution Complete")
+        resolution_minutes = int(settings.get('resolution', 5))
+        logging.info(f"\n{'='*50}")
+        logging.info(f"🏁 Multi-Tenant Execution Complete")
         logging.info(f"   Subscribers Processed: {subscribers_processed}/{len(subscribers)}")
         logging.info(f"   Trades Attempted: {trades_attempted}")
         logging.info(f"   Errors: {len(errors)}")
+        logging.info(f"Cycle complete. Next execution in ~{resolution_minutes} minutes...")
+        logging.info(f"{'='*50}")
 
         return {
             'success': True,
@@ -426,6 +650,10 @@ def main():
                 result = execute_multi_tenant_strategy(input_data, log_capture)
 
         # Write result to stdout as JSON
+        # Restore stdout to ensure Node.js receives the JSON
+        sys.stdout = sys.__stdout__
+
+        # Write result to stdout as JSON
         print(json.dumps(result, indent=2))
 
         # Exit with appropriate code
@@ -439,6 +667,8 @@ def main():
             'traceback': traceback.format_exc(),
             'logs': log_capture.logs
         }
+        # Restore stdout to ensure Node.js receives the JSON
+        sys.stdout = sys.__stdout__
         print(json.dumps(error_result, indent=2))
         sys.exit(1)
 
