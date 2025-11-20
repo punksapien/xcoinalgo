@@ -1137,4 +1137,276 @@ router.patch('/strategies/:id/subscribers/bulk', async (req: AuthenticatedReques
   }
 });
 
+/**
+ * ========================================
+ * STRATEGY MONITORING & OBSERVABILITY
+ * ========================================
+ */
+
+/**
+ * GET /api/admin/strategy-health
+ * Get health metrics for all strategies
+ */
+router.get('/strategy-health', async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const { hours = '24' } = req.query;
+    const hoursAgo = new Date();
+    hoursAgo.setHours(hoursAgo.getHours() - parseInt(hours as string));
+
+    // Get all active strategies with their latest execution data
+    const strategies = await prisma.strategy.findMany({
+      where: { isActive: true },
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        subscriberCount: true,
+        isActive: true,
+        executionConfig: true,
+        executions: {
+          where: {
+            executedAt: { gte: hoursAgo }
+          },
+          orderBy: { executedAt: 'desc' },
+          take: 100,
+          select: {
+            id: true,
+            executedAt: true,
+            status: true,
+            subscribersCount: true,
+            tradesGenerated: true,
+            duration: true,
+            error: true
+          }
+        },
+        _count: {
+          select: {
+            subscriptions: { where: { isActive: true } }
+          }
+        }
+      },
+      orderBy: { name: 'asc' }
+    });
+
+    // Calculate health metrics for each strategy
+    const healthData = strategies.map(strategy => {
+      const executions = strategy.executions;
+      const totalExecutions = executions.length;
+      const successfulExecutions = executions.filter(e => e.status === 'SUCCESS').length;
+      const failedExecutions = executions.filter(e => e.status === 'FAILED').length;
+      const skippedExecutions = executions.filter(e => e.status === 'SKIPPED').length;
+
+      const successRate = totalExecutions > 0
+        ? (successfulExecutions / totalExecutions) * 100
+        : 0;
+
+      const lastExecution = executions.length > 0 ? executions[0] : null;
+      const lastExecutedAt = lastExecution?.executedAt || null;
+
+      // Calculate time since last execution
+      const minutesSinceLastExecution = lastExecutedAt
+        ? Math.floor((Date.now() - new Date(lastExecutedAt).getTime()) / (1000 * 60))
+        : null;
+
+      // Determine health status
+      let healthStatus: 'healthy' | 'warning' | 'critical' | 'unknown';
+
+      if (!lastExecutedAt) {
+        healthStatus = 'unknown';
+      } else if (minutesSinceLastExecution! > 30) {
+        healthStatus = 'critical'; // No execution in 30+ minutes
+      } else if (successRate < 50 && totalExecutions >= 3) {
+        healthStatus = 'critical'; // Less than 50% success rate
+      } else if (successRate < 80 && totalExecutions >= 5) {
+        healthStatus = 'warning'; // Less than 80% success rate
+      } else if (minutesSinceLastExecution! > 15) {
+        healthStatus = 'warning'; // No execution in 15+ minutes
+      } else {
+        healthStatus = 'healthy';
+      }
+
+      // Get execution config for display
+      const execConfig = strategy.executionConfig as any || {};
+      const symbol = execConfig.symbol || execConfig.pair || 'N/A';
+      const resolution = execConfig.resolution || 'N/A';
+
+      return {
+        id: strategy.id,
+        name: strategy.name,
+        code: strategy.code,
+        symbol,
+        resolution,
+        isActive: strategy.isActive,
+        healthStatus,
+        metrics: {
+          subscriberCount: strategy.subscriberCount,
+          activeSubscribers: strategy._count.subscriptions,
+          totalExecutions,
+          successfulExecutions,
+          failedExecutions,
+          skippedExecutions,
+          successRate: parseFloat(successRate.toFixed(1)),
+          lastExecutedAt,
+          minutesSinceLastExecution,
+          lastExecutionStatus: lastExecution?.status || null,
+          lastExecutionDuration: lastExecution?.duration || null,
+          lastExecutionError: lastExecution?.error || null,
+          avgDuration: totalExecutions > 0
+            ? executions.reduce((sum, e) => sum + (e.duration || 0), 0) / totalExecutions
+            : 0
+        },
+        recentFailures: executions
+          .filter(e => e.status === 'FAILED')
+          .slice(0, 3)
+          .map(e => ({
+            executedAt: e.executedAt,
+            error: e.error,
+            duration: e.duration
+          }))
+      };
+    });
+
+    // Calculate platform-wide stats
+    const totalStrategies = healthData.length;
+    const healthyStrategies = healthData.filter(s => s.healthStatus === 'healthy').length;
+    const warningStrategies = healthData.filter(s => s.healthStatus === 'warning').length;
+    const criticalStrategies = healthData.filter(s => s.healthStatus === 'critical').length;
+    const unknownStrategies = healthData.filter(s => s.healthStatus === 'unknown').length;
+
+    const totalSubscribers = healthData.reduce((sum, s) => sum + s.metrics.subscriberCount, 0);
+    const totalExecutions = healthData.reduce((sum, s) => sum + s.metrics.totalExecutions, 0);
+    const avgSuccessRate = healthData.length > 0
+      ? healthData.reduce((sum, s) => sum + s.metrics.successRate, 0) / healthData.length
+      : 0;
+
+    res.json({
+      success: true,
+      period: `Last ${hours} hours`,
+      platformStats: {
+        totalStrategies,
+        healthyStrategies,
+        warningStrategies,
+        criticalStrategies,
+        unknownStrategies,
+        totalSubscribers,
+        totalExecutions,
+        avgSuccessRate: parseFloat(avgSuccessRate.toFixed(1))
+      },
+      strategies: healthData
+    });
+
+  } catch (error) {
+    console.error('Failed to fetch strategy health:', error);
+    next(error);
+  }
+});
+
+/**
+ * GET /api/admin/strategy-executions
+ * Get recent strategy executions across all strategies
+ */
+router.get('/strategy-executions', async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const {
+      limit = '50',
+      offset = '0',
+      status,
+      strategyId,
+      hours = '24'
+    } = req.query;
+
+    const hoursAgo = new Date();
+    hoursAgo.setHours(hoursAgo.getHours() - parseInt(hours as string));
+
+    // Build where clause
+    const where: any = {
+      executedAt: { gte: hoursAgo }
+    };
+    if (status) where.status = status;
+    if (strategyId) where.strategyId = strategyId;
+
+    // Fetch executions
+    const [executions, total] = await Promise.all([
+      prisma.strategyExecution.findMany({
+        where,
+        include: {
+          strategy: {
+            select: {
+              id: true,
+              name: true,
+              code: true
+            }
+          }
+        },
+        orderBy: { executedAt: 'desc' },
+        take: parseInt(limit as string),
+        skip: parseInt(offset as string)
+      }),
+      prisma.strategyExecution.count({ where })
+    ]);
+
+    res.json({
+      success: true,
+      executions: executions.map(exec => ({
+        id: exec.id,
+        executedAt: exec.executedAt,
+        status: exec.status,
+        duration: exec.duration,
+        subscribersCount: exec.subscribersCount,
+        tradesGenerated: exec.tradesGenerated,
+        error: exec.error,
+        strategy: exec.strategy
+      })),
+      pagination: {
+        total,
+        limit: parseInt(limit as string),
+        offset: parseInt(offset as string),
+        hasMore: (parseInt(offset as string) + parseInt(limit as string)) < total
+      }
+    });
+
+  } catch (error) {
+    console.error('Failed to fetch strategy executions:', error);
+    next(error);
+  }
+});
+
+/**
+ * GET /api/admin/scheduler-health
+ * Get scheduler health metrics (requires SSH/PM2 access, placeholder for now)
+ */
+router.get('/scheduler-health', async (req: AuthenticatedRequest, res, next) => {
+  try {
+    // This would require integration with PM2 or server monitoring
+    // For now, return basic info from database
+
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+
+    const recentExecutions = await prisma.strategyExecution.count({
+      where: {
+        executedAt: { gte: fiveMinutesAgo }
+      }
+    });
+
+    const isHealthy = recentExecutions > 0;
+
+    res.json({
+      success: true,
+      scheduler: {
+        isHealthy,
+        recentExecutions,
+        lastChecked: new Date(),
+        status: isHealthy ? 'running' : 'possibly_down',
+        message: isHealthy
+          ? 'Scheduler is executing strategies'
+          : 'No executions in the last 5 minutes - scheduler may be down'
+      }
+    });
+
+  } catch (error) {
+    console.error('Failed to fetch scheduler health:', error);
+    next(error);
+  }
+});
+
 export { router as adminRoutes };

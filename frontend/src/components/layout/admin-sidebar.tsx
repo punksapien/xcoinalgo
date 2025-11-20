@@ -13,7 +13,8 @@ import {
   Sun,
   LogOut,
   LayoutDashboard,
-  Mail
+  Mail,
+  Activity
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { useTheme } from '@/lib/theme';
@@ -33,6 +34,11 @@ const navigation = [
     name: 'Strategies',
     href: '/admin/strategies',
     icon: TrendingUp,
+  },
+  {
+    name: 'Strategy Monitoring',
+    href: '/admin/strategy-monitoring',
+    icon: Activity,
   },
   {
     name: 'Email Monitoring',
