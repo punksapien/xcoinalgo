@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -8,8 +8,18 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Upload, Check, X, AlertCircle, Loader2, Trash2, Plus, Save, FileUp } from 'lucide-react';
+import { Upload, Check, X, AlertCircle, Loader2, Trash2, Plus, Save, FileUp, ClipboardPaste } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 interface BulkUser {
   id: string;
@@ -48,6 +58,8 @@ export default function BulkUsersPage() {
     results?: BulkUserResult[];
   } | null>(null);
   const [error, setError] = useState<string>('');
+  const [pasteContent, setPasteContent] = useState('');
+  const [isPasteDialogOpen, setIsPasteDialogOpen] = useState(false);
 
   // Validate a single user
   const validateUser = (user: BulkUser): Record<string, string> => {
@@ -87,28 +99,74 @@ export default function BulkUsersPage() {
     }
   }, [parsedUsers]);
 
-  const parseCSV = (content: string): BulkUser[] => {
-    const lines = content.split('\n').filter(line => line.trim() !== '');
-    const dataLines = lines.slice(1); // Skip header
+  const parseData = (content: string): BulkUser[] => {
+    const lines = content.split(/\r?\n/).filter(line => line.trim() !== '');
+    if (lines.length === 0) return [];
 
-    return dataLines.map((line, index) => {
-      const parts = line.split(',').map(p => p.trim());
-      const [email, name, password, phoneNumber, role, apiKey, apiSecret] = parts;
+    // Detect delimiter (Tab for Excel, Comma for CSV)
+    const firstLine = lines[0];
+    const isTabSeparated = firstLine.includes('\t');
+    const delimiter = isTabSeparated ? '\t' : ',';
+
+    // Check for header row
+    const headerParts = firstLine.split(delimiter).map(p => p.trim().toLowerCase());
+    const hasHeader = headerParts.includes('email') && (headerParts.includes('name') || headerParts.includes('password'));
+
+    const dataLines = hasHeader ? lines.slice(1) : lines;
+
+    // Map columns based on header or default order
+    const getColIndex = (name: string, defaultIdx: number) => {
+      if (!hasHeader) return defaultIdx;
+      const idx = headerParts.findIndex(h => h.includes(name));
+      return idx !== -1 ? idx : defaultIdx;
+    };
+
+    const emailIdx = getColIndex('email', 0);
+    const nameIdx = getColIndex('name', 1);
+    const passwordIdx = getColIndex('password', 2);
+    const phoneIdx = getColIndex('phone', 3);
+    const roleIdx = getColIndex('role', 4);
+    const apiKeyIdx = getColIndex('api', 5); // Matches apiKey or api_key
+    const apiSecretIdx = getColIndex('secret', 6);
+
+    return dataLines.map((line) => {
+      // Handle CSV quotes if comma separated
+      let parts: string[];
+      if (delimiter === ',') {
+        // Simple regex for CSV parsing to handle quotes
+        const matches = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g);
+        parts = matches ? matches.map(m => m.replace(/^"|"$/g, '').trim()) : line.split(',').map(p => p.trim());
+        // Fallback if regex fails or simple split is needed
+        if (!parts || parts.length < 3) parts = line.split(',').map(p => p.trim());
+      } else {
+        parts = line.split(delimiter).map(p => p.trim());
+      }
 
       const user: BulkUser = {
         id: crypto.randomUUID(),
-        email: email || '',
-        name: name || '',
-        password: password || '',
-        phoneNumber: phoneNumber || '',
-        role: role || 'REGULAR',
-        apiKey: apiKey || '',
-        apiSecret: apiSecret || '',
+        email: parts[emailIdx] || '',
+        name: parts[nameIdx] || '',
+        password: parts[passwordIdx] || '',
+        phoneNumber: parts[phoneIdx] || '',
+        role: parts[roleIdx] || 'REGULAR',
+        apiKey: parts[apiKeyIdx] || '',
+        apiSecret: parts[apiSecretIdx] || '',
       };
 
       user.errors = validateUser(user);
       return user;
     });
+  };
+
+  const handlePasteProcess = () => {
+    if (!pasteContent.trim()) return;
+
+    const users = parseData(pasteContent);
+    setParsedUsers(prev => [...prev, ...users]);
+    setPasteContent('');
+    setIsPasteDialogOpen(false);
+    setError('');
+    setResults(null);
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -121,10 +179,10 @@ export default function BulkUsersPage() {
 
     try {
       const content = await file.text();
-      const users = parseCSV(content);
+      const users = parseData(content);
       setParsedUsers(users);
     } catch {
-      setError('Failed to parse CSV file. Please check the format.');
+      setError('Failed to parse file. Please check the format.');
       setParsedUsers([]);
     }
   };
@@ -208,8 +266,6 @@ export default function BulkUsersPage() {
 
       const data = await response.json();
       setResults(data);
-      // Don't clear parsedUsers so user can see what they sent, or clear if successful?
-      // Let's keep them but maybe show success state. For now, clearing to show results.
       setParsedUsers([]);
       setCsvFile(null);
     } catch (err) {
@@ -250,56 +306,84 @@ export default function BulkUsersPage() {
             Manage and create multiple user accounts
           </p>
         </div>
-        {parsedUsers.length > 0 && !results && (
-          <div className="flex gap-2">
+        <div className="flex gap-2">
+          {parsedUsers.length > 0 && !results && (
             <Button variant="outline" onClick={handleClearAll} className="text-red-500 hover:text-red-600">
               <Trash2 className="w-4 h-4 mr-2" />
               Clear All
             </Button>
+          )}
+
+          <Dialog open={isPasteDialogOpen} onOpenChange={setIsPasteDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="secondary">
+                <ClipboardPaste className="w-4 h-4 mr-2" />
+                Paste Data
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[600px]">
+              <DialogHeader>
+                <DialogTitle>Paste from Excel or CSV</DialogTitle>
+                <DialogDescription>
+                  Copy your data from Excel, Google Sheets, or a CSV file and paste it below.
+                  <br />
+                  <span className="text-xs text-muted-foreground">Expected columns: Email, Name, Password, Phone, Role, API Key, API Secret</span>
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <Textarea
+                  placeholder="Paste your data here..."
+                  className="min-h-[200px] font-mono text-xs"
+                  value={pasteContent}
+                  onChange={(e) => setPasteContent(e.target.value)}
+                />
+              </div>
+              <DialogFooter>
+                <Button onClick={handlePasteProcess}>Import Data</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {parsedUsers.length > 0 && !results && (
             <Button onClick={handleAddUser}>
               <Plus className="w-4 h-4 mr-2" />
               Add Row
             </Button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Initial State / Upload */}
       {parsedUsers.length === 0 && !results && (
         <div className="grid gap-6 md:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Upload CSV</CardTitle>
-              <CardDescription>Import users from a CSV file</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="border-2 border-dashed rounded-lg p-8 text-center hover:bg-muted/50 transition-colors">
-                <Label htmlFor="csv-file" className="cursor-pointer block">
-                  <FileUp className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                  <span className="text-lg font-medium block mb-1">Drop CSV file here or click to upload</span>
-                  <span className="text-sm text-muted-foreground">email, name, password, phone, role, apiKey, apiSecret</span>
-                </Label>
-                <Input
-                  id="csv-file"
-                  type="file"
-                  accept=".csv"
-                  onChange={handleFileSelect}
-                  className="hidden"
-                />
+          <Card className="border-dashed border-2 hover:bg-muted/5 transition-colors cursor-pointer" onClick={() => document.getElementById('csv-file')?.click()}>
+            <CardContent className="flex flex-col items-center justify-center h-[200px] space-y-4">
+              <div className="p-4 bg-primary/10 rounded-full">
+                <FileUp className="w-8 h-8 text-primary" />
               </div>
+              <div className="text-center">
+                <h3 className="font-semibold text-lg">Upload CSV File</h3>
+                <p className="text-sm text-muted-foreground">Drag & drop or click to browse</p>
+              </div>
+              <Input
+                id="csv-file"
+                type="file"
+                accept=".csv"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Manual Entry</CardTitle>
-              <CardDescription>Start with an empty table</CardDescription>
-            </CardHeader>
-            <CardContent className="flex items-center justify-center h-[200px]">
-              <Button size="lg" onClick={handleAddUser} className="w-full max-w-xs">
-                <Plus className="w-5 h-5 mr-2" />
-                Start Manually
-              </Button>
+          <Card className="cursor-pointer hover:bg-muted/5 transition-colors" onClick={() => setIsPasteDialogOpen(true)}>
+            <CardContent className="flex flex-col items-center justify-center h-[200px] space-y-4">
+              <div className="p-4 bg-secondary rounded-full">
+                <ClipboardPaste className="w-8 h-8 text-secondary-foreground" />
+              </div>
+              <div className="text-center">
+                <h3 className="font-semibold text-lg">Paste from Clipboard</h3>
+                <p className="text-sm text-muted-foreground">Copy from Excel/Sheets and paste</p>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -314,10 +398,22 @@ export default function BulkUsersPage() {
 
       {/* Interactive Table */}
       {parsedUsers.length > 0 && !results && (
-        <Card className="overflow-hidden">
-          <CardHeader>
-            <CardTitle>User Management ({parsedUsers.length} users)</CardTitle>
-            <CardDescription>Review and edit user details before creation</CardDescription>
+        <Card className="overflow-hidden border-0 shadow-lg">
+          <CardHeader className="bg-muted/30 border-b">
+            <div className="flex justify-between items-center">
+              <div>
+                <CardTitle>User Management ({parsedUsers.length} users)</CardTitle>
+                <CardDescription>Review and edit user details before creation</CardDescription>
+              </div>
+              <div className="flex gap-2">
+                <Badge variant="outline" className="bg-background">
+                  {parsedUsers.filter(u => !u.errors || Object.keys(u.errors).length === 0).length} Valid
+                </Badge>
+                <Badge variant="destructive">
+                  {parsedUsers.filter(u => u.errors && Object.keys(u.errors).length > 0).length} Errors
+                </Badge>
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="p-0">
             <div className="max-h-[600px] overflow-auto">
@@ -338,7 +434,7 @@ export default function BulkUsersPage() {
                 <TableBody>
                   {parsedUsers.map((user, index) => (
                     <TableRow key={user.id} className="hover:bg-muted/50">
-                      <TableCell className="text-muted-foreground">{index + 1}</TableCell>
+                      <TableCell className="text-muted-foreground font-mono text-xs">{index + 1}</TableCell>
 
                       {/* Email */}
                       <TableCell>
@@ -346,11 +442,11 @@ export default function BulkUsersPage() {
                           <Input
                             value={user.email}
                             onChange={(e) => handleUpdateUser(user.id, 'email', e.target.value)}
-                            className={user.errors?.email ? "border-red-500" : ""}
+                            className={`h-8 ${user.errors?.email ? "border-red-500 bg-red-50" : ""}`}
                             placeholder="user@example.com"
                           />
                           {user.errors?.email && (
-                            <p className="text-[10px] text-red-500">{user.errors.email}</p>
+                            <p className="text-[10px] text-red-500 font-medium">{user.errors.email}</p>
                           )}
                         </div>
                       </TableCell>
@@ -361,12 +457,9 @@ export default function BulkUsersPage() {
                           <Input
                             value={user.name}
                             onChange={(e) => handleUpdateUser(user.id, 'name', e.target.value)}
-                            className={user.errors?.name ? "border-red-500" : ""}
+                            className={`h-8 ${user.errors?.name ? "border-red-500 bg-red-50" : ""}`}
                             placeholder="John Doe"
                           />
-                          {user.errors?.name && (
-                            <p className="text-[10px] text-red-500">{user.errors.name}</p>
-                          )}
                         </div>
                       </TableCell>
 
@@ -376,13 +469,10 @@ export default function BulkUsersPage() {
                           <Input
                             value={user.password}
                             onChange={(e) => handleUpdateUser(user.id, 'password', e.target.value)}
-                            className={user.errors?.password ? "border-red-500" : ""}
+                            className={`h-8 ${user.errors?.password ? "border-red-500 bg-red-50" : ""}`}
                             placeholder="••••••••"
                             type="password"
                           />
-                          {user.errors?.password && (
-                            <p className="text-[10px] text-red-500">{user.errors.password}</p>
-                          )}
                         </div>
                       </TableCell>
 
@@ -392,12 +482,14 @@ export default function BulkUsersPage() {
                           value={user.role}
                           onValueChange={(val) => handleUpdateUser(user.id, 'role', val)}
                         >
-                          <SelectTrigger>
+                          <SelectTrigger className="h-8">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="REGULAR">Regular</SelectItem>
                             <SelectItem value="ADMIN">Admin</SelectItem>
+                            <SelectItem value="QUANT">Quant</SelectItem>
+                            <SelectItem value="CLIENT">Client</SelectItem>
                           </SelectContent>
                         </Select>
                       </TableCell>
@@ -408,6 +500,7 @@ export default function BulkUsersPage() {
                           value={user.phoneNumber}
                           onChange={(e) => handleUpdateUser(user.id, 'phoneNumber', e.target.value)}
                           placeholder="+1234567890"
+                          className="h-8"
                         />
                       </TableCell>
 
@@ -417,7 +510,7 @@ export default function BulkUsersPage() {
                           <Input
                             value={user.apiKey}
                             onChange={(e) => handleUpdateUser(user.id, 'apiKey', e.target.value)}
-                            className={user.errors?.apiKey ? "border-red-500" : ""}
+                            className={`h-8 font-mono text-xs ${user.errors?.apiKey ? "border-red-500 bg-red-50" : ""}`}
                             placeholder="Key"
                             type="password"
                           />
@@ -430,7 +523,7 @@ export default function BulkUsersPage() {
                           <Input
                             value={user.apiSecret}
                             onChange={(e) => handleUpdateUser(user.id, 'apiSecret', e.target.value)}
-                            className={user.errors?.apiSecret ? "border-red-500" : ""}
+                            className={`h-8 font-mono text-xs ${user.errors?.apiSecret ? "border-red-500 bg-red-50" : ""}`}
                             placeholder="Secret"
                             type="password"
                           />
@@ -443,7 +536,7 @@ export default function BulkUsersPage() {
                           variant="ghost"
                           size="icon"
                           onClick={() => handleDeleteUser(user.id)}
-                          className="text-muted-foreground hover:text-red-500"
+                          className="h-8 w-8 text-muted-foreground hover:text-red-500 hover:bg-red-50"
                         >
                           <Trash2 className="w-4 h-4" />
                         </Button>
@@ -462,7 +555,7 @@ export default function BulkUsersPage() {
                 onClick={handleBulkCreate}
                 disabled={isLoading || parsedUsers.some(u => u.errors && Object.keys(u.errors).length > 0)}
                 size="lg"
-                className="min-w-[200px]"
+                className="min-w-[200px] shadow-md"
               >
                 {isLoading ? (
                   <>
@@ -483,43 +576,43 @@ export default function BulkUsersPage() {
 
       {/* Results */}
       {results && (
-        <Card>
-          <CardHeader>
+        <Card className="border-0 shadow-lg">
+          <CardHeader className="bg-muted/30 border-b">
             <CardTitle>Results</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-6">
+          <CardContent className="space-y-6 p-6">
             {/* Summary */}
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              <div className="bg-blue-50 p-4 rounded-lg">
+              <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
                 <p className="text-sm text-muted-foreground">Total</p>
                 <p className="text-2xl font-bold">{results.summary?.total}</p>
               </div>
-              <div className="bg-green-50 p-4 rounded-lg">
+              <div className="bg-green-50 p-4 rounded-lg border border-green-100">
                 <p className="text-sm text-muted-foreground">Successful</p>
                 <p className="text-2xl font-bold text-green-600">{results.summary?.successful}</p>
               </div>
-              <div className="bg-red-50 p-4 rounded-lg">
+              <div className="bg-red-50 p-4 rounded-lg border border-red-100">
                 <p className="text-sm text-muted-foreground">Failed</p>
                 <p className="text-2xl font-bold text-red-600">{results.summary?.failed}</p>
               </div>
-              <div className="bg-purple-50 p-4 rounded-lg">
+              <div className="bg-purple-50 p-4 rounded-lg border border-purple-100">
                 <p className="text-sm text-muted-foreground">Credentials Stored</p>
                 <p className="text-2xl font-bold text-purple-600">{results.summary?.credentialsStored}</p>
               </div>
-              <div className="bg-orange-50 p-4 rounded-lg">
+              <div className="bg-orange-50 p-4 rounded-lg border border-orange-100">
                 <p className="text-sm text-muted-foreground">Invalid Credentials</p>
                 <p className="text-2xl font-bold text-orange-600">{results.summary?.credentialsInvalid}</p>
               </div>
-              <div className="bg-gray-50 p-4 rounded-lg">
+              <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
                 <p className="text-sm text-muted-foreground">Skipped Credentials</p>
                 <p className="text-2xl font-bold text-gray-600">{results.summary?.credentialsSkipped}</p>
               </div>
             </div>
 
             {/* Detailed Results */}
-            <div className="max-h-96 overflow-auto">
+            <div className="max-h-96 overflow-auto border rounded-md">
               <Table>
-                <TableHeader>
+                <TableHeader className="bg-muted/50">
                   <TableRow>
                     <TableHead>Email</TableHead>
                     <TableHead>Status</TableHead>
