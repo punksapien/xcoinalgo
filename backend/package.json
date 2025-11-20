@@ -12,6 +12,7 @@
     "db:push": "prisma db push",
     "migrate:margin": "ts-node scripts/migrate-margin.ts",
     "sync:configs": "ts-node src/scripts/sync-strategy-configs.ts",
+    "report:pnl": "ts-node src/scripts/generate-pnl-report.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

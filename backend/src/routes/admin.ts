@@ -1572,4 +1572,67 @@ router.post('/users/bulk-create', async (req: AuthenticatedRequest, res, next) =
   }
 });
 
+/**
+ * POST /api/admin/users/validate-bulk
+ * Validate users and credentials without creating them
+ */
+router.post('/users/validate-bulk', async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const { users } = req.body as {
+      users: Array<{
+        email: string;
+        apiKey?: string;
+        apiSecret?: string;
+      }>;
+    };
+
+    if (!Array.isArray(users) || users.length === 0) {
+      return res.status(400).json({ error: 'users array is required' });
+    }
+
+    const results = await Promise.all(users.map(async (user) => {
+      const result: any = {
+        email: user.email,
+        emailExists: false,
+        credentialsValid: null,
+      };
+
+      // Check email existence
+      if (user.email) {
+        const existingUser = await prisma.user.findUnique({
+          where: { email: user.email },
+          select: { id: true }
+        });
+        if (existingUser) {
+          result.emailExists = true;
+        }
+      }
+
+      // Check credentials if provided
+      if (user.apiKey && user.apiSecret) {
+        const trimmedApiKey = user.apiKey.trim();
+        const trimmedApiSecret = user.apiSecret.trim();
+
+        if (trimmedApiKey && trimmedApiSecret && trimmedApiKey.length > 10) {
+          try {
+            await CoinDCXClient.getBalances(trimmedApiKey, trimmedApiSecret);
+            result.credentialsValid = true;
+          } catch (error) {
+            result.credentialsValid = false;
+          }
+        } else {
+          result.credentialsValid = false; // Malformed
+        }
+      }
+
+      return result;
+    }));
+
+    res.json({ results });
+  } catch (error) {
+    console.error('Bulk validation error:', error);
+    next(error);
+  }
+});
+
 export { router as adminRoutes };
