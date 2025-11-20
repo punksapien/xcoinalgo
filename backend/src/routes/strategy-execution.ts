@@ -686,4 +686,103 @@ router.get('/subscription/:id/verify-live', authenticate, async (req: Authentica
   }
 });
 
+/**
+ * POST /api/strategies/:id/admin/bulk-subscribe
+ * Bulk subscribe multiple users to a strategy (admin only)
+ */
+router.post('/:id/admin/bulk-subscribe', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const { id: strategyId } = req.params;
+    const { users, capital, riskPerTrade, leverage } = req.body;
+    const userId = req.userId!;
+
+    // Check admin role
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    if (user?.role !== 'ADMIN') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    if (!Array.isArray(users) || users.length === 0) {
+      return res.status(400).json({ error: 'users array is required (array of email addresses)' });
+    }
+
+    if (!capital) {
+      return res.status(400).json({ error: 'capital is required' });
+    }
+
+    const results = await Promise.all(users.map(async (email: string) => {
+      const result: any = { email, status: 'failed', error: null, subscriptionId: null };
+
+      try {
+        const targetUser = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+        if (!targetUser) {
+          result.error = 'User not found';
+          return result;
+        }
+
+        const brokerCredential = await prisma.brokerCredential.findFirst({
+          where: { userId: targetUser.id, isActive: true }
+        });
+        if (!brokerCredential) {
+          result.error = 'No active broker credentials';
+          return result;
+        }
+
+        const existing = await prisma.strategySubscription.findFirst({
+          where: { userId: targetUser.id, strategyId, isActive: true }
+        });
+        if (existing) {
+          result.status = 'already_subscribed';
+          result.subscriptionId = existing.id;
+          return result;
+        }
+
+        const wallets = await CoinDCXClient.getFuturesWallets(brokerCredential.apiKey, brokerCredential.apiSecret);
+        const calculateAvailable = (w: any) => Number(w.balance || 0) - (Number(w.cross_order_margin || 0) + Number(w.cross_user_margin || 0));
+        const primaryWallet = wallets.find((w: any) => w.currency_short_name === 'INR') || wallets.find((w: any) => w.currency_short_name === 'USDT');
+
+        if (!primaryWallet) {
+          result.error = 'No futures wallet found';
+          return result;
+        }
+
+        const available = calculateAvailable(primaryWallet);
+        if (!isFinite(available) || available < Number(capital)) {
+          result.error = `Insufficient funds: ${available.toFixed(2)} < ${capital}`;
+          return result;
+        }
+
+        const subscription = await subscriptionService.createSubscription({
+          userId: targetUser.id,
+          strategyId,
+          capital: Number(capital),
+          riskPerTrade: riskPerTrade || 0.1,
+          leverage: leverage || 10,
+          brokerCredentialId: brokerCredential.id,
+          maxPositions: 1,
+          maxDailyLoss: 0.05
+        });
+
+        result.status = 'success';
+        result.subscriptionId = subscription.subscriptionId;
+      } catch (error: any) {
+        result.error = error.message || String(error);
+      }
+      return result;
+    }));
+
+    const summary = {
+      total: results.length,
+      success: results.filter((r: any) => r.status === 'success').length,
+      already_subscribed: results.filter((r: any) => r.status === 'already_subscribed').length,
+      failed: results.filter((r: any) => r.status === 'failed').length
+    };
+
+    res.json({ summary, results });
+  } catch (error) {
+    console.error('Bulk subscribe error:', error);
+    next(error);
+  }
+});
+
 export { router as strategyExecutionRoutes };
