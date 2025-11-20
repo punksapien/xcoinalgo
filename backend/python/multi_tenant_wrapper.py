@@ -650,6 +650,10 @@ def main():
                 result = execute_multi_tenant_strategy(input_data, log_capture)
 
         # Write result to stdout as JSON
+        # Restore stdout to ensure Node.js receives the JSON
+        sys.stdout = sys.__stdout__
+
+        # Write result to stdout as JSON
         print(json.dumps(result, indent=2))
 
         # Exit with appropriate code
@@ -663,6 +667,8 @@ def main():
             'traceback': traceback.format_exc(),
             'logs': log_capture.logs
         }
+        # Restore stdout to ensure Node.js receives the JSON
+        sys.stdout = sys.__stdout__
         print(json.dumps(error_result, indent=2))
         sys.exit(1)
 
