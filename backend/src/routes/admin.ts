@@ -1500,19 +1500,12 @@ router.post('/users/bulk-create', async (req: AuthenticatedRequest, res, next) =
           const trimmedApiKey = userData.apiKey.trim();
           const trimmedApiSecret = userData.apiSecret.trim();
 
-          // Skip obviously invalid credentials
-          if (
-            trimmedApiKey === '' ||
-            trimmedApiSecret === '' ||
-            trimmedApiKey.includes('*') ||
-            trimmedApiSecret.includes('*') ||
-            trimmedApiKey.length < 10 ||
-            trimmedApiSecret.length < 10
-          ) {
+          // Skip only if completely empty (after trim)
+          if (trimmedApiKey === '' || trimmedApiSecret === '') {
             result.credentialValidation = 'skipped';
-            console.log(`Skipping invalid-looking credentials for ${userData.email}`);
+            console.log(`Skipping empty credentials for ${userData.email}`);
           } else {
-            // Validate credentials by testing connection
+            // ALWAYS validate with CoinDCX API - let CoinDCX be the source of truth
             try {
               await CoinDCXClient.getBalances(trimmedApiKey, trimmedApiSecret);
 
@@ -1531,9 +1524,9 @@ router.post('/users/bulk-create', async (req: AuthenticatedRequest, res, next) =
               result.credentialValidation = 'valid';
               console.log(`Stored valid credentials for ${userData.email}`);
             } catch (credError) {
-              // Credentials are invalid
+              // Credentials are invalid (CoinDCX rejected them)
               result.credentialValidation = 'invalid';
-              console.log(`Skipped invalid credentials for ${userData.email}`);
+              console.log(`CoinDCX rejected credentials for ${userData.email}:`, credError instanceof Error ? credError.message : String(credError));
             }
           }
         } else {
