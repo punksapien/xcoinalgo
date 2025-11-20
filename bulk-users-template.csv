@@ -1,0 +1,3 @@
+email,name,password,phoneNumber,role,apiKey,apiSecret
+trader1@example.com,John Doe,CommonPassword123,+919876543210,REGULAR,your_coindcx_api_key_here,your_coindcx_api_secret_here
+trader2@example.com,Jane Smith,CommonPassword123,,REGULAR,another_api_key,another_api_secret

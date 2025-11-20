@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { authenticate, requireAdminRole } from '../middleware/auth';
 import { AuthenticatedRequest } from '../types';
 import prisma from '../utils/database';
+import bcrypt from 'bcrypt';
+import * as CoinDCXClient from '../services/coindcx-client';
 
 const router = Router();
 
@@ -1405,6 +1407,167 @@ router.get('/scheduler-health', async (req: AuthenticatedRequest, res, next) => 
 
   } catch (error) {
     console.error('Failed to fetch scheduler health:', error);
+    next(error);
+  }
+});
+
+/**
+ * POST /api/admin/users/bulk-create
+ * Bulk create user accounts with broker credentials validation
+ */
+router.post('/users/bulk-create', async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const { users } = req.body as {
+      users: Array<{
+        email: string;
+        name: string;
+        password: string;
+        phoneNumber?: string;
+        role?: 'REGULAR' | 'QUANT' | 'CLIENT' | 'ADMIN';
+        apiKey?: string;
+        apiSecret?: string;
+      }>;
+    };
+
+    // Validation
+    if (!Array.isArray(users) || users.length === 0) {
+      return res.status(400).json({
+        error: 'users array is required and must not be empty'
+      });
+    }
+
+    if (users.length > 100) {
+      return res.status(400).json({
+        error: 'Maximum 100 users can be created at once'
+      });
+    }
+
+    const SALT_ROUNDS = 12;
+    const results: Array<{
+      email: string;
+      status: 'success' | 'failed';
+      userId?: string;
+      credentialsStored: boolean;
+      credentialValidation?: 'valid' | 'invalid' | 'skipped' | 'error';
+      error?: string;
+    }> = [];
+
+    // Process each user
+    for (const userData of users) {
+      const result: any = {
+        email: userData.email,
+        status: 'failed',
+        credentialsStored: false,
+      };
+
+      try {
+        // Validate required fields
+        if (!userData.email || !userData.name || !userData.password) {
+          throw new Error('Missing required fields: email, name, or password');
+        }
+
+        // Check if user already exists
+        const existingUser = await prisma.user.findUnique({
+          where: { email: userData.email },
+        });
+
+        if (existingUser) {
+          throw new Error('User with this email already exists');
+        }
+
+        // Hash password
+        const hashedPassword = await bcrypt.hash(userData.password, SALT_ROUNDS);
+
+        // Create user
+        const user = await prisma.user.create({
+          data: {
+            email: userData.email,
+            name: userData.name,
+            phoneNumber: userData.phoneNumber || null,
+            password: hashedPassword,
+            role: userData.role || 'REGULAR',
+            emailVerified: new Date(), // Auto-verify bulk created users
+            verificationToken: null,
+            verificationTokenExpiry: null,
+          },
+        });
+
+        result.status = 'success';
+        result.userId = user.id;
+
+        // Handle broker credentials if provided
+        if (userData.apiKey && userData.apiSecret) {
+          const trimmedApiKey = userData.apiKey.trim();
+          const trimmedApiSecret = userData.apiSecret.trim();
+
+          // Skip obviously invalid credentials
+          if (
+            trimmedApiKey === '' ||
+            trimmedApiSecret === '' ||
+            trimmedApiKey.includes('*') ||
+            trimmedApiSecret.includes('*') ||
+            trimmedApiKey.length < 10 ||
+            trimmedApiSecret.length < 10
+          ) {
+            result.credentialValidation = 'skipped';
+            console.log(`Skipping invalid-looking credentials for ${userData.email}`);
+          } else {
+            // Validate credentials by testing connection
+            try {
+              await CoinDCXClient.getBalances(trimmedApiKey, trimmedApiSecret);
+
+              // Credentials are valid, store them
+              await prisma.brokerCredential.create({
+                data: {
+                  userId: user.id,
+                  brokerName: 'coindcx',
+                  apiKey: trimmedApiKey,
+                  apiSecret: trimmedApiSecret,
+                  isActive: true,
+                },
+              });
+
+              result.credentialsStored = true;
+              result.credentialValidation = 'valid';
+              console.log(`Stored valid credentials for ${userData.email}`);
+            } catch (credError) {
+              // Credentials are invalid
+              result.credentialValidation = 'invalid';
+              console.log(`Skipped invalid credentials for ${userData.email}`);
+            }
+          }
+        } else {
+          result.credentialValidation = 'skipped';
+        }
+
+      } catch (error: any) {
+        result.error = error.message;
+        console.error(`Failed to create user ${userData.email}:`, error.message);
+      }
+
+      results.push(result);
+    }
+
+    // Calculate summary
+    const summary = {
+      total: results.length,
+      successful: results.filter(r => r.status === 'success').length,
+      failed: results.filter(r => r.status === 'failed').length,
+      credentialsStored: results.filter(r => r.credentialsStored).length,
+      credentialsInvalid: results.filter(r => r.credentialValidation === 'invalid').length,
+      credentialsSkipped: results.filter(r => r.credentialValidation === 'skipped').length,
+    };
+
+    console.log(`Bulk creation complete: ${summary.successful}/${summary.total} users created, ${summary.credentialsStored} credentials stored`);
+
+    res.json({
+      success: true,
+      summary,
+      results,
+    });
+
+  } catch (error) {
+    console.error('Bulk creation error:', error);
     next(error);
   }
 });
