@@ -1183,20 +1183,58 @@ router.get('/strategy-health', async (req: AuthenticatedRequest, res, next) => {
         },
         _count: {
           select: {
-            subscriptions: { where: { isActive: true } }
+            subscriptions: { where: { isActive: true } },
+            executions: { where: { executedAt: { gte: hoursAgo } } }
           }
         }
       },
       orderBy: { name: 'asc' }
     });
 
+    // Get execution status counts separately for accurate metrics
+    const executionStatusCounts = await Promise.all(
+      strategies.map(async (strategy) => {
+        const [successful, failed, skipped] = await Promise.all([
+          prisma.strategyExecution.count({
+            where: {
+              strategyId: strategy.id,
+              executedAt: { gte: hoursAgo },
+              status: 'SUCCESS'
+            }
+          }),
+          prisma.strategyExecution.count({
+            where: {
+              strategyId: strategy.id,
+              executedAt: { gte: hoursAgo },
+              status: 'FAILED'
+            }
+          }),
+          prisma.strategyExecution.count({
+            where: {
+              strategyId: strategy.id,
+              executedAt: { gte: hoursAgo },
+              status: 'SKIPPED'
+            }
+          })
+        ]);
+        return { strategyId: strategy.id, successful, failed, skipped };
+      })
+    );
+
+    const statusCountMap = new Map(
+      executionStatusCounts.map(c => [c.strategyId, c])
+    );
+
     // Calculate health metrics for each strategy
     const healthData = strategies.map(strategy => {
       const executions = strategy.executions;
-      const totalExecutions = executions.length;
-      const successfulExecutions = executions.filter(e => e.status === 'SUCCESS').length;
-      const failedExecutions = executions.filter(e => e.status === 'FAILED').length;
-      const skippedExecutions = executions.filter(e => e.status === 'SKIPPED').length;
+      const totalExecutions = strategy._count.executions; // Use actual count, not limited array length
+
+      // Get accurate status counts from the map
+      const statusCounts = statusCountMap.get(strategy.id) || { successful: 0, failed: 0, skipped: 0 };
+      const successfulExecutions = statusCounts.successful;
+      const failedExecutions = statusCounts.failed;
+      const skippedExecutions = statusCounts.skipped;
 
       const successRate = totalExecutions > 0
         ? (successfulExecutions / totalExecutions) * 100
