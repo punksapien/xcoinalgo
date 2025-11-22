@@ -1003,7 +1003,12 @@ router.patch('/:id/deactivate', authenticate, async (req: AuthenticatedRequest, 
 
     // check if strategy exists
     const strategy = await prisma.strategy.findUnique({
-      where: { id: strategyId }
+      where: { id: strategyId },
+      select: {
+        id: true,
+        name: true,
+        executionConfig: true
+      }
     });
 
     if (!strategy) {
@@ -1012,11 +1017,27 @@ router.patch('/:id/deactivate', authenticate, async (req: AuthenticatedRequest, 
       });
     }
 
-    // soft delete: just set isActive to false
+    // soft delete: set isActive to false
     await prisma.strategy.update({
       where: { id: strategyId },
       data: { isActive: false }
     });
+
+    // 🔥 IMMEDIATE REDIS CLEANUP: Remove from scheduler cache instantly
+    try {
+      const { strategyRegistry } = await import('../services/strategy-execution/strategy-registry');
+      const config = strategy.executionConfig as any;
+      const symbol = config?.symbol || config?.pair;
+      const resolution = config?.resolution;
+
+      if (symbol && resolution) {
+        await strategyRegistry.unregisterStrategy(strategyId, symbol, resolution);
+        logger.info(`✅ Immediately removed ${strategy.name} from scheduler (Redis unregistered)`);
+      }
+    } catch (redisError) {
+      logger.error('Failed to unregister from Redis (will be cleaned up in next reconciliation):', redisError);
+      // Don't fail the request if Redis cleanup fails
+    }
 
     logger.info(`Strategy soft deleted: ${strategyId} by user ${userId}`);
 
@@ -1039,7 +1060,13 @@ router.patch('/:id/activate', authenticate, async (req: AuthenticatedRequest, re
 
     // check if strategy exists
     const strategy = await prisma.strategy.findUnique({
-      where: { id: strategyId }
+      where: { id: strategyId },
+      select: {
+        id: true,
+        name: true,
+        executionConfig: true,
+        subscriberCount: true
+      }
     });
 
     if (!strategy) {
@@ -1053,6 +1080,25 @@ router.patch('/:id/activate', authenticate, async (req: AuthenticatedRequest, re
       where: { id: strategyId },
       data: { isActive: true }
     });
+
+    // 🔥 IMMEDIATE REDIS REGISTRATION: Add to scheduler cache instantly
+    try {
+      const { strategyRegistry } = await import('../services/strategy-execution/strategy-registry');
+      const config = strategy.executionConfig as any;
+      const symbol = config?.symbol || config?.pair;
+      const resolution = config?.resolution;
+
+      // Only register if has subscribers (same logic as initialize())
+      if (symbol && resolution && strategy.subscriberCount > 0) {
+        await strategyRegistry.registerStrategy(strategyId, symbol, resolution);
+        logger.info(`✅ Immediately added ${strategy.name} to scheduler (Redis registered)`);
+      } else if (!symbol || !resolution) {
+        logger.warn(`⚠️  Strategy ${strategy.name} activated but missing symbol/resolution in config`);
+      }
+    } catch (redisError) {
+      logger.error('Failed to register in Redis (will be added in next reconciliation):', redisError);
+      // Don't fail the request if Redis registration fails
+    }
 
     logger.info(`Strategy restored: ${strategyId} by user ${userId}`);
 
