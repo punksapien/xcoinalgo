@@ -821,6 +821,11 @@ router.get('/subscriptions/:id/equity-curve', authenticate, async (req: Authenti
       }
     });
 
+    logger.info(`[Equity Curve] Processed trades: completedTrades=${completedTrades}, grossPnl=${grossPnl}, totalFees=${totalFees}, openPosition=${position ? 'YES' : 'NO'}`);
+    if (position) {
+      logger.info(`[Equity Curve] Open position: side=${position.side}, quantity=${position.quantity}, entryPrice=${position.entryPrice}`);
+    }
+
     const netPnl = grossPnl - totalFees;
     const winRate = completedTrades > 0 ? (winningTrades / completedTrades) * 100 : 0;
 
@@ -857,6 +862,8 @@ router.get('/subscriptions/:id/equity-curve', authenticate, async (req: Authenti
           cumulativePnl: parseFloat(cumulativePnl.toFixed(2))
         };
       });
+
+    logger.info(`[Equity Curve] Returning ${equityCurve.length} equity curve data points, stats: ${JSON.stringify({grossPnl, netPnl, totalFees, completedTrades, winRate})}`);
 
     res.json({
       subscriptionId,
