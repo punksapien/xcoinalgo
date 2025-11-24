@@ -687,9 +687,12 @@ router.get('/subscriptions/:id/equity-curve', authenticate, async (req: Authenti
     // Get margin currency from strategy executionConfig (this is what's actually used for trading)
     const marginCurrency = (executionConfig?.margin_currency || subscription.marginCurrency || 'USDT').toUpperCase();
 
-    // Calculate date range for trades API (from subscription start to now)
+    // Calculate date range for trades API (from subscription start to tomorrow)
+    // Note: CoinDCX trades API needs to_date to be tomorrow to include today's trades
     const fromDate = new Date(minTimestamp).toISOString().split('T')[0]; // YYYY-MM-DD
-    const toDate = new Date().toISOString().split('T')[0]; // Today
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const toDate = tomorrow.toISOString().split('T')[0]; // Tomorrow
 
     logger.info(`[Equity Curve] Fetching trades for pair=${pair}, marginCurrency=${marginCurrency}, from=${fromDate}, to=${toDate}`);
 
