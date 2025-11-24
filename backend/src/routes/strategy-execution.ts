@@ -645,32 +645,20 @@ router.get('/subscriptions', authenticate, async (req: AuthenticatedRequest, res
 
 /**
  * GET /api/strategies/subscriptions/:id/equity-curve
- * Get equity curve data for a specific subscription by fetching trades from CoinDCX API
+ * Get equity curve and stats by fetching transactions from CoinDCX API
+ * Matches Python analyze_eth_transactions() logic
  */
 router.get('/subscriptions/:id/equity-curve', authenticate, async (req: AuthenticatedRequest, res, next) => {
   try {
     const { id: subscriptionId } = req.params;
     const userId = req.userId!;
 
-    // Verify subscription belongs to user and get strategy details
+    // Verify subscription belongs to user
     const subscription = await prisma.strategySubscription.findFirst({
-      where: {
-        id: subscriptionId,
-        userId
-      },
+      where: { id: subscriptionId, userId },
       include: {
-        strategy: {
-          select: {
-            id: true,
-            executionConfig: true
-          }
-        },
-        brokerCredential: {
-          select: {
-            apiKey: true,
-            apiSecret: true
-          }
-        }
+        strategy: { select: { id: true, executionConfig: true } },
+        brokerCredential: { select: { apiKey: true, apiSecret: true } }
       }
     });
 
@@ -679,115 +667,108 @@ router.get('/subscriptions/:id/equity-curve', authenticate, async (req: Authenti
     }
 
     if (!subscription.brokerCredential) {
-      return res.status(400).json({ error: 'No broker credentials found for this subscription' });
+      return res.status(400).json({ error: 'No broker credentials found' });
     }
 
-    // Get the trading pair from strategy config
     const executionConfig = subscription.strategy.executionConfig as any;
     const pair = executionConfig?.symbol || executionConfig?.pair;
-
     if (!pair) {
-      return res.status(400).json({ error: 'Trading pair not found in strategy configuration' });
+      return res.status(400).json({ error: 'Trading pair not found in strategy config' });
     }
 
-    // Get subscription start time (use subscribedAt as the minimum timestamp)
     const minTimestamp = subscription.subscribedAt.getTime();
-
-    // Fetch all filled orders from CoinDCX API
     const marginCurrency = subscription.marginCurrency.toUpperCase();
-    let allOrders: any[] = [];
-    let page = 1;
-    const pageSize = 100;
 
-    // Paginate through all orders
+    // Fetch all transactions (P&L records) from CoinDCX
+    let allTransactions: any[] = [];
+    let page = 1;
+
     while (true) {
-      const orders = await CoinDCXClient.listFuturesOrders(
+      const transactions = await CoinDCXClient.getFuturesTransactions(
         subscription.brokerCredential.apiKey,
         subscription.brokerCredential.apiSecret,
         {
-          timestamp: Date.now(),
-          status: 'filled',
-          side: 'buy,sell',
-          page: page.toString(),
-          size: pageSize.toString(),
+          stage: 'all',
+          page,
+          size: 100,
           margin_currency_short_name: [marginCurrency]
         }
       );
 
-      if (!orders || orders.length === 0) break;
-      allOrders.push(...orders);
+      if (!transactions || transactions.length === 0) break;
+      allTransactions.push(...transactions);
       page++;
-
-      // Break if we got fewer orders than page size (last page)
-      if (orders.length < pageSize) break;
+      if (transactions.length < 100) break;
     }
 
-    // Filter orders for this specific pair and after subscription start
-    const pairOrders = allOrders
-      .filter(o => o.pair === pair && o.updated_at >= minTimestamp)
-      .sort((a, b) => a.updated_at - b.updated_at);
+    // Filter for this pair and after subscription start
+    const pairTransactions = allTransactions
+      .filter(tx => tx.pair === pair && tx.created_at > minTimestamp);
 
-    if (pairOrders.length === 0) {
+    if (pairTransactions.length === 0) {
       return res.json({
         subscriptionId,
-        equityCurve: []
+        equityCurve: [],
+        stats: {
+          grossPnl: 0,
+          netPnl: 0,
+          totalFees: 0,
+          totalTrades: 0,
+          winRate: 0,
+          maxDrawdownPct: 0
+        }
       });
     }
 
-    // Pair entry/exit orders and calculate P&L
-    interface Trade {
-      entryPrice: number;
-      exitPrice: number;
-      quantity: number;
-      side: 'buy' | 'sell';
-      entryTime: number;
-      exitTime: number;
-      pnl: number;
-    }
+    // Calculate stats (matches Python analyze_eth_transactions)
+    let grossPnl = 0;
+    let totalFees = 0;
+    let wins = 0;
+    let losses = 0;
+    const pnlSequence: number[] = [];
 
-    const trades: Trade[] = [];
-    let currentEntry: any = null;
+    pairTransactions.forEach(tx => {
+      const amount = tx.amount || 0;
+      const fee = tx.fee_amount || 0;
 
-    for (const order of pairOrders) {
-      if (!currentEntry) {
-        currentEntry = order;
-      } else {
-        if (order.side !== currentEntry.side) {
-          // Calculate P&L
-          const pnl = (order.avg_price - currentEntry.avg_price) *
-                     (currentEntry.side === 'buy' ? 1 : -1) *
-                     currentEntry.total_quantity;
-
-          trades.push({
-            entryPrice: currentEntry.avg_price,
-            exitPrice: order.avg_price,
-            quantity: currentEntry.total_quantity,
-            side: currentEntry.side,
-            entryTime: currentEntry.updated_at,
-            exitTime: order.updated_at,
-            pnl: pnl
-          });
-
-          currentEntry = null;
-        } else {
-          // Same side order, update entry (averaging or new position)
-          currentEntry = order;
-        }
+      if (amount !== 0) {
+        pnlSequence.push(amount);
       }
-    }
 
-    // Group trades by day and calculate cumulative P&L
-    const dailyData: { [key: string]: number } = {};
+      grossPnl += amount;
+      totalFees += fee;
 
-    trades.forEach(trade => {
-      const date = new Date(trade.exitTime).toISOString().split('T')[0];
-      if (!dailyData[date]) {
-        dailyData[date] = 0;
-      }
-      dailyData[date] += trade.pnl;
+      if (amount > 0) wins++;
+      else if (amount < 0) losses++;
     });
 
-    // Convert to array and calculate cumulative P&L
+    const netPnl = grossPnl - totalFees;
+    const totalTrades = pairTransactions.length / 2; // Each trade has 2 transactions
+    const winRate = (wins + losses) > 0 ? wins / (wins + losses) : 0;
+
+    // Calculate max drawdown
+    const initialCapital = subscription.capital;
+    let runningPnl = 0;
+    let maxDrawdown = 0;
+
+    pnlSequence.forEach(amt => {
+      runningPnl += amt;
+      const drawdown = initialCapital - (initialCapital + runningPnl);
+      maxDrawdown = Math.max(maxDrawdown, drawdown);
+    });
+
+    const maxDrawdownPct = initialCapital > 0 ? (maxDrawdown / initialCapital) * 100 : 0;
+
+    // Group by day for equity curve
+    const dailyData: { [key: string]: number } = {};
+
+    pairTransactions.forEach(tx => {
+      const date = new Date(tx.created_at).toISOString().split('T')[0];
+      if (!dailyData[date]) dailyData[date] = 0;
+      dailyData[date] += (tx.amount || 0);
+    });
+
+    // Calculate cumulative P&L
     let cumulativePnl = 0;
     const equityCurve = Object.keys(dailyData)
       .sort()
@@ -804,7 +785,14 @@ router.get('/subscriptions/:id/equity-curve', authenticate, async (req: Authenti
     res.json({
       subscriptionId,
       equityCurve,
-      totalTrades: trades.length
+      stats: {
+        grossPnl: parseFloat(grossPnl.toFixed(2)),
+        netPnl: parseFloat(netPnl.toFixed(2)),
+        totalFees: parseFloat(totalFees.toFixed(2)),
+        totalTrades: Math.floor(totalTrades),
+        winRate: parseFloat((winRate * 100).toFixed(2)),
+        maxDrawdownPct: parseFloat(maxDrawdownPct.toFixed(4))
+      }
     });
   } catch (error) {
     next(error);

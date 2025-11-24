@@ -856,6 +856,41 @@ export function normalizeMarket(symbol: string): string {
 }
 
 /**
+ * Get futures transactions (P&L records)
+ * This fetches actual P&L transactions which include fees and calculated P&L
+ */
+export async function getFuturesTransactions(
+  encryptedApiKey: string,
+  encryptedApiSecret: string,
+  params: {
+    stage?: string;
+    page?: number;
+    size?: number;
+    margin_currency_short_name: string[];
+  }
+): Promise<any[]> {
+  const credentials = prepareCredentials(encryptedApiKey, encryptedApiSecret);
+
+  const payload = {
+    stage: params.stage || 'all',
+    page: params.page || 1,
+    size: params.size || 100,
+    margin_currency_short_name: params.margin_currency_short_name
+  };
+
+  logger.info(`Fetching futures transactions (page ${payload.page})`);
+
+  const transactions = await makeAuthenticatedRequest<any[]>(
+    '/exchange/v1/derivatives/futures/positions/transactions',
+    credentials,
+    payload
+  );
+
+  logger.info(`Fetched ${transactions.length} futures transactions`);
+  return transactions;
+}
+
+/**
  * Test connection with credentials
  */
 export async function testConnection(

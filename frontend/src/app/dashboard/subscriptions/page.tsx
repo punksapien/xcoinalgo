@@ -320,10 +320,10 @@ export default function SubscriptionsPage() {
                     </div>
                   )}
 
-                  {/* Equity Curve Chart */}
+                  {/* Equity Curve Chart with Stats */}
                   <div className="bg-secondary/10 rounded-lg p-3 border border-secondary/20">
-                    <p className="text-xs text-muted-foreground mb-2">Equity Curve</p>
-                    <EquityCurve subscriptionId={subscription.id} height={80} />
+                    <p className="text-xs text-muted-foreground mb-2">Performance Analytics</p>
+                    <EquityCurve subscriptionId={subscription.id} height={80} showStats={true} />
                   </div>
 
                   {/* Metadata */}

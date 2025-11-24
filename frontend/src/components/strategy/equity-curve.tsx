@@ -10,13 +10,24 @@ interface EquityCurveData {
   cumulativePnl: number;
 }
 
+interface Stats {
+  grossPnl: number;
+  netPnl: number;
+  totalFees: number;
+  totalTrades: number;
+  winRate: number;
+  maxDrawdownPct: number;
+}
+
 interface EquityCurveProps {
   subscriptionId: string;
   height?: number;
+  showStats?: boolean;
 }
 
-export function EquityCurve({ subscriptionId, height = 60 }: EquityCurveProps) {
+export function EquityCurve({ subscriptionId, height = 60, showStats = false }: EquityCurveProps) {
   const [data, setData] = useState<EquityCurveData[]>([]);
+  const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { token } = useAuth();
@@ -42,10 +53,12 @@ export function EquityCurve({ subscriptionId, height = 60 }: EquityCurveProps) {
 
         const result = await response.json();
         setData(result.equityCurve || []);
+        setStats(result.stats || null);
         setError(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load chart');
         setData([]);
+        setStats(null);
       } finally {
         setLoading(false);
       }
@@ -89,37 +102,74 @@ export function EquityCurve({ subscriptionId, height = 60 }: EquityCurveProps) {
   const lineColor = finalPnl >= 0 ? '#22c55e' : '#ef4444'; // green-500 or red-500
 
   return (
-    <div className="w-full" style={{ height }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
-          <XAxis
-            dataKey="date"
-            hide={true}
-          />
-          <YAxis
-            hide={true}
-            domain={['auto', 'auto']}
-          />
-          <Tooltip
-            contentStyle={{
-              backgroundColor: 'rgba(0, 0, 0, 0.8)',
-              border: 'none',
-              borderRadius: '4px',
-              fontSize: '12px'
-            }}
-            formatter={(value: number) => [`₹${value.toFixed(2)}`, 'P&L']}
-            labelFormatter={(label) => `Date: ${label}`}
-          />
-          <Line
-            type="monotone"
-            dataKey="cumulativePnl"
-            stroke={lineColor}
-            strokeWidth={2}
-            dot={false}
-            animationDuration={300}
-          />
-        </LineChart>
-      </ResponsiveContainer>
+    <div className="w-full space-y-3">
+      {/* Stats Section */}
+      {showStats && stats && (
+        <div className="grid grid-cols-3 md:grid-cols-6 gap-2 text-xs">
+          <div className="bg-secondary/20 rounded p-2">
+            <p className="text-muted-foreground">Gross P&L</p>
+            <p className={`font-bold ${stats.grossPnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              ₹{stats.grossPnl.toFixed(2)}
+            </p>
+          </div>
+          <div className="bg-secondary/20 rounded p-2">
+            <p className="text-muted-foreground">Net P&L</p>
+            <p className={`font-bold ${stats.netPnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              ₹{stats.netPnl.toFixed(2)}
+            </p>
+          </div>
+          <div className="bg-secondary/20 rounded p-2">
+            <p className="text-muted-foreground">Total Fees</p>
+            <p className="font-semibold text-amber-600">₹{stats.totalFees.toFixed(2)}</p>
+          </div>
+          <div className="bg-secondary/20 rounded p-2">
+            <p className="text-muted-foreground">Total Trades</p>
+            <p className="font-semibold">{stats.totalTrades}</p>
+          </div>
+          <div className="bg-secondary/20 rounded p-2">
+            <p className="text-muted-foreground">Win Rate</p>
+            <p className="font-semibold text-green-600">{stats.winRate.toFixed(1)}%</p>
+          </div>
+          <div className="bg-secondary/20 rounded p-2">
+            <p className="text-muted-foreground">Max DD</p>
+            <p className="font-semibold text-red-600">{stats.maxDrawdownPct.toFixed(2)}%</p>
+          </div>
+        </div>
+      )}
+
+      {/* Chart */}
+      <div style={{ height }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+            <XAxis
+              dataKey="date"
+              hide={true}
+            />
+            <YAxis
+              hide={true}
+              domain={['auto', 'auto']}
+            />
+            <Tooltip
+              contentStyle={{
+                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                border: 'none',
+                borderRadius: '4px',
+                fontSize: '12px'
+              }}
+              formatter={(value: number) => [`₹${value.toFixed(2)}`, 'P&L']}
+              labelFormatter={(label) => `Date: ${label}`}
+            />
+            <Line
+              type="monotone"
+              dataKey="cumulativePnl"
+              stroke={lineColor}
+              strokeWidth={2}
+              dot={false}
+              animationDuration={300}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }
