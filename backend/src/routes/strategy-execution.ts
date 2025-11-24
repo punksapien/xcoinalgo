@@ -683,7 +683,9 @@ router.get('/subscriptions/:id/equity-curve', authenticate, async (req: Authenti
     }
 
     const minTimestamp = subscription.subscribedAt.getTime();
-    const marginCurrency = subscription.marginCurrency.toUpperCase();
+
+    // Get margin currency from strategy executionConfig (this is what's actually used for trading)
+    const marginCurrency = (executionConfig?.margin_currency || subscription.marginCurrency || 'USDT').toUpperCase();
 
     // Calculate date range for trades API (from subscription start to now)
     const fromDate = new Date(minTimestamp).toISOString().split('T')[0]; // YYYY-MM-DD
