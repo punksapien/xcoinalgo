@@ -849,18 +849,29 @@ router.get('/subscriptions/:id/equity-curve', authenticate, async (req: Authenti
 
     const maxDrawdownPct = initialCapital > 0 ? (maxDrawdown / initialCapital) * 100 : 0;
 
-    // Calculate cumulative P&L
+    // Calculate cumulative P&L with starting point
     let cumulativePnl = 0;
-    const equityCurve = Object.keys(dailyData)
+    const equityCurve: Array<{ date: string; dailyPnl: number; cumulativePnl: number }> = [];
+
+    // Always add a starting point at subscription start date with 0 P&L
+    const startDate = new Date(minTimestamp).toISOString().split('T')[0];
+    equityCurve.push({
+      date: startDate,
+      dailyPnl: 0,
+      cumulativePnl: 0
+    });
+
+    // Add all trading days
+    Object.keys(dailyData)
       .sort()
-      .map(date => {
+      .forEach(date => {
         const dailyPnl = dailyData[date];
         cumulativePnl += dailyPnl;
-        return {
+        equityCurve.push({
           date,
           dailyPnl: parseFloat(dailyPnl.toFixed(2)),
           cumulativePnl: parseFloat(cumulativePnl.toFixed(2))
-        };
+        });
       });
 
     logger.info(`[Equity Curve] Returning ${equityCurve.length} equity curve data points, stats: ${JSON.stringify({grossPnl, netPnl, totalFees, completedTrades, winRate})}`);
