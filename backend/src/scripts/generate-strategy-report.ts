@@ -48,7 +48,7 @@ interface TradeRow {
   liquidationPrice: number | null;
   status: string;
   pnl: number | null;
-  pnlPercentage: number | null;
+  pnlPct: number | null;
   fees: number;
   entryTime: Date;
   exitTime: Date | null;
@@ -199,7 +199,7 @@ async function generateStrategyReport(strategyId: string, daysBack: number = 30,
           liquidationPrice: trade.liquidationPrice,
           status: trade.status,
           pnl: trade.pnl,
-          pnlPercentage: trade.pnlPercentage,
+          pnlPct: trade.pnlPct,
           fees: trade.fees,
           entryTime: trade.createdAt,
           exitTime: trade.exitedAt,

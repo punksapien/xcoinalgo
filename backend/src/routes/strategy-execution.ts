@@ -555,26 +555,62 @@ router.get('/subscriptions', authenticate, async (req: AuthenticatedRequest, res
             pnl: true,
             status: true,
             createdAt: true,
+            side: true,
+            entryPrice: true,
+            quantity: true,
+            symbol: true,
           }
         });
 
         const totalTrades = trades.length;
-        const openPositions = trades.filter(t => t.status === 'OPEN').length;
+        const openTrades = trades.filter(t => t.status === 'OPEN');
         const closedTrades = trades.filter(t => t.status === 'CLOSED');
 
-        // Calculate P&L (only from closed trades)
-        const totalPnl = closedTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+        // Calculate realized P&L (only from closed trades)
+        const realizedPnl = closedTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
 
-        // Calculate win rate
-        const winningTrades = closedTrades.filter(t => (t.pnl || 0) > 0).length;
-        const winRate = closedTrades.length > 0 ? (winningTrades / closedTrades.length) * 100 : 0;
+        // Calculate unrealized P&L (from open positions)
+        let unrealizedPnl = 0;
+        try {
+          for (const trade of openTrades) {
+            try {
+              const CoinDCXClient = require('../services/coindcx-client');
+              const ticker = await CoinDCXClient.getTicker(trade.symbol);
+              const currentPrice = ticker.last_price;
+
+              // Calculate unrealized P&L
+              if (trade.side === 'LONG') {
+                unrealizedPnl += (currentPrice - trade.entryPrice) * trade.quantity;
+              } else {
+                unrealizedPnl += (trade.entryPrice - currentPrice) * trade.quantity;
+              }
+            } catch (error) {
+              // If we can't get current price, skip this trade
+              console.warn(`Could not get price for ${trade.symbol}:`, error);
+            }
+          }
+        } catch (error) {
+          console.error('Failed to calculate unrealized P&L:', error);
+        }
+
+        // Total P&L = realized + unrealized
+        const totalPnl = realizedPnl + unrealizedPnl;
+
+        // Calculate win rate (only from closed trades with non-null pnl)
+        const closedTradesWithPnl = closedTrades.filter(t => t.pnl !== null);
+        const winningTrades = closedTradesWithPnl.filter(t => t.pnl! > 0).length;
+        const winRate = closedTradesWithPnl.length > 0
+          ? (winningTrades / closedTradesWithPnl.length) * 100
+          : 0;
 
         return {
           ...sub,
           liveStats: {
             totalTrades,
-            openPositions,
+            openPositions: openTrades.length,
             totalPnl,
+            realizedPnl,
+            unrealizedPnl,
             winRate,
             closedTrades: closedTrades.length,
           }

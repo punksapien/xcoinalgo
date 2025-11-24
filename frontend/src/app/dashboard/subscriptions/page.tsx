@@ -11,7 +11,6 @@ import { RedeployModal } from '@/components/strategy/redeploy-modal';
 import {
   Play,
   Pause,
-  Settings,
   RefreshCw,
   AlertCircle,
   CheckCircle,
@@ -25,6 +24,8 @@ import {
 
 interface LiveStats {
   totalPnl: number;
+  realizedPnl?: number;
+  unrealizedPnl?: number;
   totalTrades: number;
   winRate: number;
   openPositions: number;
@@ -222,7 +223,7 @@ export default function SubscriptionsPage() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="max-w-3xl mx-auto space-y-4">
             {filteredSubscriptions.map((subscription) => (
               <Card key={subscription.id} className="hover:shadow-lg transition-shadow">
                 <CardHeader className="pb-3">
@@ -286,6 +287,11 @@ export default function SubscriptionsPage() {
                           <p className={`font-bold ${subscription.liveStats.totalPnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                             ₹{subscription.liveStats.totalPnl.toFixed(2)}
                           </p>
+                          {subscription.liveStats.realizedPnl !== undefined && subscription.liveStats.unrealizedPnl !== undefined && (
+                            <p className="text-[10px] text-muted-foreground mt-0.5">
+                              R: ₹{subscription.liveStats.realizedPnl.toFixed(2)} | U: ₹{subscription.liveStats.unrealizedPnl.toFixed(2)}
+                            </p>
+                          )}
                         </div>
                         <div>
                           <p className="text-xs text-muted-foreground">Total Trades</p>
@@ -354,15 +360,6 @@ export default function SubscriptionsPage() {
                         Unsubscribe
                       </Button>
                     )}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => router.push(`/dashboard/subscription/${subscription.id}`)}
-                      className="flex-1"
-                    >
-                      <Settings className="h-4 w-4 mr-1" />
-                      Settings
-                    </Button>
                   </div>
                 </CardContent>
               </Card>

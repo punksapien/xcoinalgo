@@ -30,7 +30,7 @@ interface TradeRow {
   liquidationPrice: number | null;
   status: string;
   pnl: number | null;
-  pnlPercentage: number | null;
+  pnlPct: number | null;
   fees: number;
   entryTime: Date;
   exitTime: Date | null;
@@ -153,7 +153,7 @@ async function generatePnLReport(config: ReportConfig): Promise<void> {
       liquidationPrice: trade.liquidationPrice,
       status: trade.status,
       pnl: trade.pnl,
-      pnlPercentage: trade.pnlPercentage,
+      pnlPct: trade.pnlPct,
       fees: trade.fees,
       entryTime: trade.createdAt,
       exitTime: trade.exitedAt,
