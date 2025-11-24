@@ -727,8 +727,9 @@ router.get('/subscriptions/:id/equity-curve', authenticate, async (req: Authenti
     }
 
     // Filter for trades after subscription start
+    // Note: CoinDCX trades API uses 'timestamp' field, not 'created_at'
     const filteredTrades = allTrades.filter(trade => {
-      const tradeTime = new Date(trade.created_at).getTime();
+      const tradeTime = trade.timestamp; // Already in milliseconds
       return tradeTime >= minTimestamp;
     });
 
@@ -750,9 +751,7 @@ router.get('/subscriptions/:id/equity-curve', authenticate, async (req: Authenti
     }
 
     // Sort trades by timestamp
-    const sortedTrades = filteredTrades.sort((a, b) =>
-      new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-    );
+    const sortedTrades = filteredTrades.sort((a, b) => a.timestamp - b.timestamp);
 
     // Calculate P&L by tracking position
     interface Position {
@@ -775,8 +774,8 @@ router.get('/subscriptions/:id/equity-curve', authenticate, async (req: Authenti
       const side = trade.side.toLowerCase();
       const price = parseFloat(trade.price);
       const quantity = parseFloat(trade.quantity);
-      const fee = parseFloat(trade.fee || 0);
-      const tradeDate = new Date(trade.created_at).toISOString().split('T')[0];
+      const fee = parseFloat(trade.fee_amount || 0);
+      const tradeDate = new Date(trade.timestamp).toISOString().split('T')[0];
 
       totalFees += fee;
 
@@ -786,7 +785,7 @@ router.get('/subscriptions/:id/equity-curve', authenticate, async (req: Authenti
           entryPrice: price,
           quantity,
           side: side as 'buy' | 'sell',
-          entryTime: new Date(trade.created_at)
+          entryTime: new Date(trade.timestamp)
         };
       } else {
         // Closing or modifying existing position
