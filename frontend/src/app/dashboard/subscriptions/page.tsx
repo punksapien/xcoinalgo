@@ -68,7 +68,55 @@ export default function SubscriptionsPage() {
 
     try {
       const response = await StrategyExecutionAPI.getUserSubscriptions(token);
-      setSubscriptions(response.subscriptions || []);
+      const subscriptionsData = response.subscriptions || [];
+
+      // Fetch live stats for each subscription
+      const subscriptionsWithStats = await Promise.all(
+        subscriptionsData.map(async (sub) => {
+          try {
+            // Fetch equity curve data which includes stats
+            const statsResponse = await fetch(
+              `/api/strategies/subscriptions/${sub.id}/equity-curve`,
+              {
+                headers: {
+                  'Authorization': `Bearer ${token}`
+                }
+              }
+            );
+
+            if (statsResponse.ok) {
+              const statsData = await statsResponse.json();
+              const stats = statsData.stats;
+
+              if (stats && stats.totalTrades > 0) {
+                // Map the stats to liveStats format
+                return {
+                  ...sub,
+                  liveStats: {
+                    totalPnl: stats.netPnl || 0,
+                    realizedPnl: stats.netPnl || 0,
+                    unrealizedPnl: 0,
+                    totalTrades: stats.totalTrades || 0,
+                    winRate: stats.winRate || 0,
+                    openPositions: 0,
+                    closedTrades: stats.totalTrades || 0,
+                  }
+                };
+              }
+            } else {
+              console.error(`Failed to fetch stats for ${sub.id}: ${statsResponse.status}`);
+            }
+
+            // If stats fetch fails or no trades, return subscription without liveStats
+            return sub;
+          } catch (err) {
+            console.error(`Error fetching stats for subscription ${sub.id}:`, err);
+            return sub;
+          }
+        })
+      );
+
+      setSubscriptions(subscriptionsWithStats);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load subscriptions');
@@ -83,7 +131,11 @@ export default function SubscriptionsPage() {
     fetchSubscriptions();
   };
 
-  const handlePause = async (subscriptionId: string) => {
+  const handlePause = async (subscriptionId: string, strategyName: string) => {
+    if (!confirm(`Are you sure you want to pause "${strategyName}"? No new positions will be opened until you resume.`)) {
+      return;
+    }
+
     if (!token) return;
 
     try {
@@ -105,8 +157,8 @@ export default function SubscriptionsPage() {
     fetchSubscriptions();
   };
 
-  const handleCancel = async (subscriptionId: string) => {
-    if (!confirm('Are you sure you want to cancel this subscription? This action cannot be undone.')) {
+  const handleCancel = async (subscriptionId: string, strategyName: string) => {
+    if (!confirm(`⚠️ Unsubscribe from "${strategyName}"?\n\nThis will:\n• Close all open positions\n• Stop the strategy permanently\n• Cannot be undone\n\nAre you absolutely sure?`)) {
       return;
     }
 
@@ -224,9 +276,9 @@ export default function SubscriptionsPage() {
             </CardContent>
           </Card>
         ) : (
-          <div className="max-w-3xl mx-auto space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
             {filteredSubscriptions.map((subscription) => (
-              <Card key={subscription.id} className="hover:shadow-lg transition-shadow">
+              <Card key={subscription.id} className="hover:shadow-lg transition-shadow flex flex-col">
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
@@ -246,99 +298,90 @@ export default function SubscriptionsPage() {
                   </div>
                 </CardHeader>
 
-                <CardContent className="space-y-4">
+                <CardContent className="space-y-3 flex-1 flex flex-col">
                   {/* Configuration */}
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div className="bg-secondary/20 rounded-lg p-3">
-                      <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div className="bg-secondary/20 rounded-lg p-2">
+                      <div className="flex items-center gap-1 text-muted-foreground mb-0.5">
                         <DollarSign className="h-3 w-3" />
-                        <span className="text-xs">Capital</span>
+                        <span className="text-[10px]">Capital</span>
                       </div>
-                      <p className="font-semibold">₹{subscription.capital.toLocaleString()}</p>
+                      <p className="font-semibold text-xs">₹{subscription.capital.toLocaleString()}</p>
                     </div>
-                    <div className="bg-secondary/20 rounded-lg p-3">
-                      <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                    <div className="bg-secondary/20 rounded-lg p-2">
+                      <div className="flex items-center gap-1 text-muted-foreground mb-0.5">
                         <Activity className="h-3 w-3" />
-                        <span className="text-xs">Risk/Trade</span>
+                        <span className="text-[10px]">Risk/Trade</span>
                       </div>
-                      <p className="font-semibold">{(subscription.riskPerTrade * 100).toFixed(1)}%</p>
+                      <p className="font-semibold text-xs">{(subscription.riskPerTrade * 100).toFixed(1)}%</p>
                     </div>
-                    <div className="bg-secondary/20 rounded-lg p-3">
-                      <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                    <div className="bg-secondary/20 rounded-lg p-2">
+                      <div className="flex items-center gap-1 text-muted-foreground mb-0.5">
                         <TrendingUp className="h-3 w-3" />
-                        <span className="text-xs">Leverage</span>
+                        <span className="text-[10px]">Leverage</span>
                       </div>
-                      <p className="font-semibold">{subscription.leverage}x</p>
+                      <p className="font-semibold text-xs">{subscription.leverage}x</p>
                     </div>
-                    <div className="bg-secondary/20 rounded-lg p-3">
-                      <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                    <div className="bg-secondary/20 rounded-lg p-2">
+                      <div className="flex items-center gap-1 text-muted-foreground mb-0.5">
                         <Users className="h-3 w-3" />
-                        <span className="text-xs">Max Positions</span>
+                        <span className="text-[10px]">Max Positions</span>
                       </div>
-                      <p className="font-semibold">{subscription.maxPositions}</p>
+                      <p className="font-semibold text-xs">{subscription.maxPositions}</p>
                     </div>
                   </div>
 
                   {/* Performance - Live Trading Results */}
                   {subscription.liveStats ? (
-                    <div className="bg-blue-50 dark:bg-blue-950/20 rounded-lg p-3 border border-blue-200 dark:border-blue-800">
-                      <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-sm">
+                    <div className="bg-blue-50 dark:bg-blue-950/20 rounded-lg p-2 border border-blue-200 dark:border-blue-800">
+                      <div className="grid grid-cols-2 gap-2 text-sm">
                         <div>
-                          <p className="text-xs text-muted-foreground">Total P&L</p>
-                          <p className={`font-bold ${subscription.liveStats.totalPnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          <p className="text-[10px] text-muted-foreground">Total P&L</p>
+                          <p className={`font-bold text-xs ${subscription.liveStats.totalPnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                             ₹{subscription.liveStats.totalPnl.toFixed(2)}
                           </p>
-                          {subscription.liveStats.realizedPnl !== undefined && subscription.liveStats.unrealizedPnl !== undefined && (
-                            <p className="text-[10px] text-muted-foreground mt-0.5">
-                              Realized: ₹{subscription.liveStats.realizedPnl.toFixed(2)} | Unrealized: ₹{subscription.liveStats.unrealizedPnl.toFixed(2)}
-                            </p>
-                          )}
                         </div>
                         <div>
-                          <p className="text-xs text-muted-foreground">Total Trades</p>
-                          <p className="font-semibold">{subscription.liveStats.totalTrades}</p>
+                          <p className="text-[10px] text-muted-foreground">Total Trades</p>
+                          <p className="font-semibold text-xs">{subscription.liveStats.totalTrades}</p>
                         </div>
                         <div>
-                          <p className="text-xs text-muted-foreground">Win Rate</p>
-                          <p className="font-semibold text-green-600">
+                          <p className="text-[10px] text-muted-foreground">Win Rate</p>
+                          <p className="font-semibold text-xs text-green-600">
                             {subscription.liveStats.winRate.toFixed(1)}%
                           </p>
                         </div>
                         <div>
-                          <p className="text-xs text-muted-foreground">Open Positions</p>
-                          <p className="font-semibold text-blue-600">{subscription.liveStats.openPositions}</p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Closed Trades</p>
-                          <p className="font-semibold">{subscription.liveStats.closedTrades}</p>
+                          <p className="text-[10px] text-muted-foreground">Open Positions</p>
+                          <p className="font-semibold text-xs text-blue-600">{subscription.liveStats.openPositions}</p>
                         </div>
                       </div>
                     </div>
                   ) : (
-                    <div className="bg-muted/50 rounded-lg p-3 text-center text-xs text-muted-foreground">
+                    <div className="bg-muted/50 rounded-lg p-2 text-center text-[10px] text-muted-foreground">
                       No trading data yet
                     </div>
                   )}
 
                   {/* Equity Curve Chart with Stats */}
-                  <div className="bg-secondary/10 rounded-lg p-3 border border-secondary/20">
-                    <p className="text-xs text-muted-foreground mb-2">Performance Analytics</p>
-                    <EquityCurve subscriptionId={subscription.id} height={80} showStats={true} />
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground">Performance Analytics</p>
+                    <EquityCurve subscriptionId={subscription.id} height={100} showStats={true} />
                   </div>
 
                   {/* Metadata */}
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-2 text-[10px] text-muted-foreground mt-auto pt-2">
                     <Clock className="h-3 w-3" />
                     <span>Subscribed {new Date(subscription.subscribedAt).toLocaleDateString()}</span>
                   </div>
 
                   {/* Actions */}
-                  <div className="flex gap-2 pt-2">
+                  <div className="flex gap-2">
                     {subscription.isActive && !subscription.isPaused && (
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => handlePause(subscription.id)}
+                        onClick={() => handlePause(subscription.id, subscription.strategy?.name || 'Unknown Strategy')}
                         className="flex-1"
                       >
                         <Pause className="h-4 w-4 mr-1" />
@@ -360,7 +403,7 @@ export default function SubscriptionsPage() {
                       <Button
                         variant="destructive"
                         size="sm"
-                        onClick={() => handleCancel(subscription.id)}
+                        onClick={() => handleCancel(subscription.id, subscription.strategy?.name || 'Unknown Strategy')}
                         className="flex-1"
                       >
                         <Trash2 className="h-4 w-4 mr-1" />

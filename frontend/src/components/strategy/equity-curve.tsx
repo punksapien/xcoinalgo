@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { useAuth } from '@/lib/auth';
 
 interface EquityCurveData {
@@ -99,7 +99,9 @@ export function EquityCurve({ subscriptionId, height = 60, showStats = false }: 
 
   // Determine if overall P&L is positive or negative
   const finalPnl = data[data.length - 1]?.cumulativePnl || 0;
-  const lineColor = finalPnl >= 0 ? '#22c55e' : '#ef4444'; // green-500 or red-500
+  const isPositive = finalPnl >= 0;
+  const lineColor = isPositive ? '#22c55e' : '#ef4444'; // green-500 or red-500
+  const gradientId = `gradient-${subscriptionId}`; // Unique gradient ID per subscription
 
   return (
     <div className="w-full space-y-3">
@@ -140,7 +142,13 @@ export function EquityCurve({ subscriptionId, height = 60, showStats = false }: 
       {/* Chart */}
       <div style={{ height }}>
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+          <AreaChart data={data} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+            <defs>
+              <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={lineColor} stopOpacity={0.3} />
+                <stop offset="95%" stopColor={lineColor} stopOpacity={0.05} />
+              </linearGradient>
+            </defs>
             <XAxis
               dataKey="date"
               hide={true}
@@ -159,15 +167,15 @@ export function EquityCurve({ subscriptionId, height = 60, showStats = false }: 
               formatter={(value: number) => [`₹${value.toFixed(2)}`, 'P&L']}
               labelFormatter={(label) => `Date: ${label}`}
             />
-            <Line
+            <Area
               type="monotone"
               dataKey="cumulativePnl"
               stroke={lineColor}
               strokeWidth={2}
-              dot={false}
+              fill={`url(#${gradientId})`}
               animationDuration={300}
             />
-          </LineChart>
+          </AreaChart>
         </ResponsiveContainer>
       </div>
     </div>
