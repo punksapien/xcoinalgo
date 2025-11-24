@@ -891,6 +891,48 @@ export async function getFuturesTransactions(
 }
 
 /**
+ * Get futures trades (individual trade fills)
+ * This fetches actual trade executions (buy/sell fills) even for open positions
+ */
+export async function getFuturesTrades(
+  encryptedApiKey: string,
+  encryptedApiSecret: string,
+  params: {
+    from_date: string;
+    to_date: string;
+    page?: number;
+    size?: number;
+    pair?: string;
+    order_id?: string;
+    margin_currency_short_name: string[];
+  }
+): Promise<any[]> {
+  const credentials = prepareCredentials(encryptedApiKey, encryptedApiSecret);
+
+  const payload: any = {
+    from_date: params.from_date,
+    to_date: params.to_date,
+    page: params.page || 1,
+    size: params.size || 100,
+    margin_currency_short_name: params.margin_currency_short_name
+  };
+
+  if (params.pair) payload.pair = params.pair;
+  if (params.order_id) payload.order_id = params.order_id;
+
+  logger.info(`Fetching futures trades for pair=${params.pair} from ${params.from_date} to ${params.to_date} (page ${payload.page})`);
+
+  const trades = await makeAuthenticatedRequest<any[]>(
+    '/exchange/v1/derivatives/futures/trades',
+    credentials,
+    payload
+  );
+
+  logger.info(`Fetched ${trades.length} futures trades`);
+  return trades;
+}
+
+/**
  * Test connection with credentials
  */
 export async function testConnection(
