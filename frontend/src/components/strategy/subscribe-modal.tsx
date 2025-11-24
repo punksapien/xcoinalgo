@@ -6,10 +6,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
 import { useAuth } from '@/lib/auth';
 import { StrategyExecutionAPI, type SubscriptionConfig, type Subscription } from '@/lib/api/strategy-execution-api';
-import { Loader2, DollarSign, Percent, TrendingUp, AlertCircle, CheckCircle, Award, TrendingDown, Target, ChevronRight, ArrowLeft, Info, Shield } from 'lucide-react';
+import { Loader2, DollarSign, TrendingUp, AlertCircle, CheckCircle, Award, TrendingDown, Target, ChevronRight, ArrowLeft, Info, Shield } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { showSuccessToast, showErrorToast, showWarningToast } from '@/lib/toast-utils';
 import { getUserFriendlyError } from '@/lib/error-messages';
@@ -64,14 +63,9 @@ export function SubscribeModal({
 
   // Get strategy config defaults
   const minMargin = strategyMetrics?.minMargin || 10000;
-  const strategyDefaultRisk = Number(strategyConfig?.risk_per_trade) || 0.04;
-  const strategyDefaultLeverage = Number(strategyConfig?.leverage) || 10;
 
   // Form state
   const [capital, setCapital] = useState('');
-  const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
-  const [riskPerTrade, setRiskPerTrade] = useState(''); // Empty = use strategy default
-  const [leverage, setLeverage] = useState(''); // Empty = use strategy default
   const [selectedCredentialId, setSelectedCredentialId] = useState<string>('');
 
   const fetchBrokerCredentials = useCallback(async () => {
@@ -193,41 +187,6 @@ export function SubscribeModal({
     validateCapital(sanitized);
   };
 
-  // Validation for leverage
-  const handleLeverageChange = (value: string) => {
-    // Only allow numbers
-    const sanitized = value.replace(/[^0-9]/g, '');
-    setLeverage(sanitized);
-
-    const errors = { ...validationErrors };
-    if (sanitized && (isNaN(Number(sanitized)) || Number(sanitized) < 1 || Number(sanitized) > 100)) {
-      errors.leverage = 'Leverage must be between 1x and 100x';
-    } else {
-      delete errors.leverage;
-    }
-    setValidationErrors(errors);
-  };
-
-  // Validation for risk per trade
-  const handleRiskPerTradeChange = (value: string) => {
-    // Only allow numbers and decimal point
-    const sanitized = value.replace(/[^0-9.]/g, '');
-    setRiskPerTrade(sanitized);
-
-    const errors = { ...validationErrors };
-    if (sanitized) {
-      const risk = parseFloat(sanitized);
-      if (isNaN(risk) || risk < 0.01 || risk > 0.55) {
-        errors.riskPerTrade = 'Risk per trade must be between 0.01 and 0.55';
-      } else {
-        delete errors.riskPerTrade;
-      }
-    } else {
-      delete errors.riskPerTrade;
-    }
-    setValidationErrors(errors);
-  };
-
   const handleSubscribe = async () => {
     if (!token) {
       showErrorToast('Authentication Required', 'Please login to subscribe to strategies');
@@ -266,19 +225,10 @@ export function SubscribeModal({
       setValidationErrors({});
 
       // Prepare config for validation
-      // Empty values = use strategy defaults (sent as undefined to backend)
       const configData: Record<string, unknown> = {
         capital: capitalAmount,
         brokerCredentialId: selectedCredentialId,
       };
-
-      // Only include if user explicitly set them (not using strategy default)
-      if (riskPerTrade && riskPerTrade.trim() !== '') {
-        configData.riskPerTrade = parseFloat(riskPerTrade);
-      }
-      if (leverage && leverage.trim() !== '') {
-        configData.leverage = parseInt(leverage);
-      }
 
       // Validate configuration
       const validation = validateSubscriptionConfig(configData);
@@ -570,84 +520,6 @@ export function SubscribeModal({
                     </p>
                   ) : (
                     <p className="text-xs text-muted-foreground">Minimum required: ₹{minMargin.toLocaleString()}</p>
-                  )}
-                </div>
-
-                {/* Advanced Settings Toggle */}
-                <div className="border-t border-border pt-4">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <Label htmlFor="advanced-settings" className="text-sm font-semibold cursor-pointer">
-                        Advanced Settings
-                      </Label>
-                      <span className="text-xs text-muted-foreground">(Optional)</span>
-                    </div>
-                    <Switch
-                      id="advanced-settings"
-                      checked={showAdvancedSettings}
-                      onCheckedChange={setShowAdvancedSettings}
-                    />
-                  </div>
-
-                  {showAdvancedSettings && (
-                    <div className="space-y-4 p-4 bg-gray-50 border border-gray-200 rounded-lg animate-in slide-in-from-top">
-                      <Alert className="bg-yellow-50 border-yellow-300">
-                        <Info className="h-4 w-4 text-yellow-700" />
-                        <AlertDescription className="text-xs text-yellow-800">
-                          <strong>Warning:</strong> Modifying these settings will override the strategy&apos;s default configuration. Only change these if you understand the risks.
-                        </AlertDescription>
-                      </Alert>
-
-                      {/* Leverage */}
-                      <div className="space-y-2">
-                        <Label htmlFor="leverage" className="flex items-center gap-2">
-                          <TrendingUp className="h-4 w-4" />
-                          Leverage (X):
-                        </Label>
-                        <Input
-                          id="leverage"
-                          type="text"
-                          value={leverage}
-                          onChange={(e) => handleLeverageChange(e.target.value)}
-                          placeholder={`Leave empty to use strategy default (${strategyDefaultLeverage}x)`}
-                          className={validationErrors.leverage ? 'border-red-500' : ''}
-                        />
-                        {validationErrors.leverage ? (
-                          <p className="text-sm text-red-500 flex items-center gap-1">
-                            <AlertCircle className="h-3 w-3" />
-                            {validationErrors.leverage}
-                          </p>
-                        ) : (
-                          <p className="text-xs text-muted-foreground">Range: 1-100x. Strategy default: {strategyDefaultLeverage}x</p>
-                        )}
-                      </div>
-
-                      {/* Risk Per Trade */}
-                      <div className="space-y-2">
-                        <Label htmlFor="riskPerTrade" className="flex items-center gap-2">
-                          <Percent className="h-4 w-4" />
-                          Risk Per Trade (0.01 to 0.55):
-                        </Label>
-                        <Input
-                          id="riskPerTrade"
-                          type="text"
-                          value={riskPerTrade}
-                          onChange={(e) => handleRiskPerTradeChange(e.target.value)}
-                          placeholder={`Leave empty to use strategy default (${strategyDefaultRisk})`}
-                          className={validationErrors.riskPerTrade ? 'border-red-500' : ''}
-                        />
-                        {validationErrors.riskPerTrade ? (
-                          <p className="text-sm text-red-500 flex items-center gap-1">
-                            <AlertCircle className="h-3 w-3" />
-                            {validationErrors.riskPerTrade}
-                          </p>
-                        ) : (
-                          <p className="text-xs text-muted-foreground">
-                            Range: 0.01-0.55. Strategy default: {strategyDefaultRisk} ({(strategyDefaultRisk * 100).toFixed(0)}%)
-                          </p>
-                        )}
-                      </div>
-                    </div>
                   )}
                 </div>
               </div>
