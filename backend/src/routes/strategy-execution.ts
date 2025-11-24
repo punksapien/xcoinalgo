@@ -548,6 +548,15 @@ router.get('/subscriptions', authenticate, async (req: AuthenticatedRequest, res
     // Fetch trading results for each subscription
     const subscriptionsWithStats = await Promise.all(
       subscriptions.map(async (sub) => {
+        // Resolve subscription settings (merge user overrides with strategy defaults)
+        const strategyConfig = sub.strategy?.executionConfig as any || {};
+        const resolvedSettings = {
+          riskPerTrade: sub.riskPerTrade ?? strategyConfig.risk_per_trade ?? 0.02,
+          leverage: sub.leverage ?? strategyConfig.leverage ?? 10,
+          maxPositions: sub.maxPositions ?? strategyConfig.max_positions ?? 1,
+          maxDailyLoss: sub.maxDailyLoss ?? strategyConfig.max_daily_loss ?? 0.05,
+        };
+
         // Get all trades for this subscription
         const trades = await prisma.trade.findMany({
           where: { subscriptionId: sub.id },
@@ -606,6 +615,11 @@ router.get('/subscriptions', authenticate, async (req: AuthenticatedRequest, res
 
         return {
           ...sub,
+          // Override with resolved settings
+          riskPerTrade: resolvedSettings.riskPerTrade,
+          leverage: resolvedSettings.leverage,
+          maxPositions: resolvedSettings.maxPositions,
+          maxDailyLoss: resolvedSettings.maxDailyLoss,
           liveStats: {
             totalTrades,
             openPositions: openTrades.length,
