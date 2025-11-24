@@ -93,9 +93,9 @@ router.post('/:id/subscribe', authenticate, async (req: AuthenticatedRequest, re
     const {
       capital,
       riskPerTrade,
-      leverage = 1,
-      maxPositions = 1,
-      maxDailyLoss = 0.05,
+      leverage,  // No default - let it be undefined to inherit strategy default
+      maxPositions,  // No default - let it be undefined to inherit strategy default
+      maxDailyLoss,  // No default - let it be undefined to inherit strategy default
       slAtrMultiplier,
       tpAtrMultiplier,
       brokerCredentialId,
@@ -152,6 +152,8 @@ router.post('/:id/subscribe', authenticate, async (req: AuthenticatedRequest, re
     // Use provided values or fall back to strategy defaults
     const finalRiskPerTrade = riskPerTrade ?? configData.risk_per_trade ?? execCfg.risk_per_trade ?? 0.02;
     const finalLeverage = leverage ?? configData.leverage ?? execCfg.leverage ?? 10;
+    const finalMaxPositions = maxPositions ?? configData.max_positions ?? execCfg.max_positions ?? 1;
+    const finalMaxDailyLoss = maxDailyLoss ?? configData.max_daily_loss ?? execCfg.max_daily_loss ?? 0.05;
 
     // Futures-only balance check (all strategies use futures)
     try {
@@ -234,8 +236,8 @@ router.post('/:id/subscribe', authenticate, async (req: AuthenticatedRequest, re
       capital,
       riskPerTrade: finalRiskPerTrade,
       leverage: finalLeverage,
-      maxPositions,
-      maxDailyLoss,
+      maxPositions: finalMaxPositions,
+      maxDailyLoss: finalMaxDailyLoss,
       slAtrMultiplier,
       tpAtrMultiplier,
       brokerCredentialId,
