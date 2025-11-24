@@ -1,0 +1,150 @@
+
+> frontend@0.1.0 build
+> next build
+
+ ⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of /Users/macintosh/Developer/coindcx_client/package-lock.json as the root directory.
+ To silence this warning, set `outputFileTracingRoot` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/output#caveats for more information.
+ Detected additional lockfiles: 
+   * /Users/macintosh/Developer/coindcx_client/coindcx-trading-platform/frontend/package-lock.json
+
+   ▲ Next.js 15.5.4
+   - Environments: .env.local, .env.production
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 3.7s
+   Linting and checking validity of types ...
+
+Failed to compile.
+
+./src/app/admin/access-requests/page.tsx
+36:6  Warning: React Hook useEffect has a missing dependency: 'loadAccessRequests'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/app/admin/bulk-users/page.tsx
+5:29  Warning: 'CardDescription' is defined but never used.  @typescript-eslint/no-unused-vars
+131:6  Warning: React Hook useEffect has a missing dependency: 'handleRawPaste'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+326:41  Error: Unexpected any. Specify a different type.  @typescript-eslint/no-explicit-any
+340:14  Warning: 'err' is defined but never used.  @typescript-eslint/no-unused-vars
+350:19  Warning: '_id' is defined but never used.  @typescript-eslint/no-unused-vars
+350:32  Warning: '_errors' is defined but never used.  @typescript-eslint/no-unused-vars
+350:59  Warning: '_vs' is defined but never used.  @typescript-eslint/no-unused-vars
+
+./src/app/admin/email-monitoring/page.tsx
+105:6  Warning: React Hook useEffect has a missing dependency: 'loadData'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/app/admin/page.tsx
+28:6  Warning: React Hook useEffect has a missing dependency: 'loadStats'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/app/admin/strategies/page.tsx
+10:65  Warning: 'Save' is defined but never used.  @typescript-eslint/no-unused-vars
+10:71  Warning: 'X' is defined but never used.  @typescript-eslint/no-unused-vars
+10:74  Warning: 'RefreshCw' is defined but never used.  @typescript-eslint/no-unused-vars
+91:11  Warning: 'SubscriberData' is defined but never used.  @typescript-eslint/no-unused-vars
+139:6  Warning: React Hook useEffect has a missing dependency: 'loadData'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/app/admin/strategy-monitoring/page.tsx
+120:6  Warning: React Hook useEffect has a missing dependency: 'loadData'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+130:6  Warning: React Hook useEffect has a missing dependency: 'loadData'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/app/admin/users/page.tsx
+83:6  Warning: React Hook useEffect has a missing dependency: 'loadUsers'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/app/api/auth/[...nextauth]/route.ts
+37:18  Warning: 'error' is defined but never used.  @typescript-eslint/no-unused-vars
+44:35  Warning: 'profile' is defined but never used.  @typescript-eslint/no-unused-vars
+77:30  Warning: 'account' is defined but never used.  @typescript-eslint/no-unused-vars
+
+./src/app/client/invites/page.tsx
+106:14  Warning: 'err' is defined but never used.  @typescript-eslint/no-unused-vars
+
+./src/app/client/page.tsx
+11:3  Warning: 'LayoutDashboard' is defined but never used.  @typescript-eslint/no-unused-vars
+41:11  Warning: 'user' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+
+./src/app/client/strategies/[id]/share/page.tsx
+11:10  Warning: 'Label' is defined but never used.  @typescript-eslint/no-unused-vars
+18:3  Warning: 'Plus' is defined but never used.  @typescript-eslint/no-unused-vars
+20:3  Warning: 'ExternalLink' is defined but never used.  @typescript-eslint/no-unused-vars
+64:6  Warning: React Hook useEffect has a missing dependency: 'loadData'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+140:14  Warning: 'err' is defined but never used.  @typescript-eslint/no-unused-vars
+
+./src/app/client/subscribers/page.tsx
+31:3  Warning: 'TrendingUp' is defined but never used.  @typescript-eslint/no-unused-vars
+32:3  Warning: 'TrendingDown' is defined but never used.  @typescript-eslint/no-unused-vars
+33:3  Warning: 'DollarSign' is defined but never used.  @typescript-eslint/no-unused-vars
+36:3  Warning: 'Filter' is defined but never used.  @typescript-eslint/no-unused-vars
+114:6  Warning: React Hook useEffect has a missing dependency: 'loadData'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/app/dashboard/broker/page.tsx
+21:3  Warning: 'DialogFooter' is defined but never used.  @typescript-eslint/no-unused-vars
+26:44  Warning: 'showInfoToast' is defined but never used.  @typescript-eslint/no-unused-vars
+84:6  Warning: React Hook useEffect has missing dependencies: 'fetchBrokerStatus' and 'router'. Either include them or remove the dependency array.  react-hooks/exhaustive-deps
+290:25  Warning: Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+./src/app/dashboard/deployed/page.tsx
+11:3  Warning: 'MoreVertical' is defined but never used.  @typescript-eslint/no-unused-vars
+106:6  Warning: React Hook useEffect has missing dependencies: 'fetchDeployments' and 'router'. Either include them or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/app/dashboard/page.tsx
+13:65  Warning: 'TrendingDown' is defined but never used.  @typescript-eslint/no-unused-vars
+137:9  Warning: 'formatCurrency' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+176:9  Warning: 'handleViewDetails' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+
+./src/app/dashboard/positions/page.tsx
+9:3  Warning: 'TrendingDown' is defined but never used.  @typescript-eslint/no-unused-vars
+13:3  Warning: 'ExternalLink' is defined but never used.  @typescript-eslint/no-unused-vars
+19:3  Warning: 'AlertTriangle' is defined but never used.  @typescript-eslint/no-unused-vars
+135:6  Warning: React Hook useEffect has missing dependencies: 'fetchData' and 'router'. Either include them or remove the dependency array.  react-hooks/exhaustive-deps
+147:6  Warning: React Hook useEffect has a missing dependency: 'fetchData'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/app/dashboard/strategy/[id]/page.tsx
+339:6  Warning: React Hook useEffect has a missing dependency: 'fetchStrategy'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+343:6  Warning: React Hook useEffect has a missing dependency: 'fetchStrategy'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/app/dashboard/subscription/[id]/page.tsx
+47:6  Warning: React Hook useEffect has a missing dependency: 'fetchSubscriptionDetails'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/app/dashboard/subscriptions/page.tsx
+57:6  Warning: React Hook useEffect has a missing dependency: 'fetchSubscriptions'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/app/invite/[code]/page.tsx
+54:11  Warning: 'user' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+63:6  Warning: React Hook useEffect has a missing dependency: 'loadInviteData'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+109:13  Warning: 'response' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+
+./src/app/strategies/[id]/edit/page.tsx
+3:31  Warning: 'useRef' is defined but never used.  @typescript-eslint/no-unused-vars
+6:29  Warning: 'CardDescription' is defined but never used.  @typescript-eslint/no-unused-vars
+6:46  Warning: 'CardHeader' is defined but never used.  @typescript-eslint/no-unused-vars
+6:58  Warning: 'CardTitle' is defined but never used.  @typescript-eslint/no-unused-vars
+64:6  Warning: React Hook useEffect has a missing dependency: 'handleSave'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+154:13  Warning: 'response' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+
+./src/app/strategies/page.tsx
+235:9  Warning: 'openLogViewer' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+
+./src/app/strategies/upload/page.tsx
+3:20  Warning: 'useEffect' is defined but never used.  @typescript-eslint/no-unused-vars
+83:39  Warning: 'disconnect' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+248:14  Warning: '_error' is defined but never used.  @typescript-eslint/no-unused-vars
+
+./src/components/LogViewerModal.tsx
+126:6  Warning: React Hook useEffect has a missing dependency: 'fetchLogs'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/components/SandboxTerminal.tsx
+116:6  Warning: React Hook useEffect has a missing dependency: 'connectToTerminal'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/components/admin/strategy-subscribers-modal.tsx
+110:6  Warning: React Hook useEffect has a missing dependency: 'loadSubscribers'. Either include it or remove the dependency array.  react-hooks/exhaustive-deps
+
+./src/components/strategy/subscribe-modal.tsx
+11:37  Warning: 'SubscriptionConfig' is defined but never used.  @typescript-eslint/no-unused-vars
+12:65  Warning: 'CheckCircle' is defined but never used.  @typescript-eslint/no-unused-vars
+14:44  Warning: 'showWarningToast' is defined but never used.  @typescript-eslint/no-unused-vars
+16:38  Warning: 'validateSufficientBalance' is defined but never used.  @typescript-eslint/no-unused-vars
+
+./src/lib/use-role-guard.ts
+28:47  Warning: 'isQuant' is assigned a value but never used.  @typescript-eslint/no-unused-vars
+
+info  - Need to disable some ESLint rules? Learn more here: https://nextjs.org/docs/app/api-reference/config/eslint#disabling-rules

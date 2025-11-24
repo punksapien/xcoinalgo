@@ -1,0 +1,474 @@
+{
+  "timestamp": "2025-11-20T13:38:30.462057",
+  "summary": {
+    "total_in_file": 108,
+    "created": 79,
+    "invalid_credentials": 23,
+    "duplicates": 0,
+    "creation_failures": 6,
+    "locally_skipped": 0
+  },
+  "created_users": [
+    {
+      "email": "ambreeshyadav2@gmail.com",
+      "userId": "cmi7h7n6p0002p9mpn262kxrd"
+    },
+    {
+      "email": "apurvavalanju3@gmail.com",
+      "userId": "cmi7h7nkk0005p9mpd8pd4xmc"
+    },
+    {
+      "email": "srikanthbandari911@gmail.com",
+      "userId": "cmi7h7nzb0008p9mp7kuopfdh"
+    },
+    {
+      "email": "svprajapati6882@gmail.com",
+      "userId": "cmi7h7oec000bp9mph71ils83"
+    },
+    {
+      "email": "azhruddintamboli@gmail.com",
+      "userId": "cmi7h7otj000ep9mp56mlun2r"
+    },
+    {
+      "email": "purva.wandhekar@gmail.com",
+      "userId": "cmi7h7p81000hp9mpr0tmydcc"
+    },
+    {
+      "email": "aratiraut6@gmail.com",
+      "userId": "cmi7h7pnq000kp9mpx7p3d1yu"
+    },
+    {
+      "email": "mrlakkad777@gmail.com",
+      "userId": "cmi7h7q2e000np9mp3dakbwyp"
+    },
+    {
+      "email": "parniloke@gmail.com",
+      "userId": "cmi7h7qi2000qp9mpss0up4r1"
+    },
+    {
+      "email": "atul3956@gmail.com",
+      "userId": "cmi7h7qyx000tp9mpj1kjrgoc"
+    },
+    {
+      "email": "smakal711@gmail.com",
+      "userId": "cmi7h7rf3000wp9mpre2j52x7"
+    },
+    {
+      "email": "rameshbankar@yahoo.com",
+      "userId": "cmi7h7rve000zp9mpg2pdkau3"
+    },
+    {
+      "email": "moonikunj@gmail.com",
+      "userId": "cmi7h7saw0012p9mpifqi2t1p"
+    },
+    {
+      "email": "harshgotarkar74628@gmail.com",
+      "userId": "cmi7h7sqh0015p9mpjczywwsn"
+    },
+    {
+      "email": "bhagukumbhare@gmail.com",
+      "userId": "cmi7h7t4y0018p9mpcmg0rkgt"
+    },
+    {
+      "email": "vicky.umaknt@gmail.com",
+      "userId": "cmi7h7tq2001bp9mp6suhgh4u"
+    },
+    {
+      "email": "nikhilvrushabh@gmail.com",
+      "userId": "cmi7h7u4z001ep9mpmz1hi8jg"
+    },
+    {
+      "email": "shilprabha1973@gmail.com",
+      "userId": "cmi7h7uk7001hp9mp6t9aqunn"
+    },
+    {
+      "email": "manchekarsheetal70@gmail.com",
+      "userId": "cmi7h7uzs001kp9mpn3ahw7xd"
+    },
+    {
+      "email": "radha.amar22@gmail.com",
+      "userId": "cmi7h7vef001np9mpknwgbvfs"
+    },
+    {
+      "email": "abhilashvrushabh@gmail.com",
+      "userId": "cmi7h7vt9001qp9mp6bhosx4o"
+    },
+    {
+      "email": "nmalingaraya7@gmail.com",
+      "userId": "cmi7h7w81001tp9mpdrlttaad"
+    },
+    {
+      "email": "amirshaikh1948@gmail.com",
+      "userId": "cmi7h7wms001wp9mpvvnmwkbs"
+    },
+    {
+      "email": "rupeshrane1996@gmail.com",
+      "userId": "cmi7h7x20001zp9mpejlt3r3h"
+    },
+    {
+      "email": "manojc64@gnail.com",
+      "userId": "cmi7h7xja0022p9mpz6ulk3xp"
+    },
+    {
+      "email": "sayalinchavan625@gmail.com",
+      "userId": "cmi7h7xz40025p9mp2mr3hu0f"
+    },
+    {
+      "email": "nayan.mittal2012@gmail.com",
+      "userId": "cmi7h7ye20028p9mpjl50x8pg"
+    },
+    {
+      "email": "deepaburman1@gmail.com",
+      "userId": "cmi7h7yxb002bp9mpqb0e9kwx"
+    },
+    {
+      "email": "manassarode@gmail.com",
+      "userId": "cmi7h7zi7002ep9mppgfolht6"
+    },
+    {
+      "email": "prachivarma1828@gmail.com",
+      "userId": "cmi7h804g002hp9mpgyzt2cv2"
+    },
+    {
+      "email": "laxmanparab2025@gmail.com",
+      "userId": "cmi7h80w3002kp9mp1mt7w9do"
+    },
+    {
+      "email": "neeltom1979@gmail.com",
+      "userId": "cmi7h81au002np9mpi60ijl1a"
+    },
+    {
+      "email": "puransencha95@gmail.com",
+      "userId": "cmi7h81pu002qp9mplnpd9gf2"
+    },
+    {
+      "email": "moinshk70@gmail.com",
+      "userId": "cmi7h825h002tp9mpmthc4ht6"
+    },
+    {
+      "email": "chaudhari1974@gmail.com",
+      "userId": "cmi7h82k4002wp9mpm6yj7gyr"
+    },
+    {
+      "email": "dpc81175@gmail.com",
+      "userId": "cmi7h82yq002zp9mptpvtths4"
+    },
+    {
+      "email": "vaijnathgore1996@gmail.com",
+      "userId": "cmi7h83dd0032p9mpw7gpfv9q"
+    },
+    {
+      "email": "vinaydubey1986@gmail.com",
+      "userId": "cmi7h83rq0035p9mpy9bbm59s"
+    },
+    {
+      "email": "amkoli22@gmail.com",
+      "userId": "cmi7h84730038p9mpvuggpogx"
+    },
+    {
+      "email": "avdhutnadhe@gmail.com",
+      "userId": "cmi7h84mu003bp9mp2tnke0sz"
+    },
+    {
+      "email": "smaruti9393@gmail.com",
+      "userId": "cmi7h852r003ep9mpzwbq2qba"
+    },
+    {
+      "email": "409yamini@gmail.com",
+      "userId": "cmi7h85h1003hp9mp8e6iyc59"
+    },
+    {
+      "email": "vaijanath.kache@gmail.com",
+      "userId": "cmi7h85vp003kp9mpo9qmu76e"
+    },
+    {
+      "email": "baruahaditya27@gmail.com",
+      "userId": "cmi7h86aj003np9mp88vgo9bh"
+    },
+    {
+      "email": "jituhota456@gmail.com",
+      "userId": "cmi7h86p1003qp9mpnmeiva65"
+    },
+    {
+      "email": "nam649935@gmail.com",
+      "userId": "cmi7h8745003tp9mpo7v22e0l"
+    },
+    {
+      "email": "vjain.19922@gmail.com",
+      "userId": "cmi7h87o6003wp9mp7n49h94y"
+    },
+    {
+      "email": "suchitvrushabh@gmail. com",
+      "userId": "cmi7h883i003zp9mp7pgb36bs"
+    },
+    {
+      "email": "paras16jul1991@gmail.com",
+      "userId": "cmi7h88l60042p9mplm4je6zq"
+    },
+    {
+      "email": "exness.sheela9@gmail.com",
+      "userId": "cmi7h890n0045p9mppcazpdyi"
+    },
+    {
+      "email": "choudharirohan007@yahoo.com",
+      "userId": "cmi7h89f00048p9mpqrom2w6a"
+    },
+    {
+      "email": "dhaneshkhandoba@gmail.com",
+      "userId": "cmi7h89uu004bp9mp2bwsgi9t"
+    },
+    {
+      "email": "dpkkarve@gmail.com",
+      "userId": "cmi7h8a9b004ep9mp7tc4eb8r"
+    },
+    {
+      "email": "karanadhav163@gmail.com",
+      "userId": "cmi7h8ao1004hp9mpt1qpub4n"
+    },
+    {
+      "email": "srushti3@gmail.com",
+      "userId": "cmi7h8b2z004kp9mp3jnz78vw"
+    },
+    {
+      "email": "mtjadhav07@gmail.com",
+      "userId": "cmi7h8bhq004np9mpiwmuypcv"
+    },
+    {
+      "email": "jyotisawat9@gmail.com",
+      "userId": "cmi7h8bwt004qp9mpamm6g2cy"
+    },
+    {
+      "email": "smrnshk786@gmail.com",
+      "userId": "cmi7h8cb6004tp9mpjaucs5fh"
+    },
+    {
+      "email": "shwetamokashi11996@gmail.com",
+      "userId": "cmi7h8crf004wp9mp8gufnnl1"
+    },
+    {
+      "email": "harishguptamangal@gmail.com",
+      "userId": "cmi7h8d62004zp9mpkm8wkfq2"
+    },
+    {
+      "email": "dhumalomkar2696@gmail.com",
+      "userId": "cmi7h8dkt0052p9mp6ybhre14"
+    },
+    {
+      "email": "hsjohar1234@gmail.com",
+      "userId": "cmi7h8e060055p9mpfbk596w9"
+    },
+    {
+      "email": "joshi.j0407@gmail.com",
+      "userId": "cmi7h8efa0058p9mpngz3q4j3"
+    },
+    {
+      "email": "arashdarsh@gmail.com",
+      "userId": "cmi7h8eun005bp9mp7lc4u4tq"
+    },
+    {
+      "email": "rashmissule@gmail.com",
+      "userId": "cmi7h8fdv005ep9mpexii34a1"
+    },
+    {
+      "email": "pramodon28@gmail.com",
+      "userId": "cmi7h8fx9005hp9mpkwypdc7z"
+    },
+    {
+      "email": "hiraman6843@gmail.com",
+      "userId": "cmi7h8gby005kp9mphkt242bx"
+    },
+    {
+      "email": "sanjanaj1811@gmail.com",
+      "userId": "cmi7h8gqq005np9mpkc5td2zt"
+    },
+    {
+      "email": "lalitpatil6597@gmail.com",
+      "userId": "cmi7h8h5m005qp9mpswmyyzd5"
+    },
+    {
+      "email": "umeshtmulay@gmail.com",
+      "userId": "cmi7h8hk4005tp9mppsqeoh3z"
+    },
+    {
+      "email": "supriyamankame1420@gmail.com",
+      "userId": "cmi7h8hzi005wp9mpp5lf8y5n"
+    },
+    {
+      "email": "dashrath241191@gmail.com",
+      "userId": "cmi7h8ied005zp9mpytrdzs0m"
+    },
+    {
+      "email": "tanukuhoo9@gmail.com",
+      "userId": "cmi7h8iss0062p9mpg12lx443"
+    },
+    {
+      "email": "borolepriyanka3@gmail.com",
+      "userId": "cmi7h8j7f0065p9mp582ogmt8"
+    },
+    {
+      "email": "thakurpradeep084@gmail.com",
+      "userId": "cmi7h8jox0068p9mph5pwj8y7"
+    },
+    {
+      "email": "parwin.khan786@gmail.com",
+      "userId": "cmi7h8k39006bp9mpzqf96kdw"
+    },
+    {
+      "email": "sanmukhia@ymail.com",
+      "userId": "cmi7h8khl006ep9mpvvxpccxs"
+    },
+    {
+      "email": "aparnasable.5@gmail.com",
+      "userId": "cmi7h8kw4006hp9mp43u0goqg"
+    },
+    {
+      "email": "ajayrajsolanki242@gmail.com",
+      "userId": "cmi7h8ln7006kp9mpajwg6ax0"
+    }
+  ],
+  "invalid_credentials": [
+    {
+      "email": "jagdishdeore7767@gmail.com",
+      "name": "Jagdish deore",
+      "reason": "CoinDCX rejected credentials (Invalid API key/secret)"
+    },
+    {
+      "email": "akshaymore873@gmail.com",
+      "name": "akshay more",
+      "reason": "CoinDCX rejected credentials (Invalid API key/secret)"
+    },
+    {
+      "email": "suhasvrushabh@gmail.com",
+      "name": "vrushabh patil",
+      "reason": "CoinDCX rejected credentials (Invalid API key/secret)"
+    },
+    {
+      "email": "khopade.suraj@gmail.com",
+      "name": "Khopade Suraj Vijay",
+      "reason": "CoinDCX rejected credentials (Invalid API key/secret)"
+    },
+    {
+      "email": "suravasens99@gmail.com",
+      "name": "Navanath suravase",
+      "reason": "CoinDCX rejected credentials (Invalid API key/secret)"
+    },
+    {
+      "email": "akrg2240@gmail.com",
+      "name": "Arvind kumar",
+      "reason": "CoinDCX rejected credentials (Invalid API key/secret)"
+    },
+    {
+      "email": "hiraman6843@gmail.com",
+      "name": "Hiraman Sonawane",
+      "reason": "CoinDCX rejected credentials (Invalid API key/secret)"
+    },
+    {
+      "email": "choudharirohan007@yahoo.com",
+      "name": "Monali Rohan choudhari",
+      "reason": "CoinDCX rejected credentials (Invalid API key/secret)"
+    },
+    {
+      "email": "hiraman6843@gmail.com",
+      "name": "Hiraman Sonawane",
+      "reason": "CoinDCX rejected credentials (Invalid API key/secret)"
+    },
+    {
+      "email": "artisonune281@gmail.com",
+      "name": "arti sonune",
+      "reason": "CoinDCX rejected credentials (Invalid API key/secret)"
+    },
+    {
+      "email": "jeetensahoo@gmail.com",
+      "name": "Jitendra Sahoo",
+      "reason": "CoinDCX rejected credentials (Invalid API key/secret)"
+    },
+    {
+      "email": "dashrath241191@gmail.com",
+      "name": "Patel riddhiben dashrathkumar",
+      "reason": "CoinDCX rejected credentials (Invalid API key/secret)"
+    },
+    {
+      "email": "tanukuhoo9@gmail.com",
+      "name": "Manisha Mukesh Gawai",
+      "reason": "CoinDCX rejected credentials (Invalid API key/secret)"
+    },
+    {
+      "email": "parwin.khan786@gmail.com",
+      "name": "Parvin Muzzummil Pathan",
+      "reason": "CoinDCX rejected credentials (Invalid API key/secret)"
+    },
+    {
+      "email": "pradeepkumar2895dpr@gmail.com",
+      "name": "Pradeep kumar",
+      "reason": "CoinDCX rejected credentials (Invalid API key/secret)"
+    },
+    {
+      "email": "shaikhafrose1@gmail.com",
+      "name": "Afrose Shaikh",
+      "reason": "CoinDCX rejected credentials (Invalid API key/secret)"
+    },
+    {
+      "email": "umeshtmulay@gmail.com",
+      "name": "UMESH TRIMURTI MULAY",
+      "reason": "CoinDCX rejected credentials (Invalid API key/secret)"
+    },
+    {
+      "email": "supriyamankame1420@gmail.com",
+      "name": "Supriya pankaj pitale",
+      "reason": "CoinDCX rejected credentials (Invalid API key/secret)"
+    },
+    {
+      "email": "dashrath241191@gmail.com",
+      "name": "Patel Riddhiben",
+      "reason": "CoinDCX rejected credentials (Invalid API key/secret)"
+    },
+    {
+      "email": "aarju8595512958@gmail.com",
+      "name": "Anju Jaiswal",
+      "reason": "CoinDCX rejected credentials (Invalid API key/secret)"
+    },
+    {
+      "email": "tanukuhoo9@gmail.com",
+      "name": "Manisha Mukesh Gawai",
+      "reason": "CoinDCX rejected credentials (Invalid API key/secret)"
+    },
+    {
+      "email": "thakurpradeep084@gmail.com",
+      "name": "Pradeep kumar",
+      "reason": "CoinDCX rejected credentials (Invalid API key/secret)"
+    },
+    {
+      "email": "manojdaundkr@gmail.com",
+      "name": "Manoj Daundkar",
+      "reason": "CoinDCX rejected credentials (Invalid API key/secret)"
+    }
+  ],
+  "duplicate_emails": [],
+  "creation_failures": [
+    {
+      "email": "nikhilvrushabh@gmail.com",
+      "error": "User with this email already exists"
+    },
+    {
+      "email": "amirshaikh1948@gmail.com",
+      "error": "User with this email already exists"
+    },
+    {
+      "email": "409yamini@gmail.com",
+      "error": "User with this email already exists"
+    },
+    {
+      "email": "409yamini@gmail.com",
+      "error": "User with this email already exists"
+    },
+    {
+      "email": "hsjohar1234@gmail.com",
+      "error": "User with this email already exists"
+    },
+    {
+      "email": "dhumalomkar2696@gmail.com",
+      "error": "User with this email already exists"
+    }
+  ],
+  "locally_skipped": []
+}

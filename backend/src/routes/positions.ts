@@ -205,7 +205,7 @@ router.get('/orders', authenticate, async (req: AuthenticatedRequest, res, next)
       exitReason: trade.exitReason,
       // P&L if closed
       pnl: trade.pnl,
-      pnlPercentage: trade.pnlPct, // Use pnlPct field
+      pnlPercentage: trade.pnlPercentage,
       // Futures specific
       tradingType: trade.tradingType,
       leverage: trade.leverage,

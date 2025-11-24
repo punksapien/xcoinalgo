@@ -572,11 +572,12 @@ router.get('/subscriptions', authenticate, async (req: AuthenticatedRequest, res
         // Calculate unrealized P&L (from open positions)
         let unrealizedPnl = 0;
         try {
+          const { websocketTicker } = require('../services/websocket-ticker');
+
           for (const trade of openTrades) {
             try {
-              const CoinDCXClient = require('../services/coindcx-client');
-              const ticker = await CoinDCXClient.getTicker(trade.symbol);
-              const currentPrice = ticker.last_price;
+              // Use WebSocket service with fallback to REST API
+              const currentPrice = await websocketTicker.getPrice(trade.symbol);
 
               // Calculate unrealized P&L
               if (trade.side === 'LONG') {

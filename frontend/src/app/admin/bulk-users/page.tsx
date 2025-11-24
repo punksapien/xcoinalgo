@@ -304,6 +304,53 @@ export default function BulkUsersPage() {
     setError('');
   };
 
+  const handleTestRow = async (user: BulkUser) => {
+    if (!user.email) return;
+
+    // Optimistic update to show loading state if needed, or just rely on toast
+    const toastId = toast.loading(`Validating ${user.email}...`);
+
+    try {
+      const response = await fetch('/api/admin/users/validate-bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          users: [{ email: user.email, apiKey: user.apiKey, apiSecret: user.apiSecret }]
+        }),
+      });
+
+      if (!response.ok) throw new Error('Validation failed');
+
+      const { results } = await response.json();
+      const result = results[0];
+
+      if (result) {
+        setParsedUsers(prev => prev.map(u => {
+          if (u.id === user.id) {
+            return {
+              ...u,
+              validationStatus: {
+                emailExists: result.emailExists,
+                credentialsValid: result.credentialsValid
+              }
+            };
+          }
+          return u;
+        }));
+
+        if (result.credentialsValid === false) {
+          toast.error(`Invalid credentials for ${user.email}`, { id: toastId });
+        } else if (result.emailExists) {
+          toast.warning(`User ${user.email} already exists`, { id: toastId });
+        } else {
+          toast.success(`Valid: ${user.email}`, { id: toastId });
+        }
+      }
+    } catch (_err) {
+      toast.error('Validation failed', { id: toastId });
+    }
+  };
+
   const handleTestConnections = async () => {
     const usersToTest = parsedUsers.filter(u => u.email); // Only test rows with data
     if (usersToTest.length === 0) return;
@@ -406,7 +453,7 @@ export default function BulkUsersPage() {
             disabled={isValidating || parsedUsers.filter(u => u.email).length === 0}
           >
             {isValidating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Zap className="w-4 h-4 mr-2 text-yellow-500" />}
-            Test Connections
+            Validate All
           </Button>
 
           <DropdownMenu>
@@ -544,6 +591,7 @@ export default function BulkUsersPage() {
               <TableHeader className="sticky top-0 bg-background z-10 shadow-sm">
                 <TableRow>
                   <TableHead className="w-[40px] text-center">#</TableHead>
+                  <TableHead className="w-[100px]">Status</TableHead>
                   <TableHead className="min-w-[220px]">Email</TableHead>
                   <TableHead className="min-w-[180px]">Name</TableHead>
                   <TableHead className="min-w-[150px]">Password</TableHead>
@@ -551,7 +599,7 @@ export default function BulkUsersPage() {
                   <TableHead className="min-w-[150px]">Phone</TableHead>
                   <TableHead className="min-w-[200px]">API Key</TableHead>
                   <TableHead className="min-w-[200px]">API Secret</TableHead>
-                  <TableHead className="w-[40px]"></TableHead>
+                  <TableHead className="w-[80px]"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -561,23 +609,35 @@ export default function BulkUsersPage() {
                     className={`
                       hover:bg-muted/50
                       ${user.validationStatus?.emailExists ? 'bg-yellow-50/50' : ''}
+                      ${user.validationStatus?.credentialsValid === false ? 'bg-red-50/50' : ''}
                     `}
                   >
                     <TableCell className="text-muted-foreground font-mono text-xs text-center">{index + 1}</TableCell>
 
+                    {/* Status Column */}
+                    <TableCell>
+                      {user.validationStatus?.emailExists && (
+                        <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100 text-[10px] px-1 py-0">User Exists</Badge>
+                      )}
+                      {user.validationStatus?.credentialsValid === true && (
+                        <Badge variant="secondary" className="bg-green-100 text-green-800 hover:bg-green-100 text-[10px] px-1 py-0">Keys Valid</Badge>
+                      )}
+                      {user.validationStatus?.credentialsValid === false && (
+                        <Badge variant="destructive" className="text-[10px] px-1 py-0">Invalid Keys</Badge>
+                      )}
+                      {!user.validationStatus && (
+                        <span className="text-muted-foreground text-[10px]">-</span>
+                      )}
+                    </TableCell>
+
                     {/* Email */}
                     <TableCell className="p-1">
-                      <div className="relative">
-                        <Input
-                          value={user.email}
-                          onChange={(e) => handleUpdateUser(user.id, 'email', e.target.value)}
-                          className={`h-8 border-0 shadow-none focus-visible:ring-1 focus-visible:ring-inset ${user.errors?.email ? "bg-red-50 text-red-900" : "bg-transparent"}`}
-                          placeholder="user@example.com"
-                        />
-                        {user.validationStatus?.emailExists && (
-                          <div className="absolute right-2 top-1/2 -translate-y-1/2 text-yellow-600 text-[10px] font-bold bg-yellow-100 px-1 rounded">EXISTS</div>
-                        )}
-                      </div>
+                      <Input
+                        value={user.email}
+                        onChange={(e) => handleUpdateUser(user.id, 'email', e.target.value)}
+                        className={`h-8 border-0 shadow-none focus-visible:ring-1 focus-visible:ring-inset ${user.errors?.email ? "bg-red-50 text-red-900" : "bg-transparent"}`}
+                        placeholder="user@example.com"
+                      />
                     </TableCell>
 
                     {/* Name */}
@@ -628,23 +688,17 @@ export default function BulkUsersPage() {
 
                     {/* API Key */}
                     <TableCell className="p-1">
-                      <div className="relative">
-                        <Input
-                          value={user.apiKey}
-                          onChange={(e) => handleUpdateUser(user.id, 'apiKey', e.target.value)}
-                          className={`h-8 font-mono text-xs border-0 shadow-none focus-visible:ring-1 focus-visible:ring-inset
-                            ${user.errors?.apiKey ? "bg-red-50" : "bg-transparent"}
-                            ${user.validationStatus?.credentialsValid === false ? "ring-2 ring-red-500 ring-inset bg-red-50" : ""}
-                            ${user.validationStatus?.credentialsValid === true ? "ring-1 ring-green-500 ring-inset bg-green-50" : ""}
-                          `}
-                          type="password"
-                        />
-                        {user.validationStatus?.credentialsValid === false && (
-                          <div className="absolute right-2 top-1/2 -translate-y-1/2 text-red-600">
-                            <AlertCircle className="w-3 h-3" />
-                          </div>
-                        )}
-                      </div>
+                      <Input
+                        value={user.apiKey}
+                        onChange={(e) => handleUpdateUser(user.id, 'apiKey', e.target.value)}
+                        className={`h-8 font-mono text-xs border-0 shadow-none focus-visible:ring-1 focus-visible:ring-inset
+                          ${user.errors?.apiKey ? "bg-red-50" : "bg-transparent"}
+                          ${user.validationStatus?.credentialsValid === false ? "text-red-600" : ""}
+                          ${user.validationStatus?.credentialsValid === true ? "text-green-600" : ""}
+                        `}
+                        type="password"
+                        placeholder="API Key"
+                      />
                     </TableCell>
 
                     {/* API Secret */}
@@ -654,23 +708,34 @@ export default function BulkUsersPage() {
                         onChange={(e) => handleUpdateUser(user.id, 'apiSecret', e.target.value)}
                         className={`h-8 font-mono text-xs border-0 shadow-none focus-visible:ring-1 focus-visible:ring-inset
                           ${user.errors?.apiSecret ? "bg-red-50" : "bg-transparent"}
-                          ${user.validationStatus?.credentialsValid === false ? "ring-2 ring-red-500 ring-inset bg-red-50" : ""}
-                          ${user.validationStatus?.credentialsValid === true ? "ring-1 ring-green-500 ring-inset bg-green-50" : ""}
                         `}
                         type="password"
+                        placeholder="API Secret"
                       />
                     </TableCell>
 
                     {/* Actions */}
-                    <TableCell className="p-1 text-center">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleDeleteUser(user.id)}
-                        className="h-6 w-6 text-muted-foreground hover:text-red-500 hover:bg-red-50"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </Button>
+                    <TableCell className="p-1 text-center whitespace-nowrap">
+                      <div className="flex items-center justify-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleTestRow(user)}
+                          disabled={!user.email}
+                          title="Test this row"
+                          className="h-6 w-6 text-muted-foreground hover:text-blue-500 hover:bg-blue-50"
+                        >
+                          <Zap className="w-3 h-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDeleteUser(user.id)}
+                          className="h-6 w-6 text-muted-foreground hover:text-red-500 hover:bg-red-50"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
