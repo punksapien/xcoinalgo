@@ -289,7 +289,7 @@ export default function SubscriptionsPage() {
                           </p>
                           {subscription.liveStats.realizedPnl !== undefined && subscription.liveStats.unrealizedPnl !== undefined && (
                             <p className="text-[10px] text-muted-foreground mt-0.5">
-                              R: ₹{subscription.liveStats.realizedPnl.toFixed(2)} | U: ₹{subscription.liveStats.unrealizedPnl.toFixed(2)}
+                              Realized: ₹{subscription.liveStats.realizedPnl.toFixed(2)} | Unrealized: ₹{subscription.liveStats.unrealizedPnl.toFixed(2)}
                             </p>
                           )}
                         </div>
