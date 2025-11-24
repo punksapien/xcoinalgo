@@ -644,6 +644,87 @@ router.get('/subscriptions', authenticate, async (req: AuthenticatedRequest, res
 });
 
 /**
+ * GET /api/strategies/subscriptions/:id/equity-curve
+ * Get equity curve data for a specific subscription
+ */
+router.get('/subscriptions/:id/equity-curve', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const { id: subscriptionId } = req.params;
+    const userId = req.userId!;
+
+    // Verify subscription belongs to user
+    const subscription = await prisma.strategySubscription.findFirst({
+      where: {
+        id: subscriptionId,
+        userId
+      }
+    });
+
+    if (!subscription) {
+      return res.status(404).json({ error: 'Subscription not found' });
+    }
+
+    // Get all closed trades for this subscription, ordered by exit time
+    const trades = await prisma.trade.findMany({
+      where: {
+        subscriptionId,
+        status: 'CLOSED',
+        exitedAt: { not: null },
+        pnl: { not: null }
+      },
+      orderBy: {
+        exitedAt: 'asc'
+      },
+      select: {
+        exitedAt: true,
+        pnl: true,
+        createdAt: true
+      }
+    });
+
+    if (trades.length === 0) {
+      // No trades yet, return empty equity curve
+      return res.json({
+        subscriptionId,
+        equityCurve: []
+      });
+    }
+
+    // Group trades by day and calculate cumulative P&L
+    const dailyData: { [key: string]: number } = {};
+
+    trades.forEach(trade => {
+      const date = (trade.exitedAt || trade.createdAt).toISOString().split('T')[0]; // YYYY-MM-DD
+      if (!dailyData[date]) {
+        dailyData[date] = 0;
+      }
+      dailyData[date] += trade.pnl || 0;
+    });
+
+    // Convert to array and calculate cumulative P&L
+    let cumulativePnl = 0;
+    const equityCurve = Object.keys(dailyData)
+      .sort()
+      .map(date => {
+        const dailyPnl = dailyData[date];
+        cumulativePnl += dailyPnl;
+        return {
+          date,
+          dailyPnl: parseFloat(dailyPnl.toFixed(2)),
+          cumulativePnl: parseFloat(cumulativePnl.toFixed(2))
+        };
+      });
+
+    res.json({
+      subscriptionId,
+      equityCurve
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
  * GET /api/strategies/:id/stats
  * Get strategy execution statistics
  */

@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { RedeployModal } from '@/components/strategy/redeploy-modal';
+import { EquityCurve } from '@/components/strategy/equity-curve';
 import {
   Play,
   Pause,
@@ -318,6 +319,12 @@ export default function SubscriptionsPage() {
                       No trading data yet
                     </div>
                   )}
+
+                  {/* Equity Curve Chart */}
+                  <div className="bg-secondary/10 rounded-lg p-3 border border-secondary/20">
+                    <p className="text-xs text-muted-foreground mb-2">Equity Curve</p>
+                    <EquityCurve subscriptionId={subscription.id} height={80} />
+                  </div>
 
                   {/* Metadata */}
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
