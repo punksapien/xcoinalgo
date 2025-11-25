@@ -783,48 +783,48 @@ router.get('/subscriptions/:id/equity-curve', authenticate, async (req: Authenti
 
     logger.info(`[Equity Curve] Fetching trades for pair=${pair}, marginCurrency=${marginCurrency}, from=${fromDate}, to=${toDate}`);
 
-    // Fetch all trades (individual fills) from CoinDCX
-    let allTrades: any[] = [];
+    // Fetch filled ORDERS (not trades) from CoinDCX - orders have client_order_id, trades don't
+    let allOrders: any[] = [];
     let page = 1;
 
     while (true) {
-      const trades = await CoinDCXClient.getFuturesTrades(
+      const orders = await CoinDCXClient.listFuturesOrders(
         subscription.brokerCredential.apiKey,
         subscription.brokerCredential.apiSecret,
         {
-          from_date: fromDate,
-          to_date: toDate,
-          page,
-          size: 100,
-          pair,
+          timestamp: Date.now(),
+          status: 'filled',
+          side: 'buy,sell',
+          page: String(page),
+          size: '100',
           margin_currency_short_name: [marginCurrency]
         }
       );
 
-      if (!trades || trades.length === 0) break;
-      allTrades.push(...trades);
+      if (!orders || orders.length === 0) break;
+      allOrders.push(...orders);
       page++;
-      if (trades.length < 100) break;
+      if (orders.length < 100) break;
     }
 
-    logger.info(`[Equity Curve] Fetched ${allTrades.length} total trades from CoinDCX`);
+    logger.info(`[Equity Curve] Fetched ${allOrders.length} total filled orders from CoinDCX`);
 
-    if (allTrades.length > 0) {
-      logger.info(`[Equity Curve] Sample trade: ${JSON.stringify(allTrades[0])}`);
+    if (allOrders.length > 0) {
+      logger.info(`[Equity Curve] Sample order: ${JSON.stringify(allOrders[0])}`);
     }
 
-    // Filter for trades:
-    // 1. After subscription start time
-    // 2. Only trades placed by our platform (client_order_id starts with 'xc')
-    //    This covers: xc_, xcoin_, xc_manish, etc.
-    const filteredTrades = allTrades.filter(trade => {
-      const tradeTime = trade.timestamp; // Already in milliseconds
-      const clientOrderId = trade.client_order_id || '';
+    // Filter for our platform orders:
+    // 1. Matching pair
+    // 2. After subscription start time
+    // 3. client_order_id starts with 'xc' (covers xc_, xcoin_, xc_manish, etc.)
+    const filteredTrades = allOrders.filter(order => {
+      const orderTime = new Date(order.updated_at).getTime();
+      const clientOrderId = order.client_order_id || '';
       const isOurTrade = clientOrderId.toLowerCase().startsWith('xc');
-      return tradeTime >= minTimestamp && isOurTrade;
+      return order.pair === pair && orderTime >= minTimestamp && isOurTrade;
     });
 
-    logger.info(`[Equity Curve] After filtering: ${filteredTrades.length} platform trades (xc prefix) for pair ${pair}, excluded ${allTrades.length - filteredTrades.length} non-platform trades`);
+    logger.info(`[Equity Curve] After filtering: ${filteredTrades.length} platform orders (xc prefix) for pair ${pair}, excluded ${allOrders.length - filteredTrades.length} non-platform orders`);
 
     if (filteredTrades.length === 0) {
       return res.json({
@@ -841,8 +841,10 @@ router.get('/subscriptions/:id/equity-curve', authenticate, async (req: Authenti
       });
     }
 
-    // Sort trades by timestamp
-    const sortedTrades = filteredTrades.sort((a, b) => a.timestamp - b.timestamp);
+    // Sort orders by updated_at timestamp
+    const sortedTrades = filteredTrades.sort((a, b) =>
+      new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime()
+    );
 
     // Calculate P&L by tracking position
     interface Position {
@@ -867,12 +869,12 @@ router.get('/subscriptions/:id/equity-curve', authenticate, async (req: Authenti
     const USDT_INR_RATE = 96;
     const conversionRate = marginCurrency === 'INR' ? USDT_INR_RATE : 1;
 
-    sortedTrades.forEach(trade => {
-      const side = trade.side.toLowerCase();
-      const price = parseFloat(trade.price);
-      const quantity = parseFloat(trade.quantity);
-      const fee = parseFloat(trade.fee_amount || 0);
-      const tradeDate = new Date(trade.timestamp).toISOString().split('T')[0];
+    sortedTrades.forEach(order => {
+      const side = order.side.toLowerCase();
+      const price = parseFloat(order.avg_price);  // Orders use avg_price
+      const quantity = parseFloat(order.total_quantity);  // Orders use total_quantity
+      const fee = parseFloat(order.fee_amount || order.total_fee || 0);
+      const tradeDate = new Date(order.updated_at).toISOString().split('T')[0];
 
       // Convert fee to margin currency (fees from CoinDCX are in USDT)
       totalFees += fee * conversionRate;
@@ -883,7 +885,7 @@ router.get('/subscriptions/:id/equity-curve', authenticate, async (req: Authenti
           entryPrice: price,
           quantity,
           side: side as 'buy' | 'sell',
-          entryTime: new Date(trade.timestamp)
+          entryTime: new Date(order.updated_at)
         };
       } else {
         // Closing or modifying existing position
