@@ -578,6 +578,7 @@ class ExecutionCoordinator {
 
         return {
           user_id: sub.userId,
+          subscription_id: sub.id,  // ✅ Added for trade reporting
           api_key: sub.brokerCredential?.apiKey || '',
           api_secret: sub.brokerCredential?.apiSecret || '',
           capital: sub.capital || 10000,
@@ -751,6 +752,7 @@ class ExecutionCoordinator {
       // Prepare subscribers data (with API keys)
       const subscribersData = subscribers.map(sub => ({
         user_id: sub.userId,
+        subscription_id: sub.id,  // ✅ Added for trade reporting
         api_key: sub.brokerCredential?.apiKey || '',
         api_secret: sub.brokerCredential?.apiSecret || '',
         capital: sub.capital || 10000,

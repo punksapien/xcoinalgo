@@ -359,6 +359,115 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
         logging.info("✅ Strategy classes loaded successfully")
 
         # ====================================================================
+        # TRADE INTERCEPTION: Wrap CoinDCXClient.create_order to report trades
+        # ====================================================================
+        if 'CoinDCXClient' in exec_scope:
+            CoinDCXClient = exec_scope['CoinDCXClient']
+            original_create_order = CoinDCXClient.create_order
+
+            # Thread-local storage for current subscriber context
+            import threading
+            _trade_context = threading.local()
+
+            def set_trade_context(context):
+                """Set the current subscriber context for trade reporting"""
+                _trade_context.data = context
+
+            def get_trade_context():
+                """Get the current subscriber context"""
+                return getattr(_trade_context, 'data', {})
+
+            def report_trade_to_backend(trade_data):
+                """Send trade data to the backend API"""
+                try:
+                    import requests
+                    backend_url = os.environ.get('BACKEND_URL', 'http://localhost:3001')
+                    internal_key = os.environ.get('INTERNAL_API_KEY', 'xcoinalgo-internal-key-2024')
+
+                    response = requests.post(
+                        f"{backend_url}/api/strategies/trades",
+                        json=trade_data,
+                        headers={
+                            'Content-Type': 'application/json',
+                            'X-Internal-Key': internal_key
+                        },
+                        timeout=5
+                    )
+
+                    if response.status_code == 200:
+                        logging.info(f"📊 Trade reported to backend: {trade_data.get('side')} {trade_data.get('quantity')} {trade_data.get('symbol')}")
+                    else:
+                        logging.warning(f"⚠️ Trade report failed: {response.status_code} - {response.text}")
+
+                except Exception as e:
+                    # Don't let reporting failures affect trading
+                    logging.warning(f"⚠️ Trade reporting error (non-fatal): {e}")
+
+            def intercepted_create_order(self, pair, side, order_type, total_quantity, leverage, **kwargs):
+                """Wrapper that intercepts orders and reports them to the backend"""
+                # Call original method first
+                response = original_create_order(self, pair, side, order_type, total_quantity, leverage, **kwargs)
+
+                # Get current subscriber context
+                context = get_trade_context()
+
+                # Determine if this is an entry or exit based on client_order_id
+                client_order_id = kwargs.get('client_order_id', '')
+                is_exit = '_ex' in client_order_id if client_order_id else False
+
+                # Build trade report data
+                trade_data = {
+                    'subscriptionId': context.get('subscription_id'),
+                    'strategyId': context.get('strategy_id'),
+                    'userId': context.get('user_id'),
+                    'symbol': pair,
+                    'side': side,
+                    'quantity': total_quantity,
+                    'leverage': leverage,
+                    'orderType': order_type,
+                    'stopLoss': kwargs.get('stop_loss_price'),
+                    'takeProfit': kwargs.get('take_profit_price'),
+                    'clientOrderId': client_order_id,
+                    'marginCurrency': kwargs.get('margin_currency_short_name'),
+                    'metadata': {
+                        'raw_response': response if isinstance(response, dict) else str(response),
+                        'timestamp': datetime.now(timezone).isoformat() if 'timezone' in dir() else datetime.now().isoformat()
+                    }
+                }
+
+                # Add exit-specific fields
+                if is_exit:
+                    trade_data['exitReason'] = context.get('exit_reason', 'signal')
+                    # Entry price will be calculated from the existing open trade on the backend
+
+                # Extract order info from response if available
+                if isinstance(response, dict):
+                    trade_data['orderId'] = response.get('id') or response.get('order_id')
+                    trade_data['filledPrice'] = response.get('avg_price') or response.get('price')
+                    trade_data['filledQuantity'] = response.get('filled_quantity') or response.get('total_quantity')
+                elif isinstance(response, list) and len(response) > 0:
+                    first_order = response[0]
+                    trade_data['orderId'] = first_order.get('id') or first_order.get('order_id')
+                    trade_data['filledPrice'] = first_order.get('avg_price') or first_order.get('price')
+                    trade_data['filledQuantity'] = first_order.get('filled_quantity') or first_order.get('total_quantity')
+
+                # Report trade asynchronously (don't block trading)
+                import threading
+                report_thread = threading.Thread(target=report_trade_to_backend, args=(trade_data,))
+                report_thread.daemon = True
+                report_thread.start()
+
+                return response
+
+            # Replace the method on the class
+            CoinDCXClient.create_order = intercepted_create_order
+
+            # Store set_trade_context in exec_scope so we can use it when processing subscribers
+            exec_scope['_set_trade_context'] = set_trade_context
+
+            logging.info("📊 Trade interception enabled - all orders will be reported to backend")
+
+        # ====================================================================
         # STEP 2: Fetch market data ONCE (shared across all subscribers)
         # ====================================================================
         logging.info("📊 Fetching market data (shared across subscribers)...")
@@ -508,6 +617,16 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
             user_id = subscriber.get('user_id')
 
             try:
+                # Set trade context for this subscriber (for trade interception)
+                if '_set_trade_context' in exec_scope:
+                    exec_scope['_set_trade_context']({
+                        'user_id': user_id,
+                        'subscription_id': subscriber.get('subscription_id'),
+                        'strategy_id': settings.get('strategy_id'),
+                        'pair': settings.get('pair'),
+                        'margin_currency': settings.get('margin_currency')
+                    })
+
                 # Create subscriber-specific settings
                 subscriber_settings = {
                     **settings,

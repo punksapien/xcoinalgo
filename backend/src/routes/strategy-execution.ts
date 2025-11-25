@@ -646,13 +646,13 @@ router.get('/subscriptions', authenticate, async (req: AuthenticatedRequest, res
 
 /**
  * GET /api/strategies/subscriptions/:id/equity-curve
- * Get equity curve and stats by fetching transactions from CoinDCX API
- * Matches Python analyze_eth_transactions() logic
+ * Get equity curve and stats - tries DB first, then falls back to CoinDCX API
  */
 router.get('/subscriptions/:id/equity-curve', authenticate, async (req: AuthenticatedRequest, res, next) => {
   try {
     const { id: subscriptionId } = req.params;
     const userId = req.userId!;
+    const { forceRefresh } = req.query;
 
     logger.info(`[Equity Curve] Request for subscription ${subscriptionId} by user ${userId}`);
 
@@ -670,13 +670,100 @@ router.get('/subscriptions/:id/equity-curve', authenticate, async (req: Authenti
       return res.status(404).json({ error: 'Subscription not found' });
     }
 
+    const executionConfig = subscription.strategy.executionConfig as any;
+    const pair = executionConfig?.symbol || executionConfig?.pair;
+
+    // ====================================================================
+    // STEP 1: Try to get trades from database first (fast, reliable)
+    // ====================================================================
+    if (forceRefresh !== 'true') {
+      const dbTrades = await prisma.trade.findMany({
+        where: { subscriptionId },
+        orderBy: { createdAt: 'asc' }
+      });
+
+      if (dbTrades.length > 0) {
+        logger.info(`[Equity Curve] Found ${dbTrades.length} trades in database`);
+
+        // Calculate stats from DB trades
+        const closedTrades = dbTrades.filter(t => t.status === 'CLOSED');
+        const grossPnl = closedTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+        const totalFees = closedTrades.reduce((sum, t) => sum + (t.fees || 0), 0);
+        const netPnl = grossPnl - totalFees;
+        const winningTrades = closedTrades.filter(t => (t.pnl || 0) > 0).length;
+        const losingTrades = closedTrades.filter(t => (t.pnl || 0) < 0).length;
+        const winRate = closedTrades.length > 0 ? (winningTrades / closedTrades.length) * 100 : 0;
+
+        // Calculate max drawdown
+        const initialCapital = subscription.capital;
+        let runningPnl = 0;
+        let maxDrawdown = 0;
+        let peak = initialCapital;
+        const pnlSequence = closedTrades.map(t => t.pnl || 0);
+
+        pnlSequence.forEach(tradePnl => {
+          runningPnl += tradePnl;
+          const currentCapital = initialCapital + runningPnl;
+          if (currentCapital > peak) peak = currentCapital;
+          const drawdown = peak - currentCapital;
+          maxDrawdown = Math.max(maxDrawdown, drawdown);
+        });
+
+        const maxDrawdownPct = initialCapital > 0 ? (maxDrawdown / initialCapital) * 100 : 0;
+
+        // Build equity curve from DB trades
+        const dailyData: { [key: string]: number } = {};
+        closedTrades.forEach(trade => {
+          if (trade.exitedAt && trade.pnl) {
+            const date = trade.exitedAt.toISOString().split('T')[0];
+            if (!dailyData[date]) dailyData[date] = 0;
+            dailyData[date] += trade.pnl;
+          }
+        });
+
+        let cumulativePnl = 0;
+        const startDate = subscription.subscribedAt.toISOString().split('T')[0];
+        const equityCurve: Array<{ date: string; dailyPnl: number; cumulativePnl: number }> = [
+          { date: startDate, dailyPnl: 0, cumulativePnl: 0 }
+        ];
+
+        Object.keys(dailyData).sort().forEach(date => {
+          const dailyPnl = dailyData[date];
+          cumulativePnl += dailyPnl;
+          equityCurve.push({
+            date,
+            dailyPnl: parseFloat(dailyPnl.toFixed(2)),
+            cumulativePnl: parseFloat(cumulativePnl.toFixed(2))
+          });
+        });
+
+        return res.json({
+          subscriptionId,
+          source: 'database',
+          equityCurve,
+          stats: {
+            grossPnl: parseFloat(grossPnl.toFixed(2)),
+            netPnl: parseFloat(netPnl.toFixed(2)),
+            totalFees: parseFloat(totalFees.toFixed(2)),
+            totalTrades: closedTrades.length,
+            openTrades: dbTrades.filter(t => t.status === 'OPEN').length,
+            winRate: parseFloat(winRate.toFixed(2)),
+            maxDrawdownPct: parseFloat(maxDrawdownPct.toFixed(4))
+          }
+        });
+      }
+    }
+
+    // ====================================================================
+    // STEP 2: Fallback to CoinDCX API (for historical data)
+    // ====================================================================
+    logger.info(`[Equity Curve] No DB trades found, falling back to CoinDCX API`);
+
     if (!subscription.brokerCredential) {
       logger.warn(`[Equity Curve] No broker credentials for subscription ${subscriptionId}`);
       return res.status(400).json({ error: 'No broker credentials found' });
     }
 
-    const executionConfig = subscription.strategy.executionConfig as any;
-    const pair = executionConfig?.symbol || executionConfig?.pair;
     if (!pair) {
       logger.error(`[Equity Curve] No trading pair in executionConfig: ${JSON.stringify(executionConfig)}`);
       return res.status(400).json({ error: 'Trading pair not found in strategy config' });
@@ -1109,6 +1196,307 @@ router.post('/:id/admin/bulk-subscribe', authenticate, async (req: Authenticated
     res.json({ summary, results });
   } catch (error) {
     console.error('Bulk subscribe error:', error);
+    next(error);
+  }
+});
+
+/**
+ * POST /api/strategies/trades
+ * Internal endpoint for Python executor to report trades
+ * Secured with internal API key (not user auth)
+ */
+router.post('/trades', async (req, res, next) => {
+  try {
+    const internalKey = req.headers['x-internal-key'];
+    const expectedKey = process.env.INTERNAL_API_KEY || 'xcoinalgo-internal-key-2024';
+
+    if (internalKey !== expectedKey) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const {
+      subscriptionId,
+      strategyId,
+      userId,
+      // Order details
+      symbol,
+      side,
+      quantity,
+      entryPrice,
+      leverage,
+      orderType,
+      stopLoss,
+      takeProfit,
+      // CoinDCX response
+      orderId,
+      clientOrderId,
+      status,
+      filledPrice,
+      filledQuantity,
+      // Exit details (optional - for exit trades)
+      exitPrice,
+      exitReason,
+      pnl,
+      fees,
+      // Metadata
+      metadata
+    } = req.body;
+
+    if (!subscriptionId || !symbol || !side) {
+      return res.status(400).json({
+        error: 'Missing required fields: subscriptionId, symbol, side'
+      });
+    }
+
+    // Determine if this is an entry or exit trade
+    const isExit = exitPrice !== undefined || exitReason !== undefined;
+
+    if (isExit) {
+      // Update existing open trade with exit details
+      const openTrade = await prisma.trade.findFirst({
+        where: {
+          subscriptionId,
+          symbol,
+          status: 'OPEN'
+        },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      if (openTrade) {
+        const updatedTrade = await prisma.trade.update({
+          where: { id: openTrade.id },
+          data: {
+            status: 'CLOSED',
+            exitPrice: exitPrice || filledPrice,
+            exitedAt: new Date(),
+            exitReason: exitReason || 'signal',
+            pnl: pnl,
+            fees: fees || 0,
+            metadata: metadata ? JSON.parse(JSON.stringify(metadata)) : undefined
+          }
+        });
+
+        // Update subscription stats
+        await prisma.strategySubscription.update({
+          where: { id: subscriptionId },
+          data: {
+            totalTrades: { increment: 1 },
+            winningTrades: pnl && pnl > 0 ? { increment: 1 } : undefined,
+            losingTrades: pnl && pnl < 0 ? { increment: 1 } : undefined,
+            totalPnl: { increment: pnl || 0 }
+          }
+        });
+
+        logger.info(`[Trade Reporter] Exit trade recorded: ${updatedTrade.id}, PnL: ${pnl}`);
+
+        return res.json({
+          success: true,
+          trade: updatedTrade,
+          type: 'exit'
+        });
+      } else {
+        logger.warn(`[Trade Reporter] No open trade found for exit: ${subscriptionId}, ${symbol}`);
+      }
+    }
+
+    // Create new entry trade
+    const trade = await prisma.trade.create({
+      data: {
+        subscriptionId,
+        symbol,
+        side: side.toUpperCase(),
+        quantity: quantity || 0,
+        entryPrice: entryPrice || filledPrice || 0,
+        leverage,
+        orderType: orderType || 'market',
+        stopLoss,
+        takeProfit,
+        orderId,
+        status: 'OPEN',
+        filledPrice,
+        filledQuantity,
+        filledAt: new Date(),
+        tradingType: 'futures',
+        metadata: metadata ? JSON.parse(JSON.stringify(metadata)) : undefined
+      }
+    });
+
+    logger.info(`[Trade Reporter] Entry trade recorded: ${trade.id}, ${side} ${quantity} ${symbol} @ ${entryPrice || filledPrice}`);
+
+    res.json({
+      success: true,
+      trade,
+      type: 'entry'
+    });
+
+  } catch (error) {
+    logger.error('[Trade Reporter] Error recording trade:', error);
+    next(error);
+  }
+});
+
+/**
+ * GET /api/strategies/subscriptions/:id/trades
+ * Get trades for a subscription (from DB + CoinDCX fallback for historical)
+ */
+router.get('/subscriptions/:id/trades', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const { id: subscriptionId } = req.params;
+    const userId = req.userId!;
+    const { includeHistorical } = req.query;
+
+    // Verify subscription belongs to user
+    const subscription = await prisma.strategySubscription.findFirst({
+      where: { id: subscriptionId, userId },
+      include: {
+        strategy: { select: { executionConfig: true } },
+        brokerCredential: { select: { apiKey: true, apiSecret: true } }
+      }
+    });
+
+    if (!subscription) {
+      return res.status(404).json({ error: 'Subscription not found' });
+    }
+
+    // Get trades from database
+    const dbTrades = await prisma.trade.findMany({
+      where: { subscriptionId },
+      orderBy: { createdAt: 'desc' },
+      take: 100
+    });
+
+    // If we have DB trades or don't want historical, return DB trades
+    if (dbTrades.length > 0 || includeHistorical !== 'true') {
+      return res.json({
+        trades: dbTrades,
+        source: 'database',
+        count: dbTrades.length
+      });
+    }
+
+    // Fallback: Fetch from CoinDCX for historical trades (using xc_ prefix)
+    if (subscription.brokerCredential) {
+      try {
+        const executionConfig = subscription.strategy.executionConfig as any;
+        const pair = executionConfig?.symbol || executionConfig?.pair;
+        const marginCurrency = executionConfig?.margin_currency || subscription.marginCurrency || 'USDT';
+
+        // Calculate date range
+        const fromDate = subscription.subscribedAt.toISOString().split('T')[0];
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const toDate = tomorrow.toISOString().split('T')[0];
+
+        // Fetch filled orders from CoinDCX
+        let allOrders: any[] = [];
+        let page = 1;
+
+        while (true) {
+          const orders = await CoinDCXClient.listFuturesOrders(
+            subscription.brokerCredential.apiKey,
+            subscription.brokerCredential.apiSecret,
+            {
+              timestamp: Date.now(),
+              status: 'filled',
+              side: 'buy,sell',
+              page: String(page),
+              size: '100',
+              margin_currency_short_name: [marginCurrency]
+            }
+          );
+
+          if (!orders || orders.length === 0) break;
+          allOrders.push(...orders);
+          page++;
+          if (orders.length < 100) break;
+        }
+
+        // Filter for our trades (xc_ prefix) and this pair
+        const ourTrades = allOrders.filter((order: any) =>
+          order.pair === pair &&
+          order.client_order_id?.startsWith('xc_') &&
+          new Date(order.updated_at) >= subscription.subscribedAt
+        );
+
+        // Sort by time
+        ourTrades.sort((a: any, b: any) => a.updated_at - b.updated_at);
+
+        // Pair entries with exits
+        const pairedTrades: any[] = [];
+        let currentEntry: any = null;
+
+        for (const order of ourTrades) {
+          if (!currentEntry) {
+            currentEntry = order;
+          } else if (order.side !== currentEntry.side) {
+            // This is an exit
+            const entryPrice = currentEntry.avg_price;
+            const exitPrice = order.avg_price;
+            const qty = currentEntry.total_quantity;
+            const pnl = currentEntry.side === 'buy'
+              ? (exitPrice - entryPrice) * qty
+              : (entryPrice - exitPrice) * qty;
+
+            pairedTrades.push({
+              id: currentEntry.id,
+              symbol: pair,
+              side: currentEntry.side.toUpperCase(),
+              quantity: qty,
+              entryPrice,
+              exitPrice,
+              pnl,
+              status: 'CLOSED',
+              createdAt: new Date(currentEntry.updated_at),
+              exitedAt: new Date(order.updated_at),
+              leverage: currentEntry.leverage,
+              clientOrderId: currentEntry.client_order_id
+            });
+            currentEntry = null;
+          } else {
+            // Same side - new entry
+            currentEntry = order;
+          }
+        }
+
+        // Add any open position
+        if (currentEntry) {
+          pairedTrades.push({
+            id: currentEntry.id,
+            symbol: pair,
+            side: currentEntry.side.toUpperCase(),
+            quantity: currentEntry.total_quantity,
+            entryPrice: currentEntry.avg_price,
+            status: 'OPEN',
+            createdAt: new Date(currentEntry.updated_at),
+            leverage: currentEntry.leverage,
+            clientOrderId: currentEntry.client_order_id
+          });
+        }
+
+        return res.json({
+          trades: pairedTrades,
+          source: 'coindcx',
+          count: pairedTrades.length
+        });
+
+      } catch (coindcxError) {
+        logger.error('[Trades] CoinDCX fallback failed:', coindcxError);
+        return res.json({
+          trades: [],
+          source: 'database',
+          count: 0,
+          error: 'Could not fetch historical trades from CoinDCX'
+        });
+      }
+    }
+
+    res.json({
+      trades: dbTrades,
+      source: 'database',
+      count: dbTrades.length
+    });
+
+  } catch (error) {
     next(error);
   }
 });

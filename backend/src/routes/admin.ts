@@ -320,7 +320,12 @@ router.get('/stats', async (req: AuthenticatedRequest, res, next) => {
     ] = await Promise.all([
       prisma.user.count(),
       prisma.strategy.count(),
-      prisma.strategySubscription.count({ where: { isActive: true } }),
+      prisma.strategySubscription.count({
+        where: {
+          isActive: true,
+          strategy: { isActive: true }
+        }
+      }),
       prisma.strategyAccessRequest.count({ where: { status: 'PENDING' } }),
       prisma.user.groupBy({
         by: ['role'],
