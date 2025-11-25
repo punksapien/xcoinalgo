@@ -102,13 +102,8 @@ export function EquityCurve({ subscriptionId, height = 60, showStats = false }: 
   const minPnl = Math.min(0, ...pnlValues);
   const maxPnl = Math.max(0, ...pnlValues);
 
-  // Calculate where zero line falls as a percentage (for gradient split)
-  const range = maxPnl - minPnl;
-  const zeroPercent = range > 0 ? ((maxPnl - 0) / range) * 100 : 50;
-
-  // Determine overall trend for line color
-  const finalPnl = data[data.length - 1]?.cumulativePnl || 0;
-  const lineColor = finalPnl >= 0 ? '#22c55e' : '#ef4444';
+  // Use neutral blue color for the line
+  const lineColor = '#3b82f6'; // blue-500
 
   // Unique gradient IDs per subscription
   const gradientId = `gradient-${subscriptionId}`;
@@ -154,14 +149,10 @@ export function EquityCurve({ subscriptionId, height = 60, showStats = false }: 
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={data} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
             <defs>
-              {/* Split gradient: green above zero line, red below */}
+              {/* Neutral blue gradient */}
               <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                {/* Green zone (above zero) */}
-                <stop offset="0%" stopColor="#22c55e" stopOpacity={0.4} />
-                <stop offset={`${zeroPercent}%`} stopColor="#22c55e" stopOpacity={0.1} />
-                {/* Red zone (below zero) */}
-                <stop offset={`${zeroPercent}%`} stopColor="#ef4444" stopOpacity={0.1} />
-                <stop offset="100%" stopColor="#ef4444" stopOpacity={0.4} />
+                <stop offset="0%" stopColor={lineColor} stopOpacity={0.3} />
+                <stop offset="95%" stopColor={lineColor} stopOpacity={0.05} />
               </linearGradient>
             </defs>
             <XAxis
