@@ -813,14 +813,18 @@ router.get('/subscriptions/:id/equity-curve', authenticate, async (req: Authenti
       logger.info(`[Equity Curve] Sample trade: ${JSON.stringify(allTrades[0])}`);
     }
 
-    // Filter for trades after subscription start
-    // Note: CoinDCX trades API uses 'timestamp' field, not 'created_at'
+    // Filter for trades:
+    // 1. After subscription start time
+    // 2. Only trades placed by our platform (client_order_id starts with 'xc')
+    //    This covers: xc_, xcoin_, xc_manish, etc.
     const filteredTrades = allTrades.filter(trade => {
       const tradeTime = trade.timestamp; // Already in milliseconds
-      return tradeTime >= minTimestamp;
+      const clientOrderId = trade.client_order_id || '';
+      const isOurTrade = clientOrderId.toLowerCase().startsWith('xc');
+      return tradeTime >= minTimestamp && isOurTrade;
     });
 
-    logger.info(`[Equity Curve] After filtering: ${filteredTrades.length} trades for pair ${pair}`);
+    logger.info(`[Equity Curve] After filtering: ${filteredTrades.length} platform trades (xc prefix) for pair ${pair}, excluded ${allTrades.length - filteredTrades.length} non-platform trades`);
 
     if (filteredTrades.length === 0) {
       return res.json({
