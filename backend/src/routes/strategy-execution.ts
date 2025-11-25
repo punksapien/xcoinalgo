@@ -857,6 +857,12 @@ router.get('/subscriptions/:id/equity-curve', authenticate, async (req: Authenti
     const pnlSequence: number[] = [];
     const dailyData: { [key: string]: number } = {};
 
+    // USDT to INR conversion rate on CoinDCX (changes ~every 6 months)
+    // Current rate: 96 INR = 1 USDT (as of Nov 2025)
+    // TODO: Can fetch dynamically from CoinDCX API if needed
+    const USDT_INR_RATE = 96;
+    const conversionRate = marginCurrency === 'INR' ? USDT_INR_RATE : 1;
+
     sortedTrades.forEach(trade => {
       const side = trade.side.toLowerCase();
       const price = parseFloat(trade.price);
@@ -864,7 +870,8 @@ router.get('/subscriptions/:id/equity-curve', authenticate, async (req: Authenti
       const fee = parseFloat(trade.fee_amount || 0);
       const tradeDate = new Date(trade.timestamp).toISOString().split('T')[0];
 
-      totalFees += fee;
+      // Convert fee to margin currency (fees from CoinDCX are in USDT)
+      totalFees += fee * conversionRate;
 
       if (!position) {
         // Opening a new position
@@ -877,14 +884,14 @@ router.get('/subscriptions/:id/equity-curve', authenticate, async (req: Authenti
       } else {
         // Closing or modifying existing position
         if ((position.side === 'buy' && side === 'sell') || (position.side === 'sell' && side === 'buy')) {
-          // Closing trade - calculate P&L
+          // Closing trade - calculate P&L in USDT then convert to margin currency
           let tradePnl = 0;
           if (position.side === 'buy') {
             // Long position: profit when sell price > entry price
-            tradePnl = (price - position.entryPrice) * Math.min(quantity, position.quantity);
+            tradePnl = (price - position.entryPrice) * Math.min(quantity, position.quantity) * conversionRate;
           } else {
             // Short position: profit when sell price < entry price
-            tradePnl = (position.entryPrice - price) * Math.min(quantity, position.quantity);
+            tradePnl = (position.entryPrice - price) * Math.min(quantity, position.quantity) * conversionRate;
           }
 
           grossPnl += tradePnl;
@@ -908,7 +915,7 @@ router.get('/subscriptions/:id/equity-curve', authenticate, async (req: Authenti
       }
     });
 
-    logger.info(`[Equity Curve] Processed trades: completedTrades=${completedTrades}, grossPnl=${grossPnl}, totalFees=${totalFees}, openPosition=${position ? 'YES' : 'NO'}`);
+    logger.info(`[Equity Curve] Processed trades: completedTrades=${completedTrades}, grossPnl=${grossPnl}, totalFees=${totalFees}, openPosition=${position ? 'YES' : 'NO'}, marginCurrency=${marginCurrency}, conversionRate=${conversionRate}`);
     if (position) {
       logger.info(`[Equity Curve] Open position: side=${position.side}, quantity=${position.quantity}, entryPrice=${position.entryPrice}`);
     }
