@@ -405,57 +405,63 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
 
             def intercepted_create_order(self, pair, side, order_type, total_quantity, leverage, **kwargs):
                 """Wrapper that intercepts orders and reports them to the backend"""
-                # Call original method first
+                # Call original method first - THIS MUST ALWAYS SUCCEED
                 response = original_create_order(self, pair, side, order_type, total_quantity, leverage, **kwargs)
 
-                # Get current subscriber context
-                context = get_trade_context()
+                # Try to report the trade, but NEVER let reporting failures affect trading
+                try:
+                    # Get current subscriber context
+                    context = get_trade_context()
 
-                # Determine if this is an entry or exit based on client_order_id
-                client_order_id = kwargs.get('client_order_id', '')
-                is_exit = '_ex' in client_order_id if client_order_id else False
+                    # Determine if this is an entry or exit based on client_order_id
+                    client_order_id = kwargs.get('client_order_id', '')
+                    is_exit = '_ex' in client_order_id if client_order_id else False
 
-                # Build trade report data
-                trade_data = {
-                    'subscriptionId': context.get('subscription_id'),
-                    'strategyId': context.get('strategy_id'),
-                    'userId': context.get('user_id'),
-                    'symbol': pair,
-                    'side': side,
-                    'quantity': total_quantity,
-                    'leverage': leverage,
-                    'orderType': order_type,
-                    'stopLoss': kwargs.get('stop_loss_price'),
-                    'takeProfit': kwargs.get('take_profit_price'),
-                    'clientOrderId': client_order_id,
-                    'marginCurrency': kwargs.get('margin_currency_short_name'),
-                    'metadata': {
-                        'raw_response': response if isinstance(response, dict) else str(response),
-                        'timestamp': datetime.now(timezone).isoformat() if 'timezone' in dir() else datetime.now().isoformat()
+                    # Build trade report data
+                    trade_data = {
+                        'subscriptionId': context.get('subscription_id'),
+                        'strategyId': context.get('strategy_id'),
+                        'userId': context.get('user_id'),
+                        'symbol': pair,
+                        'side': side,
+                        'quantity': total_quantity,
+                        'leverage': leverage,
+                        'orderType': order_type,
+                        'stopLoss': kwargs.get('stop_loss_price'),
+                        'takeProfit': kwargs.get('take_profit_price'),
+                        'clientOrderId': client_order_id,
+                        'marginCurrency': kwargs.get('margin_currency_short_name'),
+                        'metadata': {
+                            'raw_response': response if isinstance(response, dict) else str(response),
+                            'timestamp': datetime.now().isoformat()
+                        }
                     }
-                }
 
-                # Add exit-specific fields
-                if is_exit:
-                    trade_data['exitReason'] = context.get('exit_reason', 'signal')
-                    # Entry price will be calculated from the existing open trade on the backend
+                    # Add exit-specific fields
+                    if is_exit:
+                        trade_data['exitReason'] = context.get('exit_reason', 'signal')
+                        # Entry price will be calculated from the existing open trade on the backend
 
-                # Extract order info from response if available
-                if isinstance(response, dict):
-                    trade_data['orderId'] = response.get('id') or response.get('order_id')
-                    trade_data['filledPrice'] = response.get('avg_price') or response.get('price')
-                    trade_data['filledQuantity'] = response.get('filled_quantity') or response.get('total_quantity')
-                elif isinstance(response, list) and len(response) > 0:
-                    first_order = response[0]
-                    trade_data['orderId'] = first_order.get('id') or first_order.get('order_id')
-                    trade_data['filledPrice'] = first_order.get('avg_price') or first_order.get('price')
-                    trade_data['filledQuantity'] = first_order.get('filled_quantity') or first_order.get('total_quantity')
+                    # Extract order info from response if available
+                    if isinstance(response, dict):
+                        trade_data['orderId'] = response.get('id') or response.get('order_id')
+                        trade_data['filledPrice'] = response.get('avg_price') or response.get('price')
+                        trade_data['filledQuantity'] = response.get('filled_quantity') or response.get('total_quantity')
+                    elif isinstance(response, list) and len(response) > 0:
+                        first_order = response[0]
+                        trade_data['orderId'] = first_order.get('id') or first_order.get('order_id')
+                        trade_data['filledPrice'] = first_order.get('avg_price') or first_order.get('price')
+                        trade_data['filledQuantity'] = first_order.get('filled_quantity') or first_order.get('total_quantity')
 
-                # Report trade asynchronously (don't block trading)
-                import threading
-                report_thread = threading.Thread(target=report_trade_to_backend, args=(trade_data,))
-                report_thread.daemon = True
-                report_thread.start()
+                    # Report trade asynchronously (don't block trading)
+                    import threading
+                    report_thread = threading.Thread(target=report_trade_to_backend, args=(trade_data,))
+                    report_thread.daemon = True
+                    report_thread.start()
+
+                except Exception as e:
+                    # NEVER let trade reporting crash the actual trading - just log and continue
+                    logging.warning(f"⚠️ Trade interception error (non-fatal, trade still executed): {e}")
 
                 return response
 
