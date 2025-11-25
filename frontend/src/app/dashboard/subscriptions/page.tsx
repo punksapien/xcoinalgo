@@ -173,7 +173,7 @@ export default function SubscriptionsPage() {
   };
 
   const filteredSubscriptions = subscriptions.filter(sub => {
-    if (filter === 'all') return sub.isActive; // Show only active subscriptions (includes paused)
+    if (filter === 'all') return true; // Show ALL subscriptions including cancelled
     if (filter === 'active') return sub.isActive && !sub.isPaused; // Only actively trading
     if (filter === 'paused') return sub.isActive && sub.isPaused; // Only paused
     if (filter === 'cancelled') return !sub.isActive; // Only cancelled/unsubscribed
