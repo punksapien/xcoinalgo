@@ -832,18 +832,18 @@ router.get('/subscriptions/:id/equity-curve', authenticate, async (req: Authenti
     }
 
     // Filter for our platform orders:
-    // 1. After subscription start time
-    // 2. client_order_id starts with 'xc' (covers xc_, xcoin_, xc_manish, etc.)
-    // Note: We're NOT filtering by pair anymore since strategies may trade multiple pairs
-    //       or the subscription's configured pair may not match actual orders
+    // 1. Matching pair (to separate different subscriptions)
+    // 2. After subscription start time
+    // 3. client_order_id starts with 'xc' (covers xc_, xcoin_, xc_manish, etc.)
     const filteredTrades = allOrders.filter(order => {
       const orderTime = new Date(order.updated_at).getTime();
       const clientOrderId = order.client_order_id || '';
       const isOurTrade = clientOrderId.toLowerCase().startsWith('xc');
-      return orderTime >= minTimestamp && isOurTrade;
+      const matchesPair = order.pair === pair;
+      return matchesPair && orderTime >= minTimestamp && isOurTrade;
     });
 
-    logger.info(`[Equity Curve] After filtering: ${filteredTrades.length} platform orders (xc prefix), excluded ${allOrders.length - filteredTrades.length} non-platform orders`);
+    logger.info(`[Equity Curve] After filtering: ${filteredTrades.length} platform orders (xc prefix, pair=${pair}), excluded ${allOrders.length - filteredTrades.length} orders`);
 
     if (filteredTrades.length === 0) {
       return res.json({
