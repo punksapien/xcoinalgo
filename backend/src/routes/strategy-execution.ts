@@ -809,22 +809,41 @@ router.get('/subscriptions/:id/equity-curve', authenticate, async (req: Authenti
 
     logger.info(`[Equity Curve] Fetched ${allOrders.length} total filled orders from CoinDCX`);
 
+    // Debug: Count orders by pair and client_order_id prefix
+    const pairCounts: { [key: string]: number } = {};
+    const platformOrders: { [key: string]: number } = {};
+    allOrders.forEach(order => {
+      const p = order.pair || 'unknown';
+      pairCounts[p] = (pairCounts[p] || 0) + 1;
+
+      const clientOrderId = order.client_order_id || '';
+      if (clientOrderId.toLowerCase().startsWith('xc')) {
+        platformOrders[p] = (platformOrders[p] || 0) + 1;
+      }
+    });
+    logger.info(`[Equity Curve] Orders by pair: ${JSON.stringify(pairCounts)}`);
+    logger.info(`[Equity Curve] Platform orders (xc prefix) by pair: ${JSON.stringify(platformOrders)}`);
+
     if (allOrders.length > 0) {
-      logger.info(`[Equity Curve] Sample order: ${JSON.stringify(allOrders[0])}`);
+      const samplePlatformOrder = allOrders.find(o => (o.client_order_id || '').toLowerCase().startsWith('xc'));
+      if (samplePlatformOrder) {
+        logger.info(`[Equity Curve] Sample platform order: ${JSON.stringify(samplePlatformOrder)}`);
+      }
     }
 
     // Filter for our platform orders:
-    // 1. Matching pair
-    // 2. After subscription start time
-    // 3. client_order_id starts with 'xc' (covers xc_, xcoin_, xc_manish, etc.)
+    // 1. After subscription start time
+    // 2. client_order_id starts with 'xc' (covers xc_, xcoin_, xc_manish, etc.)
+    // Note: We're NOT filtering by pair anymore since strategies may trade multiple pairs
+    //       or the subscription's configured pair may not match actual orders
     const filteredTrades = allOrders.filter(order => {
       const orderTime = new Date(order.updated_at).getTime();
       const clientOrderId = order.client_order_id || '';
       const isOurTrade = clientOrderId.toLowerCase().startsWith('xc');
-      return order.pair === pair && orderTime >= minTimestamp && isOurTrade;
+      return orderTime >= minTimestamp && isOurTrade;
     });
 
-    logger.info(`[Equity Curve] After filtering: ${filteredTrades.length} platform orders (xc prefix) for pair ${pair}, excluded ${allOrders.length - filteredTrades.length} non-platform orders`);
+    logger.info(`[Equity Curve] After filtering: ${filteredTrades.length} platform orders (xc prefix), excluded ${allOrders.length - filteredTrades.length} non-platform orders`);
 
     if (filteredTrades.length === 0) {
       return res.json({
@@ -846,7 +865,7 @@ router.get('/subscriptions/:id/equity-curve', authenticate, async (req: Authenti
       new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime()
     );
 
-    // Calculate P&L by tracking position
+    // Calculate P&L by tracking positions PER PAIR (since we may have multiple pairs)
     interface Position {
       entryPrice: number;
       quantity: number;
@@ -854,7 +873,7 @@ router.get('/subscriptions/:id/equity-curve', authenticate, async (req: Authenti
       entryTime: Date;
     }
 
-    let position: Position | null = null;
+    const positions: { [pair: string]: Position | null } = {};
     let totalFees = 0;
     let grossPnl = 0;
     let completedTrades = 0;
@@ -870,6 +889,7 @@ router.get('/subscriptions/:id/equity-curve', authenticate, async (req: Authenti
     const conversionRate = marginCurrency === 'INR' ? USDT_INR_RATE : 1;
 
     sortedTrades.forEach(order => {
+      const orderPair = order.pair;
       const side = order.side.toLowerCase();
       const price = parseFloat(order.avg_price);  // Orders use avg_price
       const quantity = parseFloat(order.total_quantity);  // Orders use total_quantity
@@ -879,16 +899,18 @@ router.get('/subscriptions/:id/equity-curve', authenticate, async (req: Authenti
       // Convert fee to margin currency (fees from CoinDCX are in USDT)
       totalFees += fee * conversionRate;
 
+      const position = positions[orderPair];
+
       if (!position) {
-        // Opening a new position
-        position = {
+        // Opening a new position for this pair
+        positions[orderPair] = {
           entryPrice: price,
           quantity,
           side: side as 'buy' | 'sell',
           entryTime: new Date(order.updated_at)
         };
       } else {
-        // Closing or modifying existing position
+        // Closing or modifying existing position for this pair
         if ((position.side === 'buy' && side === 'sell') || (position.side === 'sell' && side === 'buy')) {
           // Closing trade - calculate P&L in USDT then convert to margin currency
           let tradePnl = 0;
@@ -911,9 +933,9 @@ router.get('/subscriptions/:id/equity-curve', authenticate, async (req: Authenti
           if (!dailyData[tradeDate]) dailyData[tradeDate] = 0;
           dailyData[tradeDate] += tradePnl;
 
-          // Update or close position
+          // Update or close position for this pair
           if (quantity >= position.quantity) {
-            position = null; // Position fully closed
+            positions[orderPair] = null; // Position fully closed
           } else {
             position.quantity -= quantity; // Partial close
           }
@@ -921,9 +943,12 @@ router.get('/subscriptions/:id/equity-curve', authenticate, async (req: Authenti
       }
     });
 
-    logger.info(`[Equity Curve] Processed trades: completedTrades=${completedTrades}, grossPnl=${grossPnl}, totalFees=${totalFees}, openPosition=${position ? 'YES' : 'NO'}, marginCurrency=${marginCurrency}, conversionRate=${conversionRate}`);
-    if (position) {
-      logger.info(`[Equity Curve] Open position: side=${position.side}, quantity=${position.quantity}, entryPrice=${position.entryPrice}`);
+    const openPositions = Object.entries(positions).filter(([_, pos]) => pos !== null);
+    logger.info(`[Equity Curve] Processed trades: completedTrades=${completedTrades}, grossPnl=${grossPnl}, totalFees=${totalFees}, openPositions=${openPositions.length}, marginCurrency=${marginCurrency}, conversionRate=${conversionRate}`);
+    if (openPositions.length > 0) {
+      openPositions.forEach(([pairName, pos]) => {
+        if (pos) logger.info(`[Equity Curve] Open position for ${pairName}: side=${pos.side}, quantity=${pos.quantity}, entryPrice=${pos.entryPrice}`);
+      });
     }
 
     const netPnl = grossPnl - totalFees;
