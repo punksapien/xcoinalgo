@@ -404,17 +404,29 @@ class BatchBacktestRunner:
             logger.info(f"Calling execute_trades with initial_capital={initial_capital}, leverage={leverage}")
 
             # Fetch data using Backtester's method if available, otherwise use provided data
-            if hasattr(backtester_class, 'fetch_coindcx_data') and callable(getattr(backtester_class, 'fetch_coindcx_data')):
+            if hasattr(backtester, 'fetch_coindcx_data') and callable(getattr(backtester, 'fetch_coindcx_data')):
                 pair = merged_config.get('pair', strategy_config.get('symbol', 'B-ETH_USDT'))
                 resolution = str(merged_config.get('resolution', '5')).rstrip('m')
-                start_date = merged_config.get('start_date', strategy_config.get('start_date'))
-                end_date = merged_config.get('end_date', strategy_config.get('end_date'))
 
-                logger.info(f"Fetching data via Backtester.fetch_coindcx_data: {pair} {resolution}m")
-                df = backtester_class.fetch_coindcx_data(pair, start_date, end_date, resolution)
+                # Get date range from STRATEGY_CONFIG, or use defaults (1 year of data)
+                start_date = merged_config.get('start_date')
+                end_date = merged_config.get('end_date')
+
+                # If no dates specified, default to 1 year of historical data
+                if not start_date or not end_date:
+                    from datetime import datetime, timedelta
+                    end_dt = datetime.now()
+                    start_dt = end_dt - timedelta(days=365)
+                    start_date = start_dt.strftime('%Y-%m-%d')
+                    end_date = end_dt.strftime('%Y-%m-%d')
+                    logger.info(f"No date range in config, using default 1 year: {start_date} to {end_date}")
+
+                logger.info(f"Fetching data via Backtester.fetch_coindcx_data: {pair} {resolution}m from {start_date} to {end_date}")
+                df = backtester.fetch_coindcx_data(pair, start_date, end_date, resolution)
 
                 if df is None or df.empty:
-                    return self._error_result("Failed to fetch historical data")
+                    logger.warning("fetch_coindcx_data returned empty, falling back to provided historical data")
+                    df = pd.DataFrame(historical_data)
 
             # Call execute_trades
             trades_df = backtester.execute_trades(
