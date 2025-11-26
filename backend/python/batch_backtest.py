@@ -145,8 +145,8 @@ class BatchBacktestRunner:
 
             if custom_backtest:
                 logger.info("✓ Custom backtest() method found - using custom implementation")
-                # Use custom backtest implementation
-                return self._run_custom_backtest(custom_backtest, historical_data, strategy_config)
+                # Use custom backtest implementation (pass exec_scope for STRATEGY_CONFIG access)
+                return self._run_custom_backtest(custom_backtest, historical_data, strategy_config, exec_scope)
 
             # Fall back to default backtest using generate_signal
             logger.info("Using default backtest with generate_signal()")
@@ -272,9 +272,17 @@ class BatchBacktestRunner:
     def _get_custom_backtest(self, exec_scope: Dict):
         """Check if strategy has custom backtest() method or Backtester class"""
         try:
-            # Look for Backtester class with run() method (quant team's pattern)
+            # Look for Backtester class with execute_trades() method (eshan/quant team's pattern)
             if 'Backtester' in exec_scope:
                 backtester_class = exec_scope['Backtester']
+
+                # Check for execute_trades() method first (primary pattern)
+                if hasattr(backtester_class, 'execute_trades') and callable(getattr(backtester_class, 'execute_trades')):
+                    logger.info("Found Backtester class with execute_trades() method")
+                    # Return a marker to use execute_trades pattern
+                    return ('execute_trades', backtester_class)
+
+                # Check for run() method (legacy pattern)
                 if hasattr(backtester_class, 'run') and callable(getattr(backtester_class, 'run')):
                     logger.info("Found Backtester class with run() method")
                     # Return a wrapper that calls Backtester.run()
@@ -297,9 +305,13 @@ class BatchBacktestRunner:
             print(f"Error checking for custom backtest: {e}", file=sys.stderr)
             return None
 
-    def _run_custom_backtest(self, custom_backtest, historical_data: List[Dict], strategy_config: Dict) -> Dict[str, Any]:
+    def _run_custom_backtest(self, custom_backtest, historical_data: List[Dict], strategy_config: Dict, exec_scope: Dict = None) -> Dict[str, Any]:
         """Run custom backtest implementation provided by strategy"""
         try:
+            # Check if this is the execute_trades pattern (tuple marker)
+            if isinstance(custom_backtest, tuple) and custom_backtest[0] == 'execute_trades':
+                return self._run_execute_trades_backtest(custom_backtest[1], historical_data, strategy_config, exec_scope)
+
             logger.info("Executing custom backtest() implementation...")
 
             # Convert historical data to DataFrame
@@ -336,6 +348,271 @@ class BatchBacktestRunner:
             return None
         except Exception as e:
             return self._error_result(f"Custom backtest failed: {str(e)}\n{traceback.format_exc()}")
+
+    def _run_execute_trades_backtest(self, backtester_class, historical_data: List[Dict], strategy_config: Dict, exec_scope: Dict = None) -> Dict[str, Any]:
+        """Run backtest using Backtester.execute_trades() pattern (eshan's strategy pattern)"""
+        try:
+            logger.info("Executing backtest using Backtester.execute_trades() pattern...")
+
+            # Extract STRATEGY_CONFIG from exec_scope if available
+            strategy_config_from_code = exec_scope.get('STRATEGY_CONFIG', {}) if exec_scope else {}
+
+            # Merge configs: STRATEGY_CONFIG takes precedence, then strategy_config, then defaults
+            merged_config = {
+                **strategy_config,
+                **strategy_config_from_code,
+            }
+
+            # Log what config we're using
+            logger.info(f"Using initial_capital from STRATEGY_CONFIG: {merged_config.get('initial_capital', 'NOT FOUND')}")
+            logger.info(f"Using leverage from STRATEGY_CONFIG: {merged_config.get('leverage', 'NOT FOUND')}")
+
+            # Create backtester instance with merged config
+            backtester = backtester_class(merged_config)
+
+            # Convert historical data to DataFrame
+            df = pd.DataFrame(historical_data)
+            logger.debug(f"Converted {len(df)} candles to DataFrame")
+
+            # Get parameters - use STRATEGY_CONFIG values, NO DEFAULTS
+            def require_param(key: str, alt_key: str = None):
+                """Get required parameter, raise error if missing"""
+                if key in merged_config:
+                    return merged_config[key]
+                if alt_key and alt_key in merged_config:
+                    return merged_config[alt_key]
+                alt_msg = f" or '{alt_key}'" if alt_key else ""
+                raise ValueError(f"Missing required parameter: '{key}'{alt_msg} not found in config. Available keys: {list(merged_config.keys())}")
+
+            initial_capital = require_param('initial_capital', 'capital')
+            leverage = require_param('leverage')
+            commission_rate = require_param('commission_rate', 'commission')
+            gst_rate = merged_config.get('gst_rate', 0)  # GST is optional, default 0
+            risk_per_trade = require_param('risk_per_trade')
+
+            # Optional TP/SL parameters
+            optional_params = {}
+            optional_keys = [
+                'sl_rate', 'tp_rate',
+                'long_tp1_inp', 'long_tp1_qty', 'long_tp2_inp', 'long_tp2_qty',
+                'short_tp1_inp', 'short_tp1_qty', 'short_tp2_inp', 'short_tp2_qty'
+            ]
+            for key in optional_keys:
+                if key in merged_config:
+                    optional_params[key] = merged_config[key]
+
+            logger.info(f"Calling execute_trades with initial_capital={initial_capital}, leverage={leverage}")
+
+            # Fetch data using Backtester's method if available, otherwise use provided data
+            if hasattr(backtester_class, 'fetch_coindcx_data') and callable(getattr(backtester_class, 'fetch_coindcx_data')):
+                pair = merged_config.get('pair', strategy_config.get('symbol', 'B-ETH_USDT'))
+                resolution = str(merged_config.get('resolution', '5')).rstrip('m')
+                start_date = merged_config.get('start_date', strategy_config.get('start_date'))
+                end_date = merged_config.get('end_date', strategy_config.get('end_date'))
+
+                logger.info(f"Fetching data via Backtester.fetch_coindcx_data: {pair} {resolution}m")
+                df = backtester_class.fetch_coindcx_data(pair, start_date, end_date, resolution)
+
+                if df is None or df.empty:
+                    return self._error_result("Failed to fetch historical data")
+
+            # Call execute_trades
+            trades_df = backtester.execute_trades(
+                df=df,
+                initial_capital=initial_capital,
+                leverage=leverage,
+                commission_rate=commission_rate,
+                gst_rate=gst_rate,
+                risk_per_trade=risk_per_trade,
+                **optional_params
+            )
+
+            # Convert trades DataFrame to list of dicts
+            if trades_df is None or trades_df.empty:
+                logger.warning("No trades generated by execute_trades()")
+                trades_list = []
+            else:
+                trades_list = trades_df.to_dict('records')
+                logger.info(f"execute_trades() returned {len(trades_list)} trades")
+
+            # Calculate metrics from trades
+            metrics = self._calculate_metrics_from_trades(trades_list, initial_capital)
+
+            # Build equity curve from trades
+            equity_curve = self._build_equity_curve_from_trades(trades_list, initial_capital)
+
+            # Convert trade format to match expected schema
+            formatted_trades = self._format_trades_for_output(trades_list)
+
+            return {
+                'success': True,
+                'custom_backtest': True,
+                'execute_trades_pattern': True,
+                'trades': formatted_trades,
+                'metrics': metrics,
+                'equity_curve': equity_curve
+            }
+
+        except Exception as e:
+            logger.error(f"execute_trades backtest failed: {str(e)}")
+            logger.error(traceback.format_exc())
+            return self._error_result(f"execute_trades backtest failed: {str(e)}\n{traceback.format_exc()}")
+
+    def _calculate_metrics_from_trades(self, trades: List[Dict], initial_capital: float) -> Dict[str, Any]:
+        """Calculate metrics from trade list"""
+        if not trades:
+            return {
+                'totalTrades': 0,
+                'winningTrades': 0,
+                'losingTrades': 0,
+                'winRate': 0,
+                'totalPnl': 0,
+                'totalPnlPct': 0,
+                'maxDrawdown': 0,
+                'maxDrawdownPct': 0,
+                'sharpeRatio': 0,
+                'profitFactor': 0,
+                'finalCapital': initial_capital
+            }
+
+        # Extract PnL values (handle different column names)
+        pnl_column = None
+        for col in ['pnl', 'PnL', 'net_pnl', 'realized_pnl', 'profit']:
+            if trades and col in trades[0]:
+                pnl_column = col
+                break
+
+        if not pnl_column:
+            logger.warning("Could not find PnL column in trades, using 0")
+            pnls = [0] * len(trades)
+        else:
+            pnls = [float(t.get(pnl_column, 0)) for t in trades]
+
+        total_trades = len(trades)
+        winning_trades = sum(1 for p in pnls if p > 0)
+        losing_trades = sum(1 for p in pnls if p < 0)
+
+        total_pnl = sum(pnls)
+        total_pnl_pct = (total_pnl / initial_capital) * 100 if initial_capital > 0 else 0
+
+        total_wins = sum(p for p in pnls if p > 0)
+        total_losses = abs(sum(p for p in pnls if p < 0))
+
+        profit_factor = total_wins / total_losses if total_losses > 0 else (float('inf') if total_wins > 0 else 0)
+
+        # Calculate max drawdown
+        equity = initial_capital
+        peak = initial_capital
+        max_drawdown = 0
+        max_drawdown_pct = 0
+
+        for pnl in pnls:
+            equity += pnl
+            if equity > peak:
+                peak = equity
+            drawdown = peak - equity
+            drawdown_pct = (drawdown / peak) * 100 if peak > 0 else 0
+            if drawdown > max_drawdown:
+                max_drawdown = drawdown
+                max_drawdown_pct = drawdown_pct
+
+        # Calculate Sharpe ratio
+        if len(pnls) > 1:
+            returns = [p / initial_capital for p in pnls]
+            avg_return = sum(returns) / len(returns)
+            variance = sum((r - avg_return) ** 2 for r in returns) / len(returns)
+            std_dev = variance ** 0.5
+            sharpe_ratio = (avg_return / std_dev) * (252 ** 0.5) if std_dev > 0 else 0
+        else:
+            sharpe_ratio = 0
+
+        return {
+            'totalTrades': total_trades,
+            'winningTrades': winning_trades,
+            'losingTrades': losing_trades,
+            'winRate': (winning_trades / total_trades * 100) if total_trades > 0 else 0,
+            'totalPnl': total_pnl,
+            'totalPnlPct': total_pnl_pct,
+            'maxDrawdown': max_drawdown,
+            'maxDrawdownPct': max_drawdown_pct,
+            'sharpeRatio': sharpe_ratio,
+            'profitFactor': profit_factor if profit_factor != float('inf') else 999.99,
+            'finalCapital': initial_capital + total_pnl
+        }
+
+    def _build_equity_curve_from_trades(self, trades: List[Dict], initial_capital: float) -> List[Dict]:
+        """Build equity curve from trades"""
+        equity_curve = []
+        equity = initial_capital
+
+        # Find PnL and time columns
+        pnl_column = None
+        time_column = None
+
+        for col in ['pnl', 'PnL', 'net_pnl', 'realized_pnl', 'profit']:
+            if trades and col in trades[0]:
+                pnl_column = col
+                break
+
+        for col in ['exit_time', 'close_time', 'timestamp', 'time']:
+            if trades and col in trades[0]:
+                time_column = col
+                break
+
+        for i, trade in enumerate(trades):
+            pnl = float(trade.get(pnl_column, 0)) if pnl_column else 0
+            equity += pnl
+
+            # Get timestamp
+            if time_column and trade.get(time_column):
+                timestamp = trade[time_column]
+                if isinstance(timestamp, str):
+                    try:
+                        timestamp = int(pd.Timestamp(timestamp).timestamp() * 1000)
+                    except:
+                        timestamp = i
+            else:
+                timestamp = i
+
+            equity_curve.append({
+                'timestamp': timestamp,
+                'equity': equity
+            })
+
+        return equity_curve
+
+    def _format_trades_for_output(self, trades: List[Dict]) -> List[Dict]:
+        """Format trades to match expected output schema"""
+        formatted = []
+
+        for trade in trades:
+            # Map common field names
+            formatted_trade = {
+                'entry_time': trade.get('entry_time', trade.get('open_time', 0)),
+                'exit_time': trade.get('exit_time', trade.get('close_time', 0)),
+                'side': trade.get('side', trade.get('direction', 'UNKNOWN')).upper(),
+                'entry_price': float(trade.get('entry_price', trade.get('open_price', 0))),
+                'exit_price': float(trade.get('exit_price', trade.get('close_price', 0))),
+                'quantity': float(trade.get('quantity', trade.get('size', trade.get('qty', 0)))),
+                'pnl': float(trade.get('pnl', trade.get('PnL', trade.get('net_pnl', 0)))),
+                'pnl_pct': float(trade.get('pnl_pct', trade.get('pnl_percent', 0))),
+                'reason': trade.get('reason', trade.get('exit_reason', 'signal'))
+            }
+
+            # Normalize reason to expected values
+            reason = formatted_trade['reason'].lower()
+            if 'stop' in reason or 'sl' in reason:
+                formatted_trade['reason'] = 'stop_loss'
+            elif 'take' in reason or 'tp' in reason or 'profit' in reason:
+                formatted_trade['reason'] = 'take_profit'
+            elif 'signal' in reason:
+                formatted_trade['reason'] = 'signal'
+            else:
+                formatted_trade['reason'] = 'manual'
+
+            formatted.append(formatted_trade)
+
+        return formatted
 
     def _validate_backtest_result(self, result: Dict[str, Any]) -> List[str]:
         """Validate backtest result matches frontend schema"""
