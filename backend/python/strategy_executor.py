@@ -125,19 +125,45 @@ def execute_backtest(module, settings: Dict[str, Any]) -> Dict[str, Any]:
         # Create backtester instance
         backtester = Backtester(settings)
 
-        # Extract parameters from settings
-        pair = settings.get('pair')
-        start_date = settings.get('start_date')
-        end_date = settings.get('end_date')
-        resolution = settings.get('resolution', '5m')
+        # Extract parameters from settings - NO DEFAULT VALUES
+        # Missing parameters should throw errors, not silently use wrong values
+
+        def require_param(key: str, alt_key: str = None):
+            """Get required parameter, raise error if missing"""
+            if key in settings:
+                return settings[key]
+            if alt_key and alt_key in settings:
+                return settings[alt_key]
+            alt_msg = f" or '{alt_key}'" if alt_key else ""
+            raise ValueError(f"Missing required parameter: '{key}'{alt_msg} not found in settings. Available keys: {list(settings.keys())}")
+
+        pair = require_param('pair')
+        start_date = require_param('start_date')
+        end_date = require_param('end_date')
+        resolution = require_param('resolution')
         # Strip 'm' from resolution if present (e.g., "5m" -> "5")
         resolution = resolution.rstrip('m') if isinstance(resolution, str) else str(resolution)
-        initial_capital = settings.get('capital', 10000)
-        leverage = settings.get('leverage', 1)
-        commission_rate = settings.get('commission_rate', 0.0005)
-        gst_rate = settings.get('gst_rate', 0.18)
-        sl_rate = settings.get('sl_rate', 0.02)
-        tp_rate = settings.get('tp_rate', 0.04)
+
+        # Use 'initial_capital' first (from STRATEGY_CONFIG), fall back to 'capital' (from frontend)
+        initial_capital = require_param('initial_capital', 'capital')
+        leverage = require_param('leverage')
+        commission_rate = require_param('commission_rate')
+        gst_rate = require_param('gst_rate')
+
+        risk_per_trade = require_param('risk_per_trade')
+
+        # Optional parameters - only passed to execute_trades if present in settings
+        # This allows strategies without TP logic to work, while strategies with TP
+        # will have their values from STRATEGY_CONFIG properly passed
+        optional_params = {}
+        optional_keys = [
+            'sl_rate', 'tp_rate',
+            'long_tp1_inp', 'long_tp1_qty', 'long_tp2_inp', 'long_tp2_qty',
+            'short_tp1_inp', 'short_tp1_qty', 'short_tp2_inp', 'short_tp2_qty'
+        ]
+        for key in optional_keys:
+            if key in settings:
+                optional_params[key] = settings[key]
 
         # Report progress: Fetching data
         print(json.dumps({
@@ -183,14 +209,16 @@ def execute_backtest(module, settings: Dict[str, Any]) -> Dict[str, Any]:
         backtest_start = time.time()
 
         # Execute trades (use instance method, not static method)
+        # Pass ALL parameters from settings to ensure strategy uses correct values
+        # Required params passed explicitly, optional params passed via **kwargs
         trades_df = backtester.execute_trades(
             df=df,
             initial_capital=initial_capital,
             leverage=leverage,
             commission_rate=commission_rate,
             gst_rate=gst_rate,
-            sl_rate=sl_rate,
-            tp_rate=tp_rate
+            risk_per_trade=risk_per_trade,
+            **optional_params  # Pass TP params only if they exist in settings
         )
 
         backtest_duration = time.time() - backtest_start
