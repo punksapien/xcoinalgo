@@ -428,6 +428,14 @@ class BatchBacktestRunner:
                     logger.warning("fetch_coindcx_data returned empty, falling back to provided historical data")
                     df = pd.DataFrame(historical_data)
 
+            # Call generate_signals first if the method exists (required before execute_trades)
+            if hasattr(backtester, 'generate_signals') and callable(getattr(backtester, 'generate_signals')):
+                logger.info("Calling generate_signals() before execute_trades...")
+                df = backtester.generate_signals(df, merged_config)
+                if df is None or df.empty:
+                    return self._error_result("generate_signals returned empty DataFrame")
+                logger.info(f"generate_signals() completed. DataFrame has {len(df)} rows")
+
             # Call execute_trades
             trades_df = backtester.execute_trades(
                 df=df,
