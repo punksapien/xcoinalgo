@@ -25,6 +25,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Loader2,
   AlertCircle,
   Users,
@@ -33,7 +43,8 @@ import {
   DollarSign,
   Settings,
   Search,
-  Filter
+  Filter,
+  UserX
 } from 'lucide-react';
 import axios from 'axios';
 import { toast } from 'sonner';
@@ -103,6 +114,9 @@ export default function SubscribersPage() {
     maxDailyLoss: ''
   });
   const [isSaving, setIsSaving] = useState(false);
+  const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
+  const [subscriberToRemove, setSubscriberToRemove] = useState<Subscriber | null>(null);
+  const [isRemoving, setIsRemoving] = useState(false);
 
   useEffect(() => {
     if (!hasClientAccess()) {
@@ -211,6 +225,42 @@ export default function SubscribersPage() {
       const error = err as { response?: { data?: { error?: string } } };
       toast.error(error.response?.data?.error || 'Failed to update parameters');
       setIsSaving(false);
+    }
+  };
+
+  const handleRemoveAccess = async () => {
+    if (!subscriberToRemove) return;
+
+    setIsRemoving(true);
+    try {
+      const token = localStorage.getItem('auth-storage');
+      const authData = token ? JSON.parse(token) : null;
+      const authToken = authData?.state?.token;
+
+      if (!authToken) {
+        throw new Error('No authentication token found');
+      }
+
+      const response = await axios.delete(
+        `/api/client/subscribers/${subscriberToRemove.id}`,
+        {
+          headers: { Authorization: `Bearer ${authToken}` }
+        }
+      );
+
+      toast.success(response.data.message || 'Subscriber access removed successfully');
+
+      // Refresh subscribers list
+      await loadData();
+
+      // Close dialog
+      setRemoveDialogOpen(false);
+      setSubscriberToRemove(null);
+    } catch (err) {
+      const error = err as { response?: { data?: { error?: string } } };
+      toast.error(error.response?.data?.error || 'Failed to remove subscriber access');
+    } finally {
+      setIsRemoving(false);
     }
   };
 
@@ -403,6 +453,17 @@ export default function SubscribersPage() {
                         <Settings className="h-4 w-4 mr-2" />
                         Edit Parameters
                       </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => {
+                          setSubscriberToRemove(subscriber);
+                          setRemoveDialogOpen(true);
+                        }}
+                      >
+                        <UserX className="h-4 w-4 mr-2" />
+                        Remove Access
+                      </Button>
                     </div>
                   </div>
                 </CardHeader>
@@ -567,6 +628,50 @@ export default function SubscribersPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Remove Access Confirmation Dialog */}
+      <AlertDialog open={removeDialogOpen} onOpenChange={setRemoveDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove Subscriber Access?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to remove{' '}
+              <strong>{subscriberToRemove?.user.name || subscriberToRemove?.user.email}</strong>
+              &apos;s access to{' '}
+              <strong>{subscriberToRemove?.strategy.name}</strong>?
+              <br /><br />
+              This will:
+              <ul className="list-disc ml-6 mt-2">
+                <li>Deactivate their subscription immediately</li>
+                <li>Stop all automated trading for this user</li>
+                <li>Remove their access to this strategy</li>
+              </ul>
+              <br />
+              <strong className="text-destructive">This action cannot be undone.</strong> They will need to re-subscribe to regain access.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isRemoving}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleRemoveAccess}
+              disabled={isRemoving}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isRemoving ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Removing...
+                </>
+              ) : (
+                <>
+                  <UserX className="h-4 w-4 mr-2" />
+                  Remove Access
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

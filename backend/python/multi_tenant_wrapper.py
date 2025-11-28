@@ -226,7 +226,6 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
 
         strategy_id = settings.get('strategy_id', 'unknown')
         log_file = os.path.join(logs_dir, f'live_trader_{strategy_id}.csv')
-        print_log_file = os.path.join(logs_dir, f'print_output_{strategy_id}.log')
 
         # Add CSV file handler for persistent logs with IST timezone
         from datetime import datetime as dt_class, timezone, timedelta
@@ -260,29 +259,25 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
 
         logging.info(f"📝 Additional logs: {trading_bot_log_path}, {error_log_path}")
 
-        # ✅ Redirect print() statements to file ONLY (prevent stdout pollution)
-        class PrintLogger:
+        # ✅ Redirect print() statements to /dev/null (prevent stdout pollution and disk usage)
+        # Strategy code should use logging.info() instead of print()
+        sys.stdout = open(os.devnull, 'w')
+
+        # ✅ Keep stderr redirect for error tracking
+        class ErrorLogger:
             def __init__(self, filename):
-                self.terminal = sys.stdout
                 self.log = open(filename, 'a')
 
             def write(self, message):
-                # DO NOT write to terminal - this pollutes stdout and breaks JSON parsing
-                # Only write to log file
                 self.log.write(message)
                 self.log.flush()
 
             def flush(self):
-                # Only flush log file, not terminal
                 self.log.flush()
 
-        sys.stdout = PrintLogger(print_log_file)
-
-        # ✅ Also redirect stderr to prevent error output pollution
-        sys.stderr = PrintLogger(error_log_path)
+        sys.stderr = ErrorLogger(error_log_path)
 
         logging.info(f"📝 Logging to: {log_file}")
-        logging.info(f"📝 Print output to: {print_log_file}")
         logging.info(f"📝 Error output to: {error_log_path}")
 
         exec_scope = {

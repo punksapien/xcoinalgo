@@ -572,4 +572,60 @@ router.put('/subscribers/:id/parameters', async (req: AuthenticatedRequest, res,
   }
 });
 
+/**
+ * DELETE /api/client/subscribers/:id
+ * Remove/revoke a subscriber's access to a strategy
+ * Only the strategy owner (client) can remove subscribers
+ */
+router.delete('/subscribers/:id', authenticate, requireClientRole, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = req.userId!;
+    const subscriptionId = req.params.id;
+
+    // Find subscription and verify ownership
+    const subscription = await prisma.strategySubscription.findFirst({
+      where: {
+        id: subscriptionId,
+        strategy: {
+          clientId: userId  // Ensure user owns the strategy
+        }
+      },
+      include: {
+        user: { select: { name: true, email: true } },
+        strategy: { select: { name: true } }
+      }
+    });
+
+    if (!subscription) {
+      return res.status(404).json({
+        error: 'Subscription not found or you do not have permission to remove it'
+      });
+    }
+
+    // Check if already unsubscribed
+    if (!subscription.isActive || subscription.unsubscribedAt) {
+      return res.status(400).json({
+        error: 'Subscriber has already been removed'
+      });
+    }
+
+    // Revoke access
+    const updated = await prisma.strategySubscription.update({
+      where: { id: subscriptionId },
+      data: {
+        isActive: false,
+        isPaused: false,
+        unsubscribedAt: new Date()
+      }
+    });
+
+    res.json({
+      message: `Successfully removed ${subscription.user.name || subscription.user.email} from ${subscription.strategy.name}`,
+      subscription: updated
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 export { router as clientRoutes };
