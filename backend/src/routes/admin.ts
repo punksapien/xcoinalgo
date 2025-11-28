@@ -13,11 +13,36 @@ router.use(requireAdminRole);
 
 /**
  * GET /api/admin/users
- * Get all users in the system
+ * Get all users in the system with pagination and search
+ * Query params:
+ *   - page: page number (default: 1)
+ *   - limit: items per page (default: 10)
+ *   - search: search by email (optional)
  */
 router.get('/users', async (req: AuthenticatedRequest, res, next) => {
   try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const search = (req.query.search as string) || '';
+
+    const skip = (page - 1) * limit;
+
+    // Build where clause for search
+    const where = search
+      ? {
+          email: {
+            contains: search,
+            mode: 'insensitive' as const
+          }
+        }
+      : {};
+
+    // Get total count for pagination
+    const totalCount = await prisma.user.count({ where });
+
+    // Get paginated users
     const users = await prisma.user.findMany({
+      where,
       select: {
         id: true,
         email: true,
@@ -30,7 +55,9 @@ router.get('/users', async (req: AuthenticatedRequest, res, next) => {
           }
         }
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: limit
     });
 
     res.json({
@@ -41,7 +68,13 @@ router.get('/users', async (req: AuthenticatedRequest, res, next) => {
         createdAt: user.createdAt,
         strategiesOwned: user._count.ownedStrategies,
         subscriptions: user._count.strategySubscriptions
-      }))
+      })),
+      pagination: {
+        page,
+        limit,
+        totalCount,
+        totalPages: Math.ceil(totalCount / limit)
+      }
     });
   } catch (error) {
     next(error);

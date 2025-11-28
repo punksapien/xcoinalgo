@@ -71,22 +71,12 @@ export default function AdminUsersPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
   const [searchTerm, setSearchTerm] = useState('');
-
-  // Filter users based on search term
-  const filteredUsers = users.filter(user =>
-    user.email.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  // Calculate pagination
-  const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
-  const paginatedUsers = filteredUsers.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
+  const [totalCount, setTotalCount] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
 
   useEffect(() => {
     loadUsers();
-  }, [token]);
+  }, [token, currentPage, searchTerm]);
 
   const loadUsers = async () => {
     if (!token) return;
@@ -97,11 +87,23 @@ export default function AdminUsersPage() {
     try {
       const authToken = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
 
-      const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/admin/users`, {
-        headers: { Authorization: authToken }
+      // Build query params for pagination and search
+      const params = new URLSearchParams({
+        page: currentPage.toString(),
+        limit: itemsPerPage.toString(),
+        ...(searchTerm && { search: searchTerm })
       });
 
+      const response = await axios.get(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/admin/users?${params}`,
+        {
+          headers: { Authorization: authToken }
+        }
+      );
+
       setUsers(response.data.users);
+      setTotalCount(response.data.pagination.totalCount);
+      setTotalPages(response.data.pagination.totalPages);
     } catch (err) {
       const error = err as { response?: { data?: { error?: string } } };
       setError(error?.response?.data?.error || 'Failed to load users');
@@ -210,7 +212,7 @@ export default function AdminUsersPage() {
       {/* Users Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Platform Users ({users.length})</CardTitle>
+          <CardTitle>Platform Users ({totalCount})</CardTitle>
           <CardDescription>
             View and manage user roles across the platform (Page {currentPage} of {totalPages || 1})
           </CardDescription>
@@ -231,17 +233,13 @@ export default function AdminUsersPage() {
           </div>
         </CardHeader>
         <CardContent>
-          {filteredUsers.length === 0 ? (
+          {users.length === 0 ? (
             <p className="text-sm text-muted-foreground py-8 text-center">
               {searchTerm ? `No users found matching "${searchTerm}"` : 'No users found in the platform.'}
             </p>
-          ) : users.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-8 text-center">
-              No users found in the platform.
-            </p>
           ) : (
             <div className="space-y-4">
-              {paginatedUsers.map((user) => (
+              {users.map((user) => (
                 <div
                   key={user.id}
                   className="flex items-center justify-between p-4 border border-border rounded-lg"
@@ -285,7 +283,7 @@ export default function AdminUsersPage() {
               ))}
 
               {/* Pagination */}
-              {filteredUsers.length > itemsPerPage && (
+              {totalPages > 1 && (
                 <Pagination className="mt-6">
                   <PaginationContent>
                     <PaginationItem>
