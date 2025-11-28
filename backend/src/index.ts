@@ -23,6 +23,7 @@ import { executionAuditRoutes } from './routes/execution-audit';
 import { clientRoutes } from './routes/client';
 import { adminRoutes } from './routes/admin';
 import { strategyInviteRoutes } from './routes/strategy-invite';
+import strategyDailyReportRoutes from './routes/strategy-daily-report';
 import { errorHandler } from './middleware/errorHandler';
 import { startHealthCheckMonitoring } from './services/strategyExecutor';
 import { startOrderMonitoring } from './workers/order-monitor';
@@ -128,6 +129,7 @@ app.use('/api/positions', positionsRoutes);
 app.use('/api/strategies', strategyExecutionRoutes);
 app.use('/api/strategies', backtestProgressRoutes); // SSE progress streaming
 app.use('/api/strategies', strategyInviteRoutes); // Invite & access request routes
+app.use('/api/strategies', strategyDailyReportRoutes); // Daily report generation
 app.use('/api/backtest', backtestRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/logs', logsRoutes);
