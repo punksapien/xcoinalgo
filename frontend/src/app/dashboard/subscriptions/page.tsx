@@ -31,10 +31,18 @@ interface LiveStats {
   winRate: number;
   openPositions: number;
   closedTrades: number;
+  maxDD?: number;
+  totalFees?: number;
 }
 
 interface SubscriptionWithLiveStats extends Subscription {
   liveStats?: LiveStats;
+  hasDbTrades?: boolean;
+  equityCurve?: Array<{
+    date: string;
+    dailyPnl: number;
+    cumulativePnl: number;
+  }>;
 }
 
 export default function SubscriptionsPage() {
