@@ -67,62 +67,70 @@ export default function SubscriptionsPage() {
     }
 
     try {
+      // Step 1: Get basic subscription data (Phase 1 optimization)
       const response = await StrategyExecutionAPI.getUserSubscriptions(token);
       const subscriptionsData = response.subscriptions || [];
 
-      // Fetch live stats for each subscription
-      const subscriptionsWithStats = await Promise.all(
-        subscriptionsData.map(async (sub) => {
-          try {
-            // Fetch equity curve data which includes stats
-            const statsResponse = await fetch(
-              `/api/strategies/subscriptions/${sub.id}/equity-curve`,
-              {
-                headers: {
-                  'Authorization': `Bearer ${token}`
-                }
-              }
-            );
+      // Step 2: Fetch bulk stats + equity curves if subscriptions exist (Phase 2 optimization)
+      if (subscriptionsData.length > 0) {
+        const subscriptionIds = subscriptionsData.map(sub => sub.id);
 
-            if (statsResponse.ok) {
-              const statsData = await statsResponse.json();
-              const stats = statsData.stats;
+        const bulkStatsResponse = await StrategyExecutionAPI.getBulkSubscriptionStats(
+          subscriptionIds,
+          token
+        );
 
-              if (stats && stats.totalTrades > 0) {
-                // Map the stats to liveStats format
-                return {
-                  ...sub,
-                  liveStats: {
-                    totalPnl: stats.netPnl || 0,
-                    realizedPnl: stats.netPnl || 0,
-                    unrealizedPnl: 0,
-                    totalTrades: stats.totalTrades || 0,
-                    winRate: stats.winRate || 0,
-                    openPositions: 0,
-                    closedTrades: stats.totalTrades || 0,
-                  }
-                };
-              }
-            } else {
-              console.error(`Failed to fetch stats for ${sub.id}: ${statsResponse.status}`);
-            }
+        // Step 3: Merge stats and equity curves
+        const statsMap = new Map(
+          bulkStatsResponse.stats.map(s => [s.subscriptionId, s])
+        );
 
-            // If stats fetch fails or no trades, return subscription without liveStats
-            return sub;
-          } catch (err) {
-            console.error(`Error fetching stats for subscription ${sub.id}:`, err);
-            return sub;
+        const subscriptionsWithStats = subscriptionsData.map(sub => {
+          const statData = statsMap.get(sub.id);
+          if (statData) {
+            return {
+              ...sub,
+              liveStats: {
+                totalPnl: statData.stats.netPnl,
+                realizedPnl: statData.stats.netPnl,
+                totalTrades: statData.stats.totalTrades,
+                winRate: statData.stats.winRate,
+                openPositions: 0,
+                closedTrades: statData.stats.totalTrades,
+                maxDD: statData.stats.maxDD,
+                totalFees: statData.stats.totalFees
+              },
+              equityCurve: statData.equityCurve,
+              hasDbTrades: statData.hasDbTrades
+            };
           }
-        })
-      );
+          return sub;
+        });
 
-      setSubscriptions(subscriptionsWithStats);
+        setSubscriptions(subscriptionsWithStats);
+      } else {
+        setSubscriptions([]);
+      }
+
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load subscriptions');
     } finally {
       setLoading(false);
       setRefreshing(false);
+    }
+  };
+
+  // Handler for lazy CoinDCX fetch (Phase 2 optimization)
+  const handleFetchHistorical = async (subscriptionId: string) => {
+    if (!token) return;
+
+    try {
+      await StrategyExecutionAPI.fetchHistoricalData(subscriptionId, token);
+      // Refresh subscriptions after fetching
+      await fetchSubscriptions();
+    } catch (err) {
+      console.error('Failed to fetch historical data:', err);
     }
   };
 
@@ -360,6 +368,20 @@ export default function SubscriptionsPage() {
                   ) : (
                     <div className="bg-muted/50 rounded-lg p-2 text-center text-[10px] text-muted-foreground">
                       No trading data yet
+                    </div>
+                  )}
+
+                  {/* Show button to fetch historical data if no DB trades (Phase 2 optimization) */}
+                  {subscription.hasDbTrades === false && (
+                    <div className="text-center">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleFetchHistorical(subscription.id)}
+                        className="text-xs"
+                      >
+                        📥 Fetch Historical Data from CoinDCX
+                      </Button>
                     </div>
                   )}
 

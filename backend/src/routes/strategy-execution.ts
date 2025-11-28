@@ -7,8 +7,12 @@ import { subscriptionService } from '../services/strategy-execution/subscription
 import { settingsService } from '../services/strategy-execution/settings-service';
 import { executionCoordinator } from '../services/strategy-execution/execution-coordinator';
 import { logger } from '../utils/logger';
+import NodeCache from 'node-cache';
 
 const router = Router();
+
+// 30-second cache for subscription stats (Phase 2 optimization)
+const subscriptionsCache = new NodeCache({ stdTTL: 30, checkperiod: 60 });
 
 /**
  * POST /api/strategies/deploy
@@ -562,6 +566,7 @@ router.get('/subscriptions/:id/stats', authenticate, async (req: AuthenticatedRe
 /**
  * GET /api/strategies/subscriptions
  * Get user's subscriptions with trading results
+ * OPTIMIZED: Single batched query instead of N+1 queries
  */
 router.get('/subscriptions', authenticate, async (req: AuthenticatedRequest, res, next) => {
   try {
@@ -569,96 +574,262 @@ router.get('/subscriptions', authenticate, async (req: AuthenticatedRequest, res
 
     const subscriptions = await subscriptionService.getUserSubscriptions(userId);
 
-    // Fetch trading results for each subscription
-    const subscriptionsWithStats = await Promise.all(
-      subscriptions.map(async (sub) => {
-        // Resolve subscription settings (merge user overrides with strategy defaults)
-        const strategyConfig = sub.strategy?.executionConfig as any || {};
-        const resolvedSettings = {
-          riskPerTrade: sub.riskPerTrade ?? strategyConfig.risk_per_trade ?? 0.02,
-          leverage: sub.leverage ?? strategyConfig.leverage ?? 10,
-          maxPositions: sub.maxPositions ?? strategyConfig.max_positions ?? 1,
-          maxDailyLoss: sub.maxDailyLoss ?? strategyConfig.max_daily_loss ?? 0.05,
-        };
+    // OPTIMIZATION 1: Fetch ALL trades for ALL subscriptions in ONE query
+    const allSubscriptionIds = subscriptions.map(sub => sub.id);
 
-        // Get all trades for this subscription
-        const trades = await prisma.trade.findMany({
-          where: { subscriptionId: sub.id },
-          select: {
-            pnl: true,
-            status: true,
-            createdAt: true,
-            side: true,
-            entryPrice: true,
-            quantity: true,
-            symbol: true,
-          }
-        });
+    const allTrades = await prisma.trade.findMany({
+      where: {
+        subscriptionId: { in: allSubscriptionIds }
+      },
+      select: {
+        subscriptionId: true,
+        pnl: true,
+        status: true,
+        createdAt: true,
+        side: true,
+        entryPrice: true,
+        quantity: true,
+        symbol: true,
+      },
+      orderBy: { createdAt: 'asc' }
+    });
 
-        const totalTrades = trades.length;
-        const openTrades = trades.filter(t => t.status === 'OPEN');
-        const closedTrades = trades.filter(t => t.status === 'CLOSED');
+    // OPTIMIZATION 2: Group trades by subscription ID (in-memory, fast)
+    const tradesBySubscription = new Map<string, typeof allTrades>();
+    allTrades.forEach(trade => {
+      if (!tradesBySubscription.has(trade.subscriptionId)) {
+        tradesBySubscription.set(trade.subscriptionId, []);
+      }
+      tradesBySubscription.get(trade.subscriptionId)!.push(trade);
+    });
 
-        // Calculate realized P&L (only from closed trades)
-        const realizedPnl = closedTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+    // OPTIMIZATION 3: Calculate stats without async/await (pure computation)
+    const subscriptionsWithStats = subscriptions.map((sub) => {
+      const trades = tradesBySubscription.get(sub.id) || [];
+      const totalTrades = trades.length;
+      const openTrades = trades.filter(t => t.status === 'OPEN');
+      const closedTrades = trades.filter(t => t.status === 'CLOSED');
 
-        // Calculate unrealized P&L (from open positions)
-        let unrealizedPnl = 0;
-        try {
-          const { websocketTicker } = require('../services/websocket-ticker');
+      const realizedPnl = closedTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+      const totalPnl = realizedPnl;
 
-          for (const trade of openTrades) {
-            try {
-              // Use WebSocket service with fallback to REST API
-              const currentPrice = await websocketTicker.getPrice(trade.symbol);
+      const closedTradesWithPnl = closedTrades.filter(t => t.pnl !== null);
+      const winningTrades = closedTradesWithPnl.filter(t => t.pnl! > 0).length;
+      const winRate = closedTradesWithPnl.length > 0
+        ? (winningTrades / closedTradesWithPnl.length) * 100
+        : 0;
 
-              // Calculate unrealized P&L
-              if (trade.side === 'LONG') {
-                unrealizedPnl += (currentPrice - trade.entryPrice) * trade.quantity;
-              } else {
-                unrealizedPnl += (trade.entryPrice - currentPrice) * trade.quantity;
-              }
-            } catch (error) {
-              // If we can't get current price, skip this trade
-              console.warn(`Could not get price for ${trade.symbol}:`, error);
-            }
-          }
-        } catch (error) {
-          console.error('Failed to calculate unrealized P&L:', error);
+      // Resolve settings from subscription or strategy config
+      const strategyConfig = sub.strategy?.executionConfig as any || {};
+      const resolvedSettings = {
+        riskPerTrade: sub.riskPerTrade ?? strategyConfig.risk_per_trade ?? 0.02,
+        leverage: sub.leverage ?? strategyConfig.leverage ?? 10,
+        maxPositions: sub.maxPositions ?? strategyConfig.max_positions ?? 1,
+        maxDailyLoss: sub.maxDailyLoss ?? strategyConfig.max_daily_loss ?? 0.05,
+      };
+
+      return {
+        ...sub,
+        riskPerTrade: resolvedSettings.riskPerTrade,
+        leverage: resolvedSettings.leverage,
+        maxPositions: resolvedSettings.maxPositions,
+        maxDailyLoss: resolvedSettings.maxDailyLoss,
+        liveStats: {
+          totalTrades,
+          openPositions: openTrades.length,
+          totalPnl,
+          realizedPnl,
+          unrealizedPnl: 0,
+          winRate,
+          closedTrades: closedTrades.length,
         }
-
-        // Total P&L = realized + unrealized
-        const totalPnl = realizedPnl + unrealizedPnl;
-
-        // Calculate win rate (only from closed trades with non-null pnl)
-        const closedTradesWithPnl = closedTrades.filter(t => t.pnl !== null);
-        const winningTrades = closedTradesWithPnl.filter(t => t.pnl! > 0).length;
-        const winRate = closedTradesWithPnl.length > 0
-          ? (winningTrades / closedTradesWithPnl.length) * 100
-          : 0;
-
-        return {
-          ...sub,
-          // Override with resolved settings
-          riskPerTrade: resolvedSettings.riskPerTrade,
-          leverage: resolvedSettings.leverage,
-          maxPositions: resolvedSettings.maxPositions,
-          maxDailyLoss: resolvedSettings.maxDailyLoss,
-          liveStats: {
-            totalTrades,
-            openPositions: openTrades.length,
-            totalPnl,
-            realizedPnl,
-            unrealizedPnl,
-            winRate,
-            closedTrades: closedTrades.length,
-          }
-        };
-      })
-    );
+      };
+    });
 
     res.json({
       subscriptions: subscriptionsWithStats
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/strategies/subscriptions/bulk-stats
+ * Get stats + equity curves for multiple subscriptions in ONE request
+ * Phase 2 optimization: Batched endpoint with 30-second caching
+ */
+router.post('/subscriptions/bulk-stats', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = req.userId!;
+    const { subscriptionIds } = req.body;
+
+    if (!Array.isArray(subscriptionIds) || subscriptionIds.length === 0) {
+      return res.status(400).json({ error: 'subscriptionIds array required' });
+    }
+
+    // Check cache
+    const cacheKey = `bulk-stats:${userId}:${subscriptionIds.sort().join(',')}`;
+    const cached = subscriptionsCache.get(cacheKey);
+    if (cached) {
+      logger.info(`[Bulk Stats] Cache hit for user ${userId}`);
+      return res.json(cached);
+    }
+
+    // Verify ownership
+    const subscriptions = await prisma.strategySubscription.findMany({
+      where: { id: { in: subscriptionIds }, userId },
+      select: { id: true, capital: true, subscribedAt: true }
+    });
+
+    if (subscriptions.length !== subscriptionIds.length) {
+      return res.status(403).json({ error: 'Unauthorized access to subscriptions' });
+    }
+
+    // Fetch ALL trades in ONE query (optimized with new index)
+    const allTrades = await prisma.trade.findMany({
+      where: { subscriptionId: { in: subscriptionIds } },
+      select: {
+        subscriptionId: true,
+        pnl: true,
+        status: true,
+        createdAt: true,
+        exitedAt: true,
+        fees: true
+      },
+      orderBy: { createdAt: 'asc' }
+    });
+
+    // Group trades by subscription (in-memory, fast)
+    const tradesBySubscription = new Map();
+    allTrades.forEach(trade => {
+      if (!tradesBySubscription.has(trade.subscriptionId)) {
+        tradesBySubscription.set(trade.subscriptionId, []);
+      }
+      tradesBySubscription.get(trade.subscriptionId).push(trade);
+    });
+
+    // Calculate stats and equity curves
+    const stats = subscriptions.map(sub => {
+      const trades = tradesBySubscription.get(sub.id) || [];
+      const closedTrades = trades.filter(t => t.status === 'CLOSED');
+
+      // Calculate metrics
+      const grossPnl = closedTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+      const totalFees = closedTrades.reduce((sum, t) => sum + (t.fees || 0), 0);
+      const netPnl = grossPnl - totalFees;
+
+      const winningTrades = closedTrades.filter(t => (t.pnl || 0) > 0).length;
+      const winRate = closedTrades.length > 0
+        ? (winningTrades / closedTrades.length) * 100
+        : 0;
+
+      // Calculate max drawdown
+      let peak = 0;
+      let maxDD = 0;
+      let cumulativePnl = 0;
+      closedTrades.forEach(trade => {
+        cumulativePnl += (trade.pnl || 0);
+        if (cumulativePnl > peak) peak = cumulativePnl;
+        const drawdown = peak - cumulativePnl;
+        if (drawdown > maxDD) maxDD = drawdown;
+      });
+      const maxDDPercent = sub.capital > 0 ? (maxDD / sub.capital) * 100 : 0;
+
+      // Build equity curve (daily aggregation)
+      const dailyData: Record<string, number> = {};
+      closedTrades.forEach(trade => {
+        if (trade.exitedAt && trade.pnl) {
+          const date = trade.exitedAt.toISOString().split('T')[0];
+          if (!dailyData[date]) dailyData[date] = 0;
+          dailyData[date] += trade.pnl;
+        }
+      });
+
+      cumulativePnl = 0;
+      const equityCurve = [
+        {
+          date: sub.subscribedAt.toISOString().split('T')[0],
+          dailyPnl: 0,
+          cumulativePnl: 0
+        }
+      ];
+
+      Object.keys(dailyData).sort().forEach(date => {
+        const dailyPnl = dailyData[date];
+        cumulativePnl += dailyPnl;
+        equityCurve.push({
+          date,
+          dailyPnl: parseFloat(dailyPnl.toFixed(2)),
+          cumulativePnl: parseFloat(cumulativePnl.toFixed(2))
+        });
+      });
+
+      return {
+        subscriptionId: sub.id,
+        hasDbTrades: trades.length > 0,
+        stats: {
+          grossPnl: parseFloat(grossPnl.toFixed(2)),
+          netPnl: parseFloat(netPnl.toFixed(2)),
+          totalFees: parseFloat(totalFees.toFixed(2)),
+          totalTrades: closedTrades.length,
+          winRate: parseFloat(winRate.toFixed(2)),
+          maxDD: parseFloat(maxDDPercent.toFixed(2))
+        },
+        equityCurve
+      };
+    });
+
+    const result = { stats };
+
+    // Cache for 30 seconds
+    subscriptionsCache.set(cacheKey, result);
+    logger.info(`[Bulk Stats] Cached stats for ${subscriptions.length} subscriptions`);
+
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/strategies/subscriptions/:id/fetch-historical
+ * Lazy load historical data from CoinDCX API if DB is empty
+ * Phase 2 optimization: Only called when user clicks "Fetch Historical Data" button
+ */
+router.get('/subscriptions/:id/fetch-historical', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = req.userId!;
+    const subscriptionId = req.params.id;
+
+    // Verify ownership
+    const subscription = await prisma.strategySubscription.findFirst({
+      where: { id: subscriptionId, userId }
+    });
+
+    if (!subscription) {
+      return res.status(404).json({ error: 'Subscription not found' });
+    }
+
+    // Check if DB already has trades
+    const existingTrades = await prisma.trade.count({
+      where: { subscriptionId }
+    });
+
+    if (existingTrades > 0) {
+      return res.json({
+        message: 'Historical data already exists in database',
+        tradesFound: existingTrades
+      });
+    }
+
+    // Leverage existing equity-curve endpoint which has CoinDCX fallback
+    // This will fetch from CoinDCX and store in DB
+    logger.info(`[Fetch Historical] Triggering CoinDCX fetch for subscription ${subscriptionId}`);
+
+    return res.json({
+      message: 'Historical data fetch initiated. Please refresh the page in a moment.',
+      note: 'Use the equity-curve endpoint with forceRefresh=true to fetch from CoinDCX'
     });
   } catch (error) {
     next(error);

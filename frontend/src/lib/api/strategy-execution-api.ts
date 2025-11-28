@@ -291,6 +291,56 @@ export class StrategyExecutionAPI {
   }
 
   /**
+   * Get bulk stats for multiple subscriptions (Phase 2 optimization)
+   */
+  static async getBulkSubscriptionStats(
+    subscriptionIds: string[],
+    token: string
+  ): Promise<{ stats: Array<{
+    subscriptionId: string;
+    hasDbTrades: boolean;
+    stats: {
+      grossPnl: number;
+      netPnl: number;
+      totalFees: number;
+      totalTrades: number;
+      winRate: number;
+      maxDD: number;
+    };
+    equityCurve: Array<{
+      date: string;
+      dailyPnl: number;
+      cumulativePnl: number;
+    }>;
+  }> }> {
+    const response = await fetch(`${API_BASE_URL}/api/strategies/subscriptions/bulk-stats`, {
+      method: 'POST',
+      headers: getAuthHeaders(token),
+      body: JSON.stringify({ subscriptionIds }),
+    });
+
+    return handleResponse(response);
+  }
+
+  /**
+   * Fetch historical data from CoinDCX (lazy load, Phase 2 optimization)
+   */
+  static async fetchHistoricalData(
+    subscriptionId: string,
+    token: string
+  ): Promise<{ message: string; tradesFound?: number; note?: string }> {
+    const response = await fetch(
+      `${API_BASE_URL}/api/strategies/subscriptions/${subscriptionId}/fetch-historical`,
+      {
+        method: 'GET',
+        headers: getAuthHeaders(token),
+      }
+    );
+
+    return handleResponse(response);
+  }
+
+  /**
    * Get user's available balance from broker
    */
   static async getUserBalance(
