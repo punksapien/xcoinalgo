@@ -81,41 +81,47 @@ export default function SubscriptionsPage() {
 
       // Step 2: Fetch bulk stats + equity curves if subscriptions exist (Phase 2 optimization)
       if (subscriptionsData.length > 0) {
-        const subscriptionIds = subscriptionsData.map(sub => sub.id);
+        try {
+          const subscriptionIds = subscriptionsData.map(sub => sub.id);
 
-        const bulkStatsResponse = await StrategyExecutionAPI.getBulkSubscriptionStats(
-          subscriptionIds,
-          token
-        );
+          const bulkStatsResponse = await StrategyExecutionAPI.getBulkSubscriptionStats(
+            subscriptionIds,
+            token
+          );
 
-        // Step 3: Merge stats and equity curves
-        const statsMap = new Map(
-          bulkStatsResponse.stats.map(s => [s.subscriptionId, s])
-        );
+          // Step 3: Merge stats and equity curves
+          const statsMap = new Map(
+            bulkStatsResponse.stats.map(s => [s.subscriptionId, s])
+          );
 
-        const subscriptionsWithStats = subscriptionsData.map(sub => {
-          const statData = statsMap.get(sub.id);
-          if (statData) {
-            return {
-              ...sub,
-              liveStats: {
-                totalPnl: statData.stats.netPnl,
-                realizedPnl: statData.stats.netPnl,
-                totalTrades: statData.stats.totalTrades,
-                winRate: statData.stats.winRate,
-                openPositions: 0,
-                closedTrades: statData.stats.totalTrades,
-                maxDD: statData.stats.maxDD,
-                totalFees: statData.stats.totalFees
-              },
-              equityCurve: statData.equityCurve,
-              hasDbTrades: statData.hasDbTrades
-            };
-          }
-          return sub;
-        });
+          const subscriptionsWithStats = subscriptionsData.map(sub => {
+            const statData = statsMap.get(sub.id);
+            if (statData) {
+              return {
+                ...sub,
+                liveStats: {
+                  totalPnl: statData.stats.netPnl,
+                  realizedPnl: statData.stats.netPnl,
+                  totalTrades: statData.stats.totalTrades,
+                  winRate: statData.stats.winRate,
+                  openPositions: 0,
+                  closedTrades: statData.stats.totalTrades,
+                  maxDD: statData.stats.maxDD,
+                  totalFees: statData.stats.totalFees
+                },
+                equityCurve: statData.equityCurve,
+                hasDbTrades: statData.hasDbTrades
+              };
+            }
+            return sub;
+          });
 
-        setSubscriptions(subscriptionsWithStats);
+          setSubscriptions(subscriptionsWithStats);
+        } catch (bulkStatsError) {
+          // Graceful fallback: If bulk-stats fails (e.g., 404), just show basic subscription data
+          console.warn('Bulk stats endpoint not available, showing basic subscription data:', bulkStatsError);
+          setSubscriptions(subscriptionsData);
+        }
       } else {
         setSubscriptions([]);
       }
