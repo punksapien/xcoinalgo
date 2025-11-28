@@ -35,7 +35,8 @@ import {
   Calendar,
   TrendingUp,
   AlertCircle,
-  CheckCircle2
+  CheckCircle2,
+  FileDown
 } from "lucide-react";
 import {
   Pagination,
@@ -235,6 +236,47 @@ export default function StrategyManagementPage() {
   const openLogViewer = (strategy: Strategy) => {
     setLogViewerStrategy(strategy);
     setLogViewerOpen(true);
+  };
+
+  const handleDownloadReport = async (strategy: Strategy) => {
+    if (!token) return;
+
+    setActionLoading(strategy.id);
+    try {
+      // Call API endpoint to generate report
+      const response = await fetch(`/api/strategies/${strategy.id}/daily-report`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Failed to generate report' }));
+        throw new Error(errorData.error || 'Failed to generate report');
+      }
+
+      // Download the CSV
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `strategy_${strategy.code}_daily_report_${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      showSuccessToast('Success', 'Daily report downloaded successfully');
+    } catch (error) {
+      console.error('Download report failed:', error);
+      if (error instanceof Error) {
+        showErrorToast('Download Failed', error.message);
+      } else {
+        showErrorToast('Download Failed', 'Failed to download daily report');
+      }
+    } finally {
+      setActionLoading(null);
+    }
   };
 
   const filteredStrategies = strategies.filter(strategy => {
@@ -563,6 +605,20 @@ export default function StrategyManagementPage() {
                               <Eye className="h-4 w-4 text-blue-500" />
                             ) : (
                               <EyeOff className="h-4 w-4 text-gray-500" />
+                            )}
+                          </Button>
+
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDownloadReport(strategy)}
+                            disabled={actionLoading === strategy.id}
+                            title="Download Daily Report (till yesterday)"
+                          >
+                            {actionLoading === strategy.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <FileDown className="h-4 w-4 text-purple-500" />
                             )}
                           </Button>
 
