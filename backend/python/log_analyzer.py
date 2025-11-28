@@ -103,15 +103,23 @@ class XCoinAlgoLogAnalyzer:
         # Timestamp: 2025-11-21 14:45:08,778
         'timestamp': re.compile(r'^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})[,.]?\d*'),
 
-        # Signal: "New BUY signal at 84868.0000" or "New SELL signal at 3500.50"
+        # Signal: Various formats
+        # - "New BUY signal at 84868.0000"
+        # - "New BUY signal on 30m timeframe at 2777.74"
+        # - "BUY signal detected at 3500"
+        # - "LONG signal @ 85000"
         'signal': re.compile(
-            r'New\s+(BUY|SELL|LONG|SHORT)\s+signal\s+at\s+([\d.]+)',
+            r'(?:New\s+)?(BUY|SELL|LONG|SHORT)\s+signal\s+(?:on\s+\w+\s+timeframe\s+)?(?:at|@|detected\s+at|price[=:\s])\s*([\d.]+)',
             re.IGNORECASE
         ),
 
-        # Order: "Placing BUY MARKET order for 0.001 units..."
+        # Order: Various formats
+        # - "Placing BUY MARKET order for 0.001 units..."
+        # - "Placing SELL LIMIT order for 0.5 units"
+        # - "Creating BUY order for 0.002"
+        # - "Executing SELL market order, qty: 0.01"
         'order': re.compile(
-            r'Placing\s+(BUY|SELL)\s+(?:MARKET|LIMIT)\s+order\s+for\s+([\d.]+)\s+units',
+            r'(?:Placing|Creating|Executing|Submitting)\s+(BUY|SELL)\s+(?:MARKET|LIMIT)?\s*order\s+(?:for|qty[=:\s])?\s*([\d.]+)',
             re.IGNORECASE
         ),
 
