@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { AlertCircle, Trash2, AlertTriangle } from 'lucide-react';
+import { AlertCircle, Trash2, AlertTriangle, Search } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   Dialog,
@@ -70,10 +70,16 @@ export default function AdminUsersPage() {
   const [deletionImpact, setDeletionImpact] = useState<DeletionImpact | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // Filter users based on search term
+  const filteredUsers = users.filter(user =>
+    user.email.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   // Calculate pagination
-  const totalPages = Math.ceil(users.length / itemsPerPage);
-  const paginatedUsers = users.slice(
+  const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
+  const paginatedUsers = filteredUsers.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
@@ -208,9 +214,28 @@ export default function AdminUsersPage() {
           <CardDescription>
             View and manage user roles across the platform (Page {currentPage} of {totalPages || 1})
           </CardDescription>
+
+          {/* Search Bar */}
+          <div className="relative mt-4">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="text"
+              placeholder="Search by email..."
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1); // Reset to first page when searching
+              }}
+              className="pl-9"
+            />
+          </div>
         </CardHeader>
         <CardContent>
-          {users.length === 0 ? (
+          {filteredUsers.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-8 text-center">
+              {searchTerm ? `No users found matching "${searchTerm}"` : 'No users found in the platform.'}
+            </p>
+          ) : users.length === 0 ? (
             <p className="text-sm text-muted-foreground py-8 text-center">
               No users found in the platform.
             </p>
@@ -260,7 +285,7 @@ export default function AdminUsersPage() {
               ))}
 
               {/* Pagination */}
-              {users.length > itemsPerPage && (
+              {filteredUsers.length > itemsPerPage && (
                 <Pagination className="mt-6">
                   <PaginationContent>
                     <PaginationItem>
