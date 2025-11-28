@@ -150,11 +150,18 @@ router.post('/:id/subscribe', authenticate, async (req: AuthenticatedRequest, re
     const latestVersion = strategy.versions[0];
     const configData = (latestVersion?.configData as any) || {};
 
-    // Use provided values or fall back to strategy defaults
-    const finalRiskPerTrade = riskPerTrade ?? configData.risk_per_trade ?? execCfg.risk_per_trade ?? 0.02;
-    const finalLeverage = leverage ?? configData.leverage ?? execCfg.leverage ?? 10;
-    const finalMaxPositions = maxPositions ?? configData.max_positions ?? execCfg.max_positions ?? 1;
-    const finalMaxDailyLoss = maxDailyLoss ?? configData.max_daily_loss ?? execCfg.max_daily_loss ?? 0.05;
+    // Use provided values or fall back to strategy defaults (NO hardcoded fallbacks)
+    const finalRiskPerTrade = riskPerTrade ?? configData.risk_per_trade ?? execCfg.risk_per_trade;
+    const finalLeverage = leverage ?? configData.leverage ?? execCfg.leverage;
+    const finalMaxPositions = maxPositions ?? configData.max_positions ?? execCfg.max_positions;
+    const finalMaxDailyLoss = maxDailyLoss ?? configData.max_daily_loss ?? execCfg.max_daily_loss;
+
+    // Validate that strategy has required configuration
+    if (finalRiskPerTrade === undefined || finalLeverage === undefined) {
+      return res.status(400).json({
+        error: 'Strategy configuration is incomplete. Missing required fields: risk_per_trade or leverage'
+      });
+    }
 
     // Futures-only balance check (all strategies use futures)
     try {

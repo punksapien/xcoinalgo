@@ -3,12 +3,25 @@
  *
  * Maintains fast lookups: "Which strategies need BTC_USDT 5m candles?"
  * Uses Redis Sets for O(1) lookups with in-memory cache for super-fast access
+ *
+ * Pub/Sub Architecture:
+ * - When a strategy is registered/unregistered, publishes event to Redis
+ * - All backend processes subscribe and update their in-memory cache
+ * - This keeps all processes in sync without restart
  */
 
 import { redis } from '../../lib/redis-client'
 import { PrismaClient } from '@prisma/client'
+import Redis from 'ioredis'
 
 const prisma = new PrismaClient()
+
+// Create separate Redis subscriber client (required for pub/sub)
+const redisSubscriber = new Redis({
+  host: process.env.REDIS_HOST || 'localhost',
+  port: parseInt(process.env.REDIS_PORT || '6379'),
+  maxRetriesPerRequest: null,
+})
 
 interface CandleKey {
   symbol: string
@@ -21,10 +34,17 @@ interface StrategyConfig {
   resolution: string
 }
 
+interface StrategyRegistrationEvent {
+  strategyId: string
+  symbol: string
+  resolution: string
+}
+
 class StrategyRegistry {
   // In-memory cache for ultra-fast lookups
   private cache: Map<string, Set<string>> = new Map()
   private initialized = false
+  private pubSubInitialized = false
 
   /**
    * Initialize the registry from database on startup
@@ -136,10 +156,92 @@ class StrategyRegistry {
 
       this.initialized = true
       console.log('Strategy registry initialized successfully')
+
+      // Initialize pub/sub for real-time updates
+      await this.initializePubSub()
     } catch (error) {
       console.error('Failed to initialize strategy registry:', error)
       throw error
     }
+  }
+
+  /**
+   * Initialize Redis pub/sub to listen for strategy registration events
+   * This keeps all backend processes in sync without restart
+   */
+  private async initializePubSub(): Promise<void> {
+    if (this.pubSubInitialized) {
+      console.log('Pub/sub already initialized')
+      return
+    }
+
+    try {
+      console.log('🔔 Initializing strategy registry pub/sub...')
+
+      // Subscribe to registration events
+      await redisSubscriber.subscribe('strategy:register', 'strategy:unregister', (err, count) => {
+        if (err) {
+          console.error('❌ Failed to subscribe to strategy events:', err)
+          return
+        }
+        console.log(`✅ Subscribed to ${count} channels for strategy events`)
+      })
+
+      // Handle incoming messages
+      redisSubscriber.on('message', async (channel, message) => {
+        try {
+          const event: StrategyRegistrationEvent = JSON.parse(message)
+
+          if (channel === 'strategy:register') {
+            console.log(`🔔 Received strategy registration event: ${event.strategyId} for ${event.symbol}/${event.resolution}`)
+            await this.handleRegisterEvent(event)
+          } else if (channel === 'strategy:unregister') {
+            console.log(`🔔 Received strategy unregistration event: ${event.strategyId} from ${event.symbol}/${event.resolution}`)
+            await this.handleUnregisterEvent(event)
+          }
+        } catch (error) {
+          console.error('❌ Error handling pub/sub message:', error)
+        }
+      })
+
+      this.pubSubInitialized = true
+      console.log('✅ Strategy registry pub/sub initialized')
+    } catch (error) {
+      console.error('❌ Failed to initialize pub/sub:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Handle strategy registration event from pub/sub
+   */
+  private async handleRegisterEvent(event: StrategyRegistrationEvent): Promise<void> {
+    const candleKey = this.getCandleKey(event.symbol, event.resolution)
+
+    // Update in-memory cache
+    if (!this.cache.has(candleKey)) {
+      this.cache.set(candleKey, new Set())
+    }
+    this.cache.get(candleKey)!.add(event.strategyId)
+
+    console.log(`✅ Updated cache: Added ${event.strategyId} to ${candleKey}`)
+  }
+
+  /**
+   * Handle strategy unregistration event from pub/sub
+   */
+  private async handleUnregisterEvent(event: StrategyRegistrationEvent): Promise<void> {
+    const candleKey = this.getCandleKey(event.symbol, event.resolution)
+
+    // Update in-memory cache
+    this.cache.get(candleKey)?.delete(event.strategyId)
+
+    // Clean up empty sets
+    if (this.cache.get(candleKey)?.size === 0) {
+      this.cache.delete(candleKey)
+    }
+
+    console.log(`✅ Updated cache: Removed ${event.strategyId} from ${candleKey}`)
   }
 
   /**
@@ -170,7 +272,7 @@ class StrategyRegistry {
       // Add to Redis
       await redis.sadd(candleKey, strategyId)
 
-      // Update in-memory cache
+      // Update in-memory cache (local process only)
       if (!this.cache.has(candleKey)) {
         this.cache.set(candleKey, new Set())
       }
@@ -181,6 +283,14 @@ class StrategyRegistry {
         symbol,
         resolution,
       })
+
+      // 🔔 Publish event to notify other processes
+      const event: StrategyRegistrationEvent = {
+        strategyId,
+        symbol,
+        resolution
+      }
+      await redis.publish('strategy:register', JSON.stringify(event))
 
       console.log(`✅ Registered strategy ${strategyId} for ${symbol} ${resolution}`)
     } catch (error) {
@@ -203,7 +313,7 @@ class StrategyRegistry {
       // Remove from Redis
       await redis.srem(candleKey, strategyId)
 
-      // Update in-memory cache
+      // Update in-memory cache (local process only)
       this.cache.get(candleKey)?.delete(strategyId)
 
       // If no strategies left for this candle, clean up
@@ -216,7 +326,15 @@ class StrategyRegistry {
       // Remove strategy config
       await redis.del(`strategy:${strategyId}:config`)
 
-      console.log(`Unregistered strategy ${strategyId} from ${symbol} ${resolution}`)
+      // 🔔 Publish event to notify other processes
+      const event: StrategyRegistrationEvent = {
+        strategyId,
+        symbol,
+        resolution
+      }
+      await redis.publish('strategy:unregister', JSON.stringify(event))
+
+      console.log(`✅ Unregistered strategy ${strategyId} from ${symbol} ${resolution}`)
     } catch (error) {
       console.error(`Failed to unregister strategy ${strategyId}:`, error)
       throw error
