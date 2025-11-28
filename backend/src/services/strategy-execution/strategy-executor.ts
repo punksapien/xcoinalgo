@@ -296,7 +296,7 @@ export class StrategyExecutor {
     logger.info(`Fetching active subscribers for strategy ${strategyId}`);
 
     try {
-      // Fetch subscriptions with broker credentials
+      // Fetch subscriptions with broker credentials AND strategy config
       const subscriptions = await prisma.strategySubscription.findMany({
         where: {
           strategyId,
@@ -308,6 +308,11 @@ export class StrategyExecutor {
             select: {
               apiKey: true,     // Encrypted in DB
               apiSecret: true,  // Encrypted in DB
+            },
+          },
+          strategy: {
+            select: {
+              executionConfig: true,  // CRITICAL: Need this to resolve NULL values
             },
           },
         },
@@ -322,14 +327,37 @@ export class StrategyExecutor {
           }
           return true;
         })
-        .map((sub) => ({
-          user_id: sub.userId,
-          api_key: sub.brokerCredential!.apiKey,      // Plaintext
-          api_secret: sub.brokerCredential!.apiSecret, // Plaintext
-          capital: sub.capital,
-          leverage: sub.leverage,
-          risk_per_trade: sub.riskPerTrade,
-        }));
+        .map((sub) => {
+          // 🚨 CRITICAL: Resolve NULL leverage/riskPerTrade from strategy config
+          // This prevents Python from using hardcoded defaults (10, 0.02)
+          const strategyConfig = (sub.strategy?.executionConfig as any) || {};
+          const resolvedLeverage = sub.leverage ?? strategyConfig.leverage;
+          const resolvedRiskPerTrade = sub.riskPerTrade ?? strategyConfig.risk_per_trade;
+
+          // Validate that we have values (fail loudly if missing)
+          if (resolvedLeverage === undefined || resolvedLeverage === null) {
+            throw new Error(
+              `Subscription ${sub.id} has no leverage (neither override nor strategy default). ` +
+              `This will cause notional value errors!`
+            );
+          }
+
+          if (resolvedRiskPerTrade === undefined || resolvedRiskPerTrade === null) {
+            throw new Error(
+              `Subscription ${sub.id} has no riskPerTrade (neither override nor strategy default). ` +
+              `This will cause notional value errors!`
+            );
+          }
+
+          return {
+            user_id: sub.userId,
+            api_key: sub.brokerCredential!.apiKey,      // Plaintext
+            api_secret: sub.brokerCredential!.apiSecret, // Plaintext
+            capital: sub.capital,
+            leverage: resolvedLeverage,          // ✅ Always has value (or error thrown)
+            risk_per_trade: resolvedRiskPerTrade, // ✅ Always has value (or error thrown)
+          };
+        });
 
       logger.info(`Found ${subscribers.length} active subscribers for strategy ${strategyId}`);
 
