@@ -5,7 +5,6 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/auth';
 import { AuthenticatedRequest } from '../types';
-import prisma from '../utils/database';
 import { Logger } from '../utils/logger';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -27,33 +26,6 @@ router.get(
 
     try {
       logger.info(`Generating daily report for strategy ${strategyId} by user ${userId}`);
-
-      // Verify strategy exists and user has access
-      const strategy = await prisma.strategy.findUnique({
-        where: { id: strategyId },
-        select: {
-          id: true,
-          code: true,
-          name: true,
-          userId: true,
-          isPublic: true,
-        },
-      });
-
-      if (!strategy) {
-        return res.status(404).json({
-          success: false,
-          error: 'Strategy not found',
-        });
-      }
-
-      // Check access: owner or public strategy
-      if (strategy.userId !== userId && !strategy.isPublic) {
-        return res.status(403).json({
-          success: false,
-          error: 'You do not have permission to access this strategy',
-        });
-      }
 
       // Path to trading bot logs
       const logPath = path.join(
@@ -83,10 +55,10 @@ router.get(
         });
       }
 
-      // Execute Python analyzer
+      // Execute Python analyzer with --log flag
       logger.info(`Running log analyzer on ${logPath}`);
 
-      const pythonProcess = spawn('python3', [analyzerScript, logPath], {
+      const pythonProcess = spawn('python3', [analyzerScript, '--log', logPath], {
         stdio: ['ignore', 'pipe', 'pipe'],
       });
 
@@ -112,52 +84,91 @@ router.get(
         }
 
         try {
-          // Parse JSON output from Python script
-          const results = JSON.parse(stdout);
+          // The Python script with --log flag outputs a formatted table to stdout
+          // We need to parse it and convert to CSV
 
-          // Check if error was returned from Python
-          if (results.error) {
-            logger.error(`Analyzer error: ${results.error}`);
-            return res.status(500).json({
+          // Check if output contains "No data found"
+          if (stdout.includes('No data found in logs')) {
+            return res.status(404).json({
               success: false,
-              error: results.error,
+              error: 'No trading data found in logs',
             });
           }
 
-          // Check if we have data
-          if (!Array.isArray(results) || results.length === 0) {
+          // Parse the table output and extract data
+          const lines = stdout.split('\n').filter(line => line.trim());
+
+          // Find the header and separator lines
+          let headerIndex = -1;
+          let separatorIndex = -1;
+
+          for (let i = 0; i < lines.length; i++) {
+            if (lines[i].includes('Date') && lines[i].includes('Bot Signals')) {
+              headerIndex = i;
+              separatorIndex = i + 1;
+              break;
+            }
+          }
+
+          if (headerIndex === -1) {
+            logger.error('Could not find header in output');
+            return res.status(500).json({
+              success: false,
+              error: 'Invalid output format from analyzer',
+            });
+          }
+
+          // Extract headers
+          const headers = lines[headerIndex]
+            .split('|')
+            .map(h => h.trim())
+            .filter(h => h);
+
+          // Extract data rows (skip header, separator, and summary)
+          const dataRows = [];
+          for (let i = separatorIndex + 1; i < lines.length; i++) {
+            const line = lines[i];
+            // Stop if we hit the summary line
+            if (line.includes('Summary:')) break;
+            if (!line.includes('|')) continue;
+
+            const values = line.split('|').map(v => v.trim()).filter(v => v);
+            if (values.length === headers.length) {
+              dataRows.push(values);
+            }
+          }
+
+          if (dataRows.length === 0) {
             return res.status(404).json({
               success: false,
-              error: 'No trading data found in logs (or all data is from today)',
+              error: 'No trading data found in logs',
             });
           }
 
           // Convert to CSV
-          const headers = Object.keys(results[0]);
           const csvRows = [
             headers.join(','),
-            ...results.map((row: any) =>
-              headers.map((header) => {
-                const value = row[header];
-                // Escape commas and quotes in CSV
-                if (typeof value === 'string' && (value.includes(',') || value.includes('"'))) {
+            ...dataRows.map(row =>
+              row.map(value => {
+                // Escape commas and quotes
+                if (value.includes(',') || value.includes('"')) {
                   return `"${value.replace(/"/g, '""')}"`;
                 }
                 return value;
               }).join(',')
-            ),
+            )
           ];
 
           const csv = csvRows.join('\n');
 
-          // Set CSV headers
-          const filename = `strategy_${strategy.code}_daily_report_${new Date().toISOString().split('T')[0]}.csv`;
+          // Get strategy code from path for filename
+          const filename = `strategy_${strategyId}_daily_report_${new Date().toISOString().split('T')[0]}.csv`;
 
           res.setHeader('Content-Type', 'text/csv');
           res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
           res.send(csv);
 
-          logger.info(`Daily report generated successfully for strategy ${strategyId}: ${results.length} days`);
+          logger.info(`Daily report generated successfully for strategy ${strategyId}: ${dataRows.length} days`);
 
         } catch (parseError: any) {
           logger.error(`Failed to parse Python output: ${parseError.message}`);
