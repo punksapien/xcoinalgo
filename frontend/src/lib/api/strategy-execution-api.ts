@@ -16,14 +16,15 @@ const API_BASE_URL = typeof window === 'undefined' ? 'http://localhost:3001' : '
 
 export interface SubscriptionConfig {
   capital: number;
-  riskPerTrade: number;          // Required (no default)
-  leverage: number;               // Required (no default)
   brokerCredentialId: string;
-  // Optional fields (backend will apply defaults):
-  maxPositions?: number;          // Backend default: 1
-  maxDailyLoss?: number;          // Backend default: 0.05
-  slAtrMultiplier?: number;       // Backend default: 2.0
-  tpAtrMultiplier?: number;       // Backend default: 2.5
+  // IMPORTANT: riskPerTrade and leverage are NOT sent from frontend
+  // They are ALWAYS inherited from strategy's executionConfig
+  // Any attempt to override these from frontend will be rejected by backend
+  // Optional fields (backend will use strategy defaults if not provided):
+  maxPositions?: number;          // Backend default: strategy.max_positions or 1
+  maxDailyLoss?: number;          // Backend default: strategy.max_daily_loss or 0.05
+  slAtrMultiplier?: number;       // Backend default: strategy.slAtrMultiplier
+  tpAtrMultiplier?: number;       // Backend default: strategy.tpAtrMultiplier
 }
 
 export interface Subscription {

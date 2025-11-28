@@ -111,6 +111,20 @@ router.post('/:id/subscribe', authenticate, async (req: AuthenticatedRequest, re
       });
     }
 
+    // 🚨 CRITICAL SECURITY: REJECT if frontend tries to override risk_per_trade or leverage
+    // These MUST come from strategy config only, never from user input
+    if (riskPerTrade !== undefined) {
+      return res.status(403).json({
+        error: 'Forbidden: riskPerTrade cannot be set by users. It must come from strategy configuration only.'
+      });
+    }
+
+    if (leverage !== undefined) {
+      return res.status(403).json({
+        error: 'Forbidden: leverage cannot be set by users. It must come from strategy configuration only.'
+      });
+    }
+
     // Validate broker credentials exist and belong to user
     const brokerCredential = await prisma.brokerCredential.findFirst({
       where: {

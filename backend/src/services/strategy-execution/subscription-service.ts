@@ -43,6 +43,8 @@ class SubscriptionService {
   /**
    * Resolve subscription settings by merging user overrides with strategy defaults
    * NULL values = use strategy config default
+   *
+   * CRITICAL: NO HARDCODED FALLBACKS - Strategy MUST have config or we throw error
    */
   private resolveSubscriptionSettings(
     subscription: StrategySubscription & { strategy?: { executionConfig: any } }
@@ -54,11 +56,32 @@ class SubscriptionService {
   } {
     const strategyConfig = subscription.strategy?.executionConfig as any || {}
 
+    // Resolve values: subscription override > strategy config > ERROR (no fallback)
+    const riskPerTrade = subscription.riskPerTrade ?? strategyConfig.risk_per_trade
+    const leverage = subscription.leverage ?? strategyConfig.leverage
+    const maxPositions = subscription.maxPositions ?? strategyConfig.max_positions
+    const maxDailyLoss = subscription.maxDailyLoss ?? strategyConfig.max_daily_loss
+
+    // STRICT VALIDATION: Ensure strategy has required fields
+    if (riskPerTrade === undefined || riskPerTrade === null) {
+      throw new Error(
+        `Strategy ${subscription.strategyId} has no risk_per_trade configured. ` +
+        `Cannot execute without this critical parameter.`
+      )
+    }
+
+    if (leverage === undefined || leverage === null) {
+      throw new Error(
+        `Strategy ${subscription.strategyId} has no leverage configured. ` +
+        `Cannot execute without this critical parameter.`
+      )
+    }
+
     return {
-      riskPerTrade: subscription.riskPerTrade ?? strategyConfig.risk_per_trade ?? 0.02,
-      leverage: subscription.leverage ?? strategyConfig.leverage ?? 10,
-      maxPositions: subscription.maxPositions ?? strategyConfig.max_positions ?? 1,
-      maxDailyLoss: subscription.maxDailyLoss ?? strategyConfig.max_daily_loss ?? 0.05,
+      riskPerTrade,
+      leverage,
+      maxPositions: maxPositions ?? 1,  // These can have defaults as they're less critical
+      maxDailyLoss: maxDailyLoss ?? 0.05,
     }
   }
 
