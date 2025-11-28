@@ -12,11 +12,11 @@ Specifically designed for logs from the LiveTrader class that produce:
 Output columns:
 - Date
 - Bot Signals (unique signals per day - by price)
-- Total User Orders (order attempts across all users)
+- Total User Orders (SUCCESSFUL orders only - not failed ones)
 - Active Users (users processed that day)
-- Total Qty (sum of order quantities in asset units, e.g., ETH/BTC)
-- Buy Orders
-- Sell Orders
+- Total Qty (sum of quantities from SUCCESSFUL orders only)
+- Buy Orders (successful)
+- Sell Orders (successful)
 
 Usage:
     python log_analyzer.py --log strategy.log
@@ -40,11 +40,19 @@ class DailyStats:
     """Daily aggregated statistics"""
     date: str
     bot_signals: int = 0                    # Unique signals (by side+price)
-    total_user_orders: int = 0              # Total order attempts
+
+    # Successful orders only (for main output)
+    total_user_orders: int = 0              # Successful orders
+    total_qty: float = 0.0                  # Sum of successful order quantities
+    buy_orders: int = 0                     # Successful buy orders
+    sell_orders: int = 0                    # Successful sell orders
+
+    # Attempted orders (for detailed output)
+    orders_attempted: int = 0
+    orders_failed: int = 0
+    qty_attempted: float = 0.0
+
     active_users: Set[str] = field(default_factory=set)
-    total_qty: float = 0.0                  # Sum of quantities
-    buy_orders: int = 0
-    sell_orders: int = 0
 
     # Additional tracking for deeper analysis
     signal_prices: List[Tuple[str, float]] = field(default_factory=list)  # (side, price)
@@ -55,21 +63,23 @@ class DailyStats:
     positions_closed: int = 0
 
     def to_dict(self) -> Dict:
-        """Basic output matching screenshot format"""
+        """Basic output matching screenshot format - SUCCESSFUL orders only"""
         return {
             'Date': self.date,
             'Bot Signals': self.bot_signals,
-            'Total User Orders': self.total_user_orders,
+            'Total User Orders': self.total_user_orders,  # Successful only
             'Active Users': len(self.active_users),
-            'Total Qty': round(self.total_qty, 3),
-            'Buy Orders': self.buy_orders,
-            'Sell Orders': self.sell_orders,
+            'Total Qty': round(self.total_qty, 3),        # Successful only
+            'Buy Orders': self.buy_orders,                 # Successful only
+            'Sell Orders': self.sell_orders,               # Successful only
         }
 
     def to_detailed_dict(self) -> Dict:
         """Detailed output with error breakdown"""
         base = self.to_dict()
         base.update({
+            'Orders Attempted': self.orders_attempted,
+            'Orders Failed': self.orders_failed,
             'Cycles': self.cycles,
             'Positions Opened': self.positions_opened,
             'Positions Closed': self.positions_closed,
@@ -89,13 +99,15 @@ class XCoinAlgoLogAnalyzer:
     """
     Analyzer specifically for XCoinAlgo strategy logs.
 
+    Key feature: Only counts SUCCESSFUL orders (where "Order response:" appears)
+    Failed orders (400, 422 errors) are tracked separately but not counted in main metrics.
+
     Patterns matched:
-    - Signals: "New BUY signal at 84868.0000"
+    - Signals: "New BUY signal at 84868.0000" or "New BUY signal on 30m timeframe at 2777.74"
     - Orders: "Placing BUY MARKET order for 0.001 units..."
+    - Success: "Order response:" indicates order succeeded
     - Users: "[1/8] Processing user cmi2z1w8p0000p9ewt9vsjw9a"
-    - Cycles: "Cycle Start" or "Cycle complete"
     - Errors: "400 Client Error", "422 Client Error", "quantity is zero"
-    - Exits: "Stop Loss", "Take Profit 1", "Take Profit 2", "Trailing Hit"
     """
 
     # Regex patterns for XCoinAlgo logs
@@ -107,19 +119,19 @@ class XCoinAlgoLogAnalyzer:
         # - "New BUY signal at 84868.0000"
         # - "New BUY signal on 30m timeframe at 2777.74"
         # - "BUY signal detected at 3500"
-        # - "LONG signal @ 85000"
         'signal': re.compile(
-            r'(?:New\s+)?(BUY|SELL|LONG|SHORT)\s+signal\s+(?:on\s+\w+\s+timeframe\s+)?(?:at|@|detected\s+at|price[=:\s])\s*([\d.]+)',
+            r'(?:New\s+)?(BUY|SELL|LONG|SHORT)\s+signal\s+'
+            r'(?:on\s+\w+\s+timeframe\s+)?'
+            r'(?:at|@|detected\s+at|price[=:\s])\s*([\d.]+)',
             re.IGNORECASE
         ),
 
         # Order: Various formats
         # - "Placing BUY MARKET order for 0.001 units..."
         # - "Placing SELL LIMIT order for 0.5 units"
-        # - "Creating BUY order for 0.002"
-        # - "Executing SELL market order, qty: 0.01"
         'order': re.compile(
-            r'(?:Placing|Creating|Executing|Submitting)\s+(BUY|SELL)\s+(?:MARKET|LIMIT)?\s*order\s+(?:for|qty[=:\s])?\s*([\d.]+)',
+            r'(?:Placing|Creating|Executing|Submitting)\s+(BUY|SELL)\s+'
+            r'(?:MARKET|LIMIT)?\s*order\s+(?:for|qty[=:\s])?\s*([\d.]+)',
             re.IGNORECASE
         ),
 
@@ -159,7 +171,7 @@ class XCoinAlgoLogAnalyzer:
         'error_qty_zero': re.compile(r'quantity\s+is\s+zero|Calculated\s+quantity\s+is\s+zero', re.IGNORECASE),
         'error_balance': re.compile(r'balance\s+is\s+0|insufficient|not\s+enough', re.IGNORECASE),
 
-        # Order response (to confirm order was placed)
+        # Order response (indicates SUCCESS)
         'order_response': re.compile(r'Order\s+response:', re.IGNORECASE),
     }
 
@@ -167,20 +179,26 @@ class XCoinAlgoLogAnalyzer:
         self.daily_stats: Dict[str, DailyStats] = {}
         self.current_date: Optional[str] = None
         self.current_user: Optional[str] = None
-        self.seen_signals_today: Set[str] = set()  # Track unique signals per day
-        self.pending_order: bool = False  # Track if we're waiting for order result
+        self.seen_signals_today: Set[str] = set()
+
+        # Track pending order to determine success/failure
+        self.pending_order: Optional[Dict] = None  # {side, qty, date}
 
     def parse_file(self, filepath: str) -> Dict[str, DailyStats]:
         """Parse a single log file"""
         with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
             for line in f:
                 self._parse_line(line.strip())
+        # Finalize any remaining pending order
+        self._finalize_pending_order(success=False)
         return self.daily_stats
 
     def parse_content(self, content: str) -> Dict[str, DailyStats]:
         """Parse log content from string"""
         for line in content.strip().split('\n'):
             self._parse_line(line.strip())
+        # Finalize any remaining pending order
+        self._finalize_pending_order(success=False)
         return self.daily_stats
 
     def parse_directory(self, dirpath: str, pattern: str = "*.log") -> Dict[str, DailyStats]:
@@ -197,6 +215,32 @@ class XCoinAlgoLogAnalyzer:
             self.daily_stats[date] = DailyStats(date=date)
         return self.daily_stats[date]
 
+    def _finalize_pending_order(self, success: bool):
+        """Finalize a pending order as success or failure"""
+        if not self.pending_order:
+            return
+
+        date = self.pending_order['date']
+        if date not in self.daily_stats:
+            self.pending_order = None
+            return
+
+        stats = self.daily_stats[date]
+
+        if success:
+            # Count as successful order
+            stats.total_user_orders += 1
+            stats.total_qty += self.pending_order['qty']
+            if self.pending_order['side'] == 'BUY':
+                stats.buy_orders += 1
+            else:
+                stats.sell_orders += 1
+        else:
+            # Count as failed order
+            stats.orders_failed += 1
+
+        self.pending_order = None
+
     def _parse_line(self, line: str):
         """Parse a single log line"""
         if not line:
@@ -207,6 +251,8 @@ class XCoinAlgoLogAnalyzer:
         if ts_match:
             date_str = ts_match.group(1)
             if date_str != self.current_date:
+                # Finalize any pending order from previous day
+                self._finalize_pending_order(success=False)
                 self.current_date = date_str
                 self.seen_signals_today = set()
                 self.current_user = None
@@ -216,17 +262,54 @@ class XCoinAlgoLogAnalyzer:
 
         stats = self._get_or_create_stats(self.current_date)
 
-        # Check for cycle start
+        # ===== CHECK FOR ERRORS FIRST (before new orders) =====
+        # This catches errors from pending orders
+        is_error = False
+        if self.PATTERNS['error_400'].search(line):
+            stats.errors['400'] += 1
+            is_error = True
+        if self.PATTERNS['error_422'].search(line):
+            stats.errors['422'] += 1
+            is_error = True
+        if self.PATTERNS['error_qty_zero'].search(line):
+            stats.errors['qty_zero'] += 1
+            # Note: qty_zero happens BEFORE order placement, not an order failure
+        if self.PATTERNS['error_balance'].search(line):
+            stats.errors['balance'] += 1
+            is_error = True
+
+        # If error and we have a pending order, mark it as failed
+        if is_error and self.pending_order:
+            self._finalize_pending_order(success=False)
+            return
+
+        # ===== CHECK FOR ORDER SUCCESS =====
+        # "Order response:" indicates the order succeeded
+        if 'Order response:' in line and self.pending_order:
+            self._finalize_pending_order(success=True)
+            return
+
+        # "Successfully entered position" also indicates success
+        if self.PATTERNS['position_opened'].search(line):
+            stats.positions_opened += 1
+            if self.pending_order:
+                self._finalize_pending_order(success=True)
+
+        # ===== CHECK FOR CYCLE START =====
         if self.PATTERNS['cycle_start'].search(line):
             stats.cycles += 1
 
-        # Check for user processing
+        # ===== CHECK FOR USER =====
         user_match = self.PATTERNS['user'].search(line)
         if user_match:
+            # If moving to next user and have pending order, mark as failed (conservative)
+            if self.pending_order and self.current_user and self.current_user != user_match.group(3):
+                self._finalize_pending_order(success=False)
+
             self.current_user = user_match.group(3)
             stats.active_users.add(self.current_user)
 
-        # Check for signal
+        # ===== CHECK FOR SIGNAL =====
         signal_match = self.PATTERNS['signal'].search(line)
         if signal_match:
             side = signal_match.group(1).upper()
@@ -244,31 +327,32 @@ class XCoinAlgoLogAnalyzer:
                 stats.bot_signals += 1
                 stats.signal_prices.append((side, price))
 
-        # Check for order placement
+        # ===== CHECK FOR ORDER PLACEMENT =====
         order_match = self.PATTERNS['order'].search(line)
         if order_match:
+            # Finalize any previous pending order (shouldn't happen normally)
+            if self.pending_order:
+                self._finalize_pending_order(success=False)
+
             side = order_match.group(1).upper()
             qty = float(order_match.group(2))
 
-            stats.total_user_orders += 1
-            stats.total_qty += qty
+            # Store as pending - will be finalized on success or error
+            self.pending_order = {
+                'side': side,
+                'qty': qty,
+                'date': self.current_date
+            }
 
-            if side == 'BUY':
-                stats.buy_orders += 1
-            elif side == 'SELL':
-                stats.sell_orders += 1
+            # Track as attempted
+            stats.orders_attempted += 1
+            stats.qty_attempted += qty
 
-            self.pending_order = True
-
-        # Check for position opened
-        if self.PATTERNS['position_opened'].search(line):
-            stats.positions_opened += 1
-
-        # Check for position closed
+        # ===== CHECK FOR POSITION CLOSED =====
         if self.PATTERNS['position_closed'].search(line):
             stats.positions_closed += 1
 
-        # Check for exit reasons
+        # ===== CHECK FOR EXIT REASONS =====
         if self.PATTERNS['exit_sl'].search(line):
             stats.exits['stop_loss'] += 1
         if self.PATTERNS['exit_tp1'].search(line):
@@ -277,16 +361,6 @@ class XCoinAlgoLogAnalyzer:
             stats.exits['tp2'] += 1
         if self.PATTERNS['exit_trailing'].search(line):
             stats.exits['trailing'] += 1
-
-        # Check for errors
-        if self.PATTERNS['error_400'].search(line):
-            stats.errors['400'] += 1
-        if self.PATTERNS['error_422'].search(line):
-            stats.errors['422'] += 1
-        if self.PATTERNS['error_qty_zero'].search(line):
-            stats.errors['qty_zero'] += 1
-        if self.PATTERNS['error_balance'].search(line):
-            stats.errors['balance'] += 1
 
     def get_results(self, detailed: bool = False) -> List[Dict]:
         """Get results as list of dicts, sorted by date"""
