@@ -37,7 +37,6 @@ interface LiveStats {
 
 interface SubscriptionWithLiveStats extends Subscription {
   liveStats?: LiveStats;
-  hasDbTrades?: boolean;
   equityCurve?: Array<{
     date: string;
     dailyPnl: number;
@@ -109,8 +108,7 @@ export default function SubscriptionsPage() {
                   maxDD: statData.stats.maxDD,
                   totalFees: statData.stats.totalFees
                 },
-                equityCurve: statData.equityCurve,
-                hasDbTrades: statData.hasDbTrades
+                equityCurve: statData.equityCurve
               };
             }
             return sub;
@@ -132,19 +130,6 @@ export default function SubscriptionsPage() {
     } finally {
       setLoading(false);
       setRefreshing(false);
-    }
-  };
-
-  // Handler for lazy CoinDCX fetch (Phase 2 optimization)
-  const handleFetchHistorical = async (subscriptionId: string) => {
-    if (!token) return;
-
-    try {
-      await StrategyExecutionAPI.fetchHistoricalData(subscriptionId, token);
-      // Refresh subscriptions after fetching
-      await fetchSubscriptions();
-    } catch (err) {
-      console.error('Failed to fetch historical data:', err);
     }
   };
 
@@ -382,20 +367,6 @@ export default function SubscriptionsPage() {
                   ) : (
                     <div className="bg-muted/50 rounded-lg p-2 text-center text-[10px] text-muted-foreground">
                       No trading data yet
-                    </div>
-                  )}
-
-                  {/* Show button to fetch historical data if no DB trades (Phase 2 optimization) */}
-                  {subscription.hasDbTrades === false && (
-                    <div className="text-center">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleFetchHistorical(subscription.id)}
-                        className="text-xs"
-                      >
-                        📥 Fetch Historical Data from CoinDCX
-                      </Button>
                     </div>
                   )}
 
