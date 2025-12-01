@@ -151,7 +151,7 @@ export default function AdminStrategiesPage() {
         axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/admin/strategies`, {
           headers: { Authorization: authToken }
         }),
-        axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/admin/users`, {
+        axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/admin/users?limit=1000`, {
           headers: { Authorization: authToken }
         })
       ]);
