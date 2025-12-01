@@ -53,7 +53,7 @@ const navigation = [
   },
   {
     name: 'Access Requests',
-    href: '/admin/requests',
+    href: '/admin/access-requests',
     icon: Bell,
   },
 ];
