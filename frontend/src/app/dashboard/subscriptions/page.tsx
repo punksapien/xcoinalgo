@@ -339,42 +339,42 @@ export default function SubscriptionsPage() {
                   </div>
 
                   {/* Performance - Live Trading Results */}
-                  {subscription.liveStats ? (
+                  {/* TODO: Re-enable when live P&L data is properly implemented */}
+                  {false && subscription.liveStats ? (
                     <div className="bg-blue-50 dark:bg-blue-950/20 rounded-lg p-2 border border-blue-200 dark:border-blue-800">
                       <div className="grid grid-cols-2 gap-2 text-sm">
                         <div>
                           <p className="text-[10px] text-muted-foreground">Total P&L</p>
-                          <p className={`font-bold text-xs ${subscription.liveStats.totalPnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            ₹{subscription.liveStats.totalPnl.toFixed(2)}
+                          <p className={`font-bold text-xs ${subscription.liveStats!.totalPnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            ₹{subscription.liveStats!.totalPnl.toFixed(2)}
                           </p>
                         </div>
                         <div>
                           <p className="text-[10px] text-muted-foreground">Total Trades</p>
-                          <p className="font-semibold text-xs">{subscription.liveStats.totalTrades}</p>
+                          <p className="font-semibold text-xs">{subscription.liveStats!.totalTrades}</p>
                         </div>
                         <div>
                           <p className="text-[10px] text-muted-foreground">Win Rate</p>
                           <p className="font-semibold text-xs text-green-600">
-                            {subscription.liveStats.winRate.toFixed(1)}%
+                            {subscription.liveStats!.winRate.toFixed(1)}%
                           </p>
                         </div>
                         <div>
                           <p className="text-[10px] text-muted-foreground">Open Positions</p>
-                          <p className="font-semibold text-xs text-blue-600">{subscription.liveStats.openPositions}</p>
+                          <p className="font-semibold text-xs text-blue-600">{subscription.liveStats!.openPositions}</p>
                         </div>
                       </div>
                     </div>
-                  ) : (
-                    <div className="bg-muted/50 rounded-lg p-2 text-center text-[10px] text-muted-foreground">
-                      No trading data yet
-                    </div>
-                  )}
+                  ) : null}
 
                   {/* Equity Curve Chart with Stats */}
-                  <div className="space-y-2">
-                    <p className="text-xs text-muted-foreground">Performance Analytics</p>
-                    <EquityCurve subscriptionId={subscription.id} height={100} showStats={true} />
-                  </div>
+                  {/* TODO: Re-enable when live P&L data is properly implemented */}
+                  {false && (
+                    <div className="space-y-2">
+                      <p className="text-xs text-muted-foreground">Performance Analytics</p>
+                      <EquityCurve subscriptionId={subscription.id} height={100} showStats={true} />
+                    </div>
+                  )}
 
                   {/* Metadata */}
                   <div className="flex items-center gap-2 text-[10px] text-muted-foreground mt-auto pt-2">
@@ -474,8 +474,8 @@ export default function SubscriptionsPage() {
                 <div className="flex items-center gap-2">
                   <DollarSign className="h-5 w-5 text-purple-500" />
                   <div>
-                    <div className={`text-2xl font-bold ${subscriptions.reduce((sum, s) => sum + (s.liveStats?.totalPnl || 0), 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      ₹{subscriptions.reduce((sum, s) => sum + (s.liveStats?.totalPnl || 0), 0).toFixed(2)}
+                    <div className="text-2xl font-bold text-muted-foreground">
+                      N/A
                     </div>
                     <div className="text-sm text-gray-600">Total P&L</div>
                   </div>

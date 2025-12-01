@@ -235,15 +235,16 @@ export default function PositionsPage() {
         </div>
 
         {/* P&L Summary Cards */}
-        {pnlData && (
+        {/* TODO: Re-enable when P&L data is properly implemented */}
+        {false && pnlData && (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <div className="bg-card p-6 rounded-lg border">
               <div className="flex items-center">
                 <DollarSign className="h-5 w-5 text-green-500" />
                 <div className="ml-3">
                   <p className="text-sm font-medium text-muted-foreground">Total P&L</p>
-                  <p className={`text-2xl font-bold ${pnlData.summary.totalPnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {formatCurrency(pnlData.summary.totalPnl)}
+                  <p className={`text-2xl font-bold ${pnlData!.summary.totalPnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {formatCurrency(pnlData!.summary.totalPnl)}
                   </p>
                 </div>
               </div>
@@ -254,8 +255,8 @@ export default function PositionsPage() {
                 <TrendingUp className="h-5 w-5 text-blue-500" />
                 <div className="ml-3">
                   <p className="text-sm font-medium text-muted-foreground">Unrealized P&L</p>
-                  <p className={`text-2xl font-bold ${pnlData.summary.totalUnrealizedPnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {formatCurrency(pnlData.summary.totalUnrealizedPnl)}
+                  <p className={`text-2xl font-bold ${pnlData!.summary.totalUnrealizedPnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {formatCurrency(pnlData!.summary.totalUnrealizedPnl)}
                   </p>
                 </div>
               </div>
@@ -267,7 +268,7 @@ export default function PositionsPage() {
                 <div className="ml-3">
                   <p className="text-sm font-medium text-muted-foreground">Win Rate</p>
                   <p className="text-2xl font-bold text-foreground">
-                    {pnlData.summary.winRate.toFixed(1)}%
+                    {pnlData!.summary.winRate.toFixed(1)}%
                   </p>
                 </div>
               </div>
