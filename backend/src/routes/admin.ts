@@ -432,11 +432,18 @@ router.put('/strategies/:id', async (req: AuthenticatedRequest, res, next) => {
       return res.status(400).json({ error: 'Name, code, and author are required' });
     }
 
-    // Build execution config if minMargin is provided
+    // Get existing strategy to preserve executionConfig
+    const existingStrategy = await prisma.strategy.findUnique({
+      where: { id: strategyId },
+      select: { executionConfig: true }
+    });
+
+    // MERGE with existing execution config (don't overwrite!)
     let executionConfig: any = undefined;
     if (minMargin !== undefined) {
       executionConfig = {
-        minMargin: parseFloat(minMargin)
+        ...(existingStrategy?.executionConfig as any || {}),  // Preserve existing config
+        minMargin: parseFloat(minMargin)  // Update minMargin
       };
     }
 

@@ -156,9 +156,9 @@ router.post('/login', loginLimiter, async (req, res, next) => {
       });
     }
 
-    // Find user
-    const user = await prisma.user.findUnique({
-      where: { email }
+    // Find user (case-insensitive email lookup to handle different casing)
+    const user = await prisma.user.findFirst({
+      where: { email: { equals: email, mode: 'insensitive' } }
     });
 
     if (!user) {
