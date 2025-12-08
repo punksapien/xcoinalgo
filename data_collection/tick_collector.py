@@ -595,6 +595,13 @@ Examples:
     )
 
     parser.add_argument(
+        "--trade-limit",
+        type=int,
+        default=DEFAULT_CONFIG["trade_limit"],
+        help=f"Max trades per API request (default: {DEFAULT_CONFIG['trade_limit']})"
+    )
+
+    parser.add_argument(
         "--log-level", "-l",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         default=DEFAULT_CONFIG["log_level"],
@@ -621,7 +628,7 @@ def main():
         "snapshot_poll_interval": args.snapshot_interval,
         "log_level": args.log_level,
         "log_file": args.log_file,
-        "trade_limit": DEFAULT_CONFIG["trade_limit"],
+        "trade_limit": args.trade_limit,
         "request_timeout": DEFAULT_CONFIG["request_timeout"],
         "retry_attempts": DEFAULT_CONFIG["retry_attempts"],
     }

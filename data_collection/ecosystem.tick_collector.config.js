@@ -4,7 +4,7 @@ module.exports = {
       name: "tick-collector-uni",
       script: "tick_collector.py",
       interpreter: "python3",
-      args: "--pair B-UNI_USDT --db /home/ubuntu/tick_data/uni_ticks.db --log-file /home/ubuntu/tick_data/uni_collector.log",
+      args: "--pair B-UNI_USDT --db /home/ubuntu/tick_data/uni_ticks.db --log-file /home/ubuntu/tick_data/uni_collector.log --trade-interval 0.5 --trade-limit 500",
       cwd: "/home/ubuntu/xcoinalgo/data_collection",
       autorestart: true,
       watch: false,
