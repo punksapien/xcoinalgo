@@ -392,6 +392,10 @@ class TickCollector:
             "start_time": None,
         }
 
+        # Duration limit (None = run indefinitely)
+        self.duration_hours = config.get("duration_hours")
+        self.duration_seconds = self.duration_hours * 3600 if self.duration_hours else None
+
         # Track last seen trade to avoid duplicates
         self._last_trade_ts = 0
 
@@ -492,6 +496,8 @@ class TickCollector:
         self.logger.info(f"TICK COLLECTOR STARTING")
         self.logger.info(f"Pair: {self.pair}")
         self.logger.info(f"Database: {self.config['db_path']}")
+        duration_str = f"{self.duration_hours}h" if self.duration_hours else "indefinite"
+        self.logger.info(f"Duration: {duration_str}")
         self.logger.info("=" * 60)
 
         # Verify pair exists
@@ -544,9 +550,16 @@ class TickCollector:
         self.db.close()
 
     def wait(self):
-        """Wait for collector to be stopped."""
+        """Wait for collector to be stopped or duration to expire."""
         try:
             while self.running:
+                # Check if duration limit reached
+                if self.duration_seconds and self.stats["start_time"]:
+                    elapsed = time.time() - self.stats["start_time"]
+                    if elapsed >= self.duration_seconds:
+                        self.logger.info(f"Duration limit reached ({self.duration_hours}h). Stopping...")
+                        self.stop()
+                        break
                 time.sleep(1)
         except KeyboardInterrupt:
             pass
@@ -602,6 +615,13 @@ Examples:
     )
 
     parser.add_argument(
+        "--duration",
+        type=float,
+        default=None,
+        help="Duration to run in hours (default: None = run indefinitely)"
+    )
+
+    parser.add_argument(
         "--log-level", "-l",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         default=DEFAULT_CONFIG["log_level"],
@@ -629,6 +649,7 @@ def main():
         "log_level": args.log_level,
         "log_file": args.log_file,
         "trade_limit": args.trade_limit,
+        "duration_hours": args.duration,
         "request_timeout": DEFAULT_CONFIG["request_timeout"],
         "retry_attempts": DEFAULT_CONFIG["retry_attempts"],
     }
