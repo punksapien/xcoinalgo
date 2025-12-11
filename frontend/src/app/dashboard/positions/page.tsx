@@ -5,21 +5,16 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { apiClient, ApiError } from '@/lib/api-client';
 import {
-  TrendingUp,
-  TrendingDown,
   DollarSign,
   Activity,
-  RefreshCw,
   X,
-  Eye,
   BarChart3,
   Clock,
-  Target,
-  Wallet,
   ChevronRight,
   ArrowUpRight,
   ArrowDownRight,
-  Layers
+  Layers,
+  IndianRupee
 } from 'lucide-react';
 import {
   Dialog,
@@ -129,7 +124,6 @@ export default function PositionsPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [pnlData, setPnlData] = useState<PnLData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Main page tabs: Strategy Cards vs Global Order History
@@ -142,6 +136,12 @@ export default function PositionsPage() {
   // Global order filter
   const [orderFilter, setOrderFilter] = useState<'all' | 'open' | 'closed'>('all');
 
+  // Currency toggle: USD or INR
+  const [currency, setCurrency] = useState<'USD' | 'INR'>('INR');
+  // USDT/INR rate - update this value every few months from CoinDCX ticker API
+  // Last updated: Dec 2025 (fetch from: https://api.coindcx.com/exchange/ticker -> USDTINR)
+  const USDT_INR_RATE = 91.43;
+
   const { token, isAuthenticated } = useAuth();
   const router = useRouter();
 
@@ -149,11 +149,10 @@ export default function PositionsPage() {
   // Data Fetching
   // ============================================================================
 
-  const fetchData = async () => {
+  const fetchData = async (silent = false) => {
     if (!token) {
       setError('Not authenticated');
-      setLoading(false);
-      setRefreshing(false);
+      if (!silent) setLoading(false);
       return;
     }
 
@@ -172,10 +171,12 @@ export default function PositionsPage() {
       if (err instanceof ApiError && err.status === 401) {
         return;
       }
-      setError(err instanceof Error ? err.message : 'Failed to load data');
+      // Only show error on initial load, not on silent refreshes
+      if (!silent) {
+        setError(err instanceof Error ? err.message : 'Failed to load data');
+      }
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -189,21 +190,15 @@ export default function PositionsPage() {
     }
   }, [token, isAuthenticated]);
 
-  // Auto-refresh every 10 seconds
+  // Auto-refresh every 10 seconds (silent)
   useEffect(() => {
     const interval = setInterval(() => {
       if (token && !loading) {
-        setRefreshing(true);
-        fetchData();
+        fetchData(true);
       }
     }, 10000);
     return () => clearInterval(interval);
   }, [token, loading]);
-
-  const handleRefresh = () => {
-    setRefreshing(true);
-    fetchData();
-  };
 
   // ============================================================================
   // Aggregate positions/orders into strategy summaries
@@ -300,13 +295,22 @@ export default function PositionsPage() {
   // Helpers
   // ============================================================================
 
-  const formatCurrency = (value: number) => {
+  const formatCurrency = (valueInUsdt: number) => {
+    if (currency === 'INR') {
+      const valueInInr = valueInUsdt * USDT_INR_RATE;
+      return new Intl.NumberFormat('en-IN', {
+        style: 'currency',
+        currency: 'INR',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(valueInInr);
+    }
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    }).format(value);
+    }).format(valueInUsdt);
   };
 
   const formatPercent = (value: number) => {
@@ -364,14 +368,31 @@ export default function PositionsPage() {
               Monitor your active positions, orders, and trading performance
             </p>
           </div>
-          <button
-            onClick={handleRefresh}
-            disabled={refreshing}
-            className="inline-flex items-center px-4 py-2 border border-input bg-background hover:bg-accent hover:text-accent-foreground rounded-md text-sm font-medium transition-colors"
-          >
-            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
+          {/* Currency Toggle */}
+          <div className="flex items-center gap-1 bg-muted p-1 rounded-lg">
+            <button
+              onClick={() => setCurrency('INR')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                currency === 'INR'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <IndianRupee className="h-4 w-4" />
+              INR
+            </button>
+            <button
+              onClick={() => setCurrency('USD')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                currency === 'USD'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <DollarSign className="h-4 w-4" />
+              USD
+            </button>
+          </div>
         </div>
 
         {/* Main Tab Navigation */}
