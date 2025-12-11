@@ -406,6 +406,7 @@ model StrategySubscription {
   strategy         Strategy          @relation(fields: [strategyId], references: [id], onDelete: Cascade)
   brokerCredential BrokerCredential? @relation(fields: [brokerCredentialId], references: [id], onDelete: SetNull)
   trades           Trade[]
+  tradeCycles      TradeCycle[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -501,6 +502,7 @@ model Trade {
 
   // Relations
   subscription StrategySubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  tradeOrders  TradeOrder[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -512,6 +514,108 @@ model Trade {
   @@index([status, createdAt])  // For efficient filtering on status + date range
   @@index([positionId])
   @@map("trades")
+}
+
+// ============================================
+// Trade Cycle Tracking (Forensic Audit Trail)
+// ============================================
+
+model TradeCycle {
+  id             String   @id @default(cuid())
+  subscriptionId String
+  cycleNumber    Int      // Auto-incrementing per subscription (like Tradetron's counter)
+
+  // Cycle metadata
+  strategySignal String?  // "Long RSI Strategy", "Short MACD Crossover"
+  symbol         String
+
+  // Timing
+  openedAt       DateTime
+  closedAt       DateTime?
+
+  // Status
+  status         String   // "OPEN", "CLOSED", "PARTIAL"
+
+  // Entry position
+  entryOrderIds  Json     // Array of entry order IDs/cuid
+  entryPrice     Float    // Average entry price
+  totalQuantity  Float    // Total position size
+
+  // Exit position
+  exitOrderIds   Json?    // Array of exit order IDs (TP1, TP2, SL)
+  exitPrice      Float?   // Average exit price
+  exitReason     String?  // "take_profit", "stop_loss", "signal_reversal", "manual"
+
+  // P&L for this cycle
+  grossPnl       Float?
+  netPnl         Float?   // After fees
+  fees           Float    @default(0)
+  pnlPercentage  Float?
+
+  // Risk metrics
+  maxDrawdown    Float?   // Worst unrealized loss during cycle
+  holdingTime    Float?   // Minutes from open to close
+
+  // Relations
+  subscription   StrategySubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  orders         TradeOrder[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([subscriptionId, cycleNumber])
+  @@index([subscriptionId, status])
+  @@index([openedAt])
+  @@index([subscriptionId, openedAt])
+  @@map("trade_cycles")
+}
+
+model TradeOrder {
+  id          String   @id @default(cuid())
+  cycleId     String
+  tradeId     String?  // Link to existing Trade model (optional)
+
+  // Order details
+  orderType   String   // "ENTRY", "TP1", "TP2", "SL", "EXIT"
+  side        String   // "buy", "sell"
+  quantity    Float
+  price       Float?
+  filledPrice Float?
+  filledQuantity Float?
+
+  // Exchange data
+  exchangeOrderId  String?
+  clientOrderId    String?  // xcoin_{bot_code}_{timestamp}_{en|ex}
+
+  // Status
+  status           String   // "pending", "filled", "partial", "rejected", "cancelled"
+  statusMessage    String?  // Error message if rejected
+
+  // Timing (millisecond precision for forensic analysis)
+  signalGeneratedAt DateTime  // When strategy generated signal
+  orderPlacedAt     DateTime? // When sent to exchange
+  orderFilledAt     DateTime? // When exchange confirmed fill
+
+  // Slippage tracking
+  expectedPrice    Float?
+  slippage         Float?   // Difference between expected and filled (in %)
+  slippageAmount   Float?   // Absolute slippage amount
+
+  // Fees
+  fees             Float    @default(0)
+
+  // Relations
+  cycle       TradeCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  trade       Trade?     @relation(fields: [tradeId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([cycleId])
+  @@index([clientOrderId])
+  @@index([exchangeOrderId])
+  @@index([signalGeneratedAt])
+  @@map("trade_orders")
 }
 
 // ============================================
