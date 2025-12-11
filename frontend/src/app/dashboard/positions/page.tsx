@@ -138,12 +138,23 @@ export default function PositionsPage() {
 
   // Currency toggle: USD or INR
   const [currency, setCurrency] = useState<'USD' | 'INR'>('INR');
-  // USDT/INR rate - update this value every few months from CoinDCX ticker API
-  // Last updated: Dec 2025 (fetch from: https://api.coindcx.com/exchange/ticker -> USDTINR)
-  const USDT_INR_RATE = 91.43;
+  const [usdtInrRate, setUsdtInrRate] = useState<number>(89.0); // Default fallback
 
   const { token, isAuthenticated } = useAuth();
   const router = useRouter();
+
+  // Fetch USDT/INR rate from backend (cached, updated every 4 months by cron)
+  const fetchConversionRate = async () => {
+    try {
+      const data = await apiClient.get<{ rates: { USDT_INR: number } }>('/api/settings/conversion-rates');
+      if (data.rates?.USDT_INR) {
+        setUsdtInrRate(data.rates.USDT_INR);
+      }
+    } catch (err) {
+      console.error('Failed to fetch conversion rate:', err);
+      // Keep default rate on error
+    }
+  };
 
   // ============================================================================
   // Data Fetching
@@ -187,6 +198,7 @@ export default function PositionsPage() {
     }
     if (token) {
       fetchData();
+      fetchConversionRate(); // Fetch conversion rate once on mount
     }
   }, [token, isAuthenticated]);
 
@@ -297,7 +309,7 @@ export default function PositionsPage() {
 
   const formatCurrency = (valueInUsdt: number) => {
     if (currency === 'INR') {
-      const valueInInr = valueInUsdt * USDT_INR_RATE;
+      const valueInInr = valueInUsdt * usdtInrRate;
       return new Intl.NumberFormat('en-IN', {
         style: 'currency',
         currency: 'INR',

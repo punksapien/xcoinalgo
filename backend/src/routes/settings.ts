@@ -202,4 +202,26 @@ export async function authenticateApiKey(apiKey: string): Promise<{ userId: stri
   }
 }
 
+// GET /api/settings/conversion-rates - Get currency conversion rates (public endpoint)
+router.get('/conversion-rates', async (_req, res, next) => {
+  try {
+    const usdtInrConfig = await prisma.systemConfig.findUnique({
+      where: { key: 'USDT_INR_RATE' }
+    });
+
+    // Default fallback if not set
+    const usdtInrRate = usdtInrConfig ? parseFloat(usdtInrConfig.value) : 89.0;
+
+    res.json({
+      rates: {
+        USDT_INR: usdtInrRate,
+      },
+      updatedAt: usdtInrConfig?.updatedAt || null,
+    });
+  } catch (error) {
+    console.error('Error fetching conversion rates:', error);
+    next(error);
+  }
+});
+
 export { router as settingsRoutes };

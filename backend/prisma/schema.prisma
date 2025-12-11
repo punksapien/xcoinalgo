@@ -647,3 +647,15 @@ enum EmailStatus {
   FAILED     // Send failed
   OPENED     // User opened email
 }
+
+// ============================================
+// System Configuration
+// ============================================
+
+model SystemConfig {
+  key       String   @id // e.g., "USDT_INR_RATE"
+  value     String   // The value (stored as string, parse as needed)
+  updatedAt DateTime @updatedAt
+
+  @@map("system_config")
+}
