@@ -24,6 +24,7 @@ import { clientRoutes } from './routes/client';
 import { adminRoutes } from './routes/admin';
 import { strategyInviteRoutes } from './routes/strategy-invite';
 import strategyDailyReportRoutes from './routes/strategy-daily-report';
+import { tradeCyclesRoutes } from './routes/trade-cycles';
 import { errorHandler } from './middleware/errorHandler';
 import { startHealthCheckMonitoring } from './services/strategyExecutor';
 import { startOrderMonitoring } from './workers/order-monitor';
@@ -138,6 +139,7 @@ app.use('/api/marketplace', marketplaceRoutes);
 app.use('/api/market-data', marketDataRoutes);
 app.use('/api/client', clientRoutes); // Client dashboard routes
 app.use('/api/admin', adminRoutes); // Admin dashboard routes
+app.use('/api/trade-cycles', tradeCyclesRoutes); // Trade cycle forensic audit
 
 // Error handling middleware
 app.use(errorHandler);
