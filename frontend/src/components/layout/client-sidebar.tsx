@@ -7,8 +7,7 @@ import { cn } from '@/lib/utils';
 import {
   LayoutDashboard,
   TrendingUp,
-  Link2,
-  Bell,
+  Shield,
   Moon,
   Sun,
   LogOut,
@@ -19,7 +18,7 @@ import { useTheme } from '@/lib/theme';
 
 const navigation = [
   {
-    name: 'Overview',
+    name: 'Dashboard',
     href: '/client',
     icon: LayoutDashboard,
   },
@@ -34,14 +33,9 @@ const navigation = [
     icon: Users,
   },
   {
-    name: 'Invite Links',
-    href: '/client/invites',
-    icon: Link2,
-  },
-  {
-    name: 'Access Requests',
-    href: '/client/requests',
-    icon: Bell,
+    name: 'Access Management',
+    href: '/client/access',
+    icon: Shield,
   },
 ];
 

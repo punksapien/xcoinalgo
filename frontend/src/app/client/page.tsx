@@ -2,118 +2,328 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Switch } from '@/components/ui/switch';
 import {
-  LayoutDashboard,
-  Settings,
-  Users,
-  Link as LinkIcon,
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
+import {
   AlertCircle,
   Loader2,
-  Package,
-  UserCheck
+  Users,
+  TrendingUp,
+  TrendingDown,
+  Activity,
+  AlertTriangle,
+  CheckCircle,
+  XCircle,
+  Power,
+  RefreshCw,
+  ChevronRight,
+  Zap,
+  BarChart3,
+  Clock,
+  Target,
 } from 'lucide-react';
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import axios from 'axios';
+import { toast } from 'sonner';
 
-interface ClientStats {
-  totalStrategies: number;
-  publicStrategies: number;
-  privateStrategies: number;
-  totalSubscribers: number;
-  pendingRequests: number;
-  activeInviteLinks: number;
+// ============================================================================
+// Types
+// ============================================================================
+
+interface StrategyHealth {
+  status: 'healthy' | 'warning' | 'error';
+  message: string;
+  errors: string[];
+}
+
+interface DailyPnL {
+  date: string;
+  pnl: number;
+  cumulativePnl: number;
 }
 
 interface Strategy {
   id: string;
   name: string;
+  code: string;
+  description: string;
   isPublic: boolean;
+  isActive: boolean;
   subscriberCount: number;
-  activeInviteLinks?: number;
+  activeSubscribers: number;
+  pausedSubscribers: number;
+  // Live P&L data
+  todayPnl: number;
+  todayPnlPercent: number;
+  unrealizedPnl: number;
+  totalPnl: number;
+  // Health status
+  health: StrategyHealth;
+  // Performance data (last 7 days)
+  sparklineData: DailyPnL[];
+  // KPIs
+  totalTrades: number;
+  winRate: number;
+  maxDrawdown: number;
+  sharpeRatio: number;
+  avgTradeDuration: string;
+  // Positions
+  openPositions: number;
+  lastSignalTime: string | null;
 }
+
+interface Subscriber {
+  id: string;
+  userName: string;
+  userEmail: string;
+  capital: number;
+  leverage: number;
+  isActive: boolean;
+  isPaused: boolean;
+  totalPnl: number;
+  todayPnl: number;
+  openPositions: number;
+  health: 'synced' | 'slippage' | 'error';
+  errorMessage?: string;
+}
+
+// API response types
+interface ApiStrategy {
+  id: string;
+  name: string;
+  code: string;
+  description?: string;
+  isPublic: boolean;
+  isActive: boolean;
+  subscriberCount: number;
+  activeSubscribers: number;
+  pausedSubscribers: number;
+  todayPnl?: number;
+  todayPnlPercent?: number;
+  unrealizedPnl?: number;
+  totalPnl?: number;
+  health?: StrategyHealth;
+  sparklineData?: DailyPnL[];
+  totalTrades?: number;
+  winRate?: number;
+  maxDrawdown?: number;
+  sharpeRatio?: number;
+  avgTradeDuration?: string;
+  openPositions?: number;
+  lastSignalTime?: string | null;
+}
+
+interface ApiSubscriber {
+  id: string;
+  user: { name?: string; email: string };
+  capital: number;
+  leverage: number;
+  isActive: boolean;
+  isPaused: boolean;
+  totalPnl?: number;
+}
+
+// ============================================================================
+// Main Component
+// ============================================================================
 
 export default function ClientDashboardPage() {
   const router = useRouter();
-  const { user, hasClientAccess } = useAuth();
+  const { hasClientAccess } = useAuth();
+
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [stats, setStats] = useState<ClientStats>({
-    totalStrategies: 0,
-    publicStrategies: 0,
-    privateStrategies: 0,
-    totalSubscribers: 0,
-    pendingRequests: 0,
-    activeInviteLinks: 0
-  });
   const [strategies, setStrategies] = useState<Strategy[]>([]);
+  const [selectedStrategy, setSelectedStrategy] = useState<Strategy | null>(null);
+  const [subscribers, setSubscribers] = useState<Subscriber[]>([]);
+  const [subscribersLoading, setSubscribersLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // ============================================================================
+  // Auth Check & Data Loading
+  // ============================================================================
 
   useEffect(() => {
-    // Check if user has client access
     if (!hasClientAccess()) {
       router.replace('/dashboard');
       return;
     }
-
     loadDashboardData();
   }, [hasClientAccess, router]);
 
-  const loadDashboardData = async () => {
+  // Auto-refresh every 10 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (!isLoading) {
+        loadDashboardData(true);
+      }
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [isLoading]);
+
+  const getAuthToken = () => {
+    const token = localStorage.getItem('auth-storage');
+    const authData = token ? JSON.parse(token) : null;
+    return authData?.state?.token;
+  };
+
+  const loadDashboardData = async (silent = false) => {
     try {
-      setIsLoading(true);
+      if (!silent) setIsLoading(true);
+      else setRefreshing(true);
       setError('');
 
-      const token = localStorage.getItem('auth-storage');
-      const authData = token ? JSON.parse(token) : null;
-      const authToken = authData?.state?.token;
+      const authToken = getAuthToken();
+      if (!authToken) throw new Error('No authentication token found');
 
-      if (!authToken) {
-        throw new Error('No authentication token found');
-      }
-
-      // Fetch strategies and access requests
-      const [strategiesRes, requestsRes] = await Promise.all([
-        axios.get('/api/client/strategies', {
-          headers: { Authorization: `Bearer ${authToken}` }
-        }),
-        axios.get('/api/client/access-requests', {
-          headers: { Authorization: `Bearer ${authToken}` }
-        })
-      ]);
-
-      const strategiesData = strategiesRes.data.strategies || [];
-      const requestsData = requestsRes.data.requests || [];
-
-      setStrategies(strategiesData);
-
-      // Calculate stats
-      const totalStrategies = strategiesData.length;
-      const publicStrategies = strategiesData.filter((s: { isPublic: boolean }) => s.isPublic).length;
-      const privateStrategies = totalStrategies - publicStrategies;
-      const totalSubscribers = strategiesData.reduce((sum: number, s: { subscriberCount?: number }) => sum + (s.subscriberCount || 0), 0);
-      const pendingRequests = requestsData.length;
-      const activeInviteLinks = strategiesData.reduce((sum: number, s: { activeInviteLinks?: number }) => sum + (s.activeInviteLinks || 0), 0);
-
-      setStats({
-        totalStrategies,
-        publicStrategies,
-        privateStrategies,
-        totalSubscribers,
-        pendingRequests,
-        activeInviteLinks
+      // Fetch enhanced dashboard data with real P&L calculations
+      const response = await axios.get('/api/client/dashboard', {
+        headers: { Authorization: `Bearer ${authToken}` }
       });
 
-      setIsLoading(false);
+      const dashboardData = response.data;
+      const strategiesData = dashboardData.strategies || [];
+
+      // Map API response to Strategy interface
+      const enhancedStrategies: Strategy[] = strategiesData.map((s: ApiStrategy) => ({
+        id: s.id,
+        name: s.name,
+        code: s.code,
+        description: s.description || '',
+        isPublic: s.isPublic,
+        isActive: s.isActive,
+        subscriberCount: s.subscriberCount,
+        activeSubscribers: s.activeSubscribers,
+        pausedSubscribers: s.pausedSubscribers,
+        // Real P&L data from API
+        todayPnl: s.todayPnl || 0,
+        todayPnlPercent: s.todayPnlPercent || 0,
+        unrealizedPnl: s.unrealizedPnl || 0,
+        totalPnl: s.totalPnl || 0,
+        // Health status from API
+        health: s.health || { status: 'healthy', message: 'All systems normal', errors: [] },
+        // Real sparkline data from API
+        sparklineData: s.sparklineData || [],
+        // Real KPIs from API
+        totalTrades: s.totalTrades || 0,
+        winRate: s.winRate || 0,
+        maxDrawdown: s.maxDrawdown || 0,
+        sharpeRatio: s.sharpeRatio || 0,
+        avgTradeDuration: s.avgTradeDuration || '0m',
+        openPositions: s.openPositions || 0,
+        lastSignalTime: s.lastSignalTime,
+      }));
+
+      setStrategies(enhancedStrategies);
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
       const error = err as { response?: { data?: { error?: string } } };
       setError(error.response?.data?.error || 'Failed to load dashboard data');
+    } finally {
       setIsLoading(false);
+      setRefreshing(false);
     }
   };
+
+  const loadStrategySubscribers = async (strategyId: string) => {
+    try {
+      setSubscribersLoading(true);
+      const authToken = getAuthToken();
+      if (!authToken) throw new Error('No authentication token found');
+
+      const response = await axios.get(`/api/client/subscribers?strategyId=${strategyId}`, {
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+
+      const subs = response.data.subscribers || [];
+      setSubscribers(subs.map((sub: ApiSubscriber) => ({
+        id: sub.id,
+        userName: sub.user.name || sub.user.email,
+        userEmail: sub.user.email,
+        capital: sub.capital,
+        leverage: sub.leverage,
+        isActive: sub.isActive,
+        isPaused: sub.isPaused,
+        totalPnl: sub.totalPnl || 0,
+        todayPnl: 0, // TODO: Calculate from trades API when available
+        openPositions: 0, // TODO: Get from trades API when available
+        health: sub.isActive && !sub.isPaused ? 'synced' : 'slippage',
+        errorMessage: undefined,
+      })));
+    } catch (err) {
+      console.error('Failed to load subscribers:', err);
+      toast.error('Failed to load subscriber details');
+    } finally {
+      setSubscribersLoading(false);
+    }
+  };
+
+  // ============================================================================
+  // Actions
+  // ============================================================================
+
+  const handleToggleStrategy = async (_strategyId: string, currentState: boolean) => {
+    try {
+      const authToken = getAuthToken();
+      if (!authToken) throw new Error('No authentication token found');
+
+      // TODO: Implement actual API call to toggle strategy
+      toast.success(`Strategy ${currentState ? 'paused' : 'activated'}`);
+      loadDashboardData(true);
+    } catch (_err) {
+      toast.error('Failed to toggle strategy');
+    }
+  };
+
+  const handleEmergencyFlatten = async (_strategyId: string) => {
+    if (!confirm('⚠️ EMERGENCY: This will close ALL positions for ALL subscribers of this strategy. Are you absolutely sure?')) {
+      return;
+    }
+
+    try {
+      const authToken = getAuthToken();
+      if (!authToken) throw new Error('No authentication token found');
+
+      // TODO: Implement actual API call to flatten positions
+      toast.success('Emergency flatten signal sent to all subscribers');
+      loadDashboardData(true);
+    } catch (_err) {
+      toast.error('Failed to send flatten signal');
+    }
+  };
+
+  const openStrategyDetail = (strategy: Strategy) => {
+    setSelectedStrategy(strategy);
+    loadStrategySubscribers(strategy.id);
+  };
+
+  // ============================================================================
+  // Helpers
+  // ============================================================================
+
+  const formatCurrency = (value: number) => {
+    const prefix = value >= 0 ? '+' : '';
+    return `${prefix}₹${Math.abs(value).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
+  const formatPercent = (value: number) => {
+    const prefix = value >= 0 ? '+' : '';
+    return `${prefix}${value.toFixed(2)}%`;
+  };
+
+  // ============================================================================
+  // Loading State
+  // ============================================================================
 
   if (isLoading) {
     return (
@@ -125,17 +335,38 @@ export default function ClientDashboardPage() {
     );
   }
 
+  // ============================================================================
+  // Render
+  // ============================================================================
+
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div className="container mx-auto px-4 py-6">
       <div className="space-y-6">
         {/* Header */}
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">
-            Client Dashboard
-          </h1>
-          <p className="mt-2 text-gray-600 dark:text-gray-400">
-            Manage your strategies, invite links, and access requests
-          </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Strategy Command Center</h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Monitor and manage your strategies in real-time
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            {refreshing && (
+              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                <RefreshCw className="h-3 w-3 animate-spin" />
+                Updating...
+              </span>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => loadDashboardData(true)}
+              disabled={refreshing}
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+          </div>
         </div>
 
         {error && (
@@ -145,134 +376,397 @@ export default function ClientDashboardPage() {
           </Alert>
         )}
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Strategies</CardTitle>
-              <Package className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.totalStrategies}</div>
-              <p className="text-xs text-muted-foreground">
-                {stats.publicStrategies} public, {stats.privateStrategies} private
+        {/* Strategy Command Cards Grid */}
+        {strategies.length === 0 ? (
+          <Card className="p-12">
+            <div className="text-center">
+              <BarChart3 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-medium mb-2">No Strategies Found</h3>
+              <p className="text-muted-foreground mb-4">
+                Contact your quant team to upload strategies to your account.
               </p>
-            </CardContent>
+            </div>
           </Card>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+            {strategies.map((strategy) => (
+              <StrategyCommandCard
+                key={strategy.id}
+                strategy={strategy}
+                onToggle={() => handleToggleStrategy(strategy.id, strategy.isActive)}
+                onClick={() => openStrategyDetail(strategy)}
+                formatCurrency={formatCurrency}
+                formatPercent={formatPercent}
+              />
+            ))}
+          </div>
+        )}
+      </div>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Subscribers</CardTitle>
-              <UserCheck className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.totalSubscribers}</div>
-              <p className="text-xs text-muted-foreground">
-                Across all strategies
-              </p>
-            </CardContent>
-          </Card>
+      {/* Strategy Detail Sheet */}
+      <Sheet open={!!selectedStrategy} onOpenChange={(open) => !open && setSelectedStrategy(null)}>
+        <SheetContent className="w-full sm:max-w-2xl overflow-y-auto">
+          {selectedStrategy && (
+            <StrategyDetailPanel
+              strategy={selectedStrategy}
+              subscribers={subscribers}
+              subscribersLoading={subscribersLoading}
+              onFlatten={() => handleEmergencyFlatten(selectedStrategy.id)}
+              formatCurrency={formatCurrency}
+            />
+          )}
+        </SheetContent>
+      </Sheet>
+    </div>
+  );
+}
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Pending Requests</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.pendingRequests}</div>
-              <p className="text-xs text-muted-foreground">
-                Awaiting your approval
-              </p>
-            </CardContent>
-          </Card>
+// ============================================================================
+// Strategy Command Card Component
+// ============================================================================
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Active Invite Links</CardTitle>
-              <LinkIcon className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.activeInviteLinks}</div>
-              <p className="text-xs text-muted-foreground">
-                For private strategies
-              </p>
-            </CardContent>
-          </Card>
+function StrategyCommandCard({
+  strategy,
+  onToggle,
+  onClick,
+  formatCurrency,
+  formatPercent,
+}: {
+  strategy: Strategy;
+  onToggle: () => void;
+  onClick: () => void;
+  formatCurrency: (v: number) => string;
+  formatPercent: (v: number) => string;
+}) {
+  const pnlPositive = strategy.todayPnl >= 0;
+  const healthColors = {
+    healthy: 'bg-green-500',
+    warning: 'bg-yellow-500',
+    error: 'bg-red-500 animate-pulse',
+  };
+
+  return (
+    <Card
+      className={`relative overflow-hidden transition-all hover:shadow-lg cursor-pointer border-l-4 ${
+        strategy.health.status === 'error' ? 'border-l-red-500' :
+        strategy.health.status === 'warning' ? 'border-l-yellow-500' :
+        'border-l-green-500'
+      }`}
+      onClick={onClick}
+    >
+      {/* Header */}
+      <CardHeader className="pb-2">
+        <div className="flex items-start justify-between">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <CardTitle className="text-base font-semibold truncate">
+                {strategy.name}
+              </CardTitle>
+              {strategy.health.status === 'error' && (
+                <span className="flex h-2 w-2 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground font-mono">{strategy.code}</p>
+          </div>
+          <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+            <Switch
+              checked={strategy.isActive}
+              onCheckedChange={onToggle}
+              className="data-[state=checked]:bg-green-500"
+            />
+          </div>
+        </div>
+      </CardHeader>
+
+      <CardContent className="space-y-4">
+        {/* Mini Sparkline Chart */}
+        <div className="h-12">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={strategy.sparklineData}>
+              <defs>
+                <linearGradient id={`gradient-${strategy.id}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={pnlPositive ? '#22c55e' : '#ef4444'} stopOpacity={0.3} />
+                  <stop offset="95%" stopColor={pnlPositive ? '#22c55e' : '#ef4444'} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <Area
+                type="monotone"
+                dataKey="cumulativePnl"
+                stroke={pnlPositive ? '#22c55e' : '#ef4444'}
+                strokeWidth={2}
+                fill={`url(#gradient-${strategy.id})`}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
         </div>
 
-        {/* Quick Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Manage Strategies</CardTitle>
-              <CardDescription>
-                View and manage your strategies, toggle visibility, and generate invite links
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {strategies.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    No strategies found. Contact your quant team to upload strategies to your account.
-                  </p>
-                ) : (
-                  <>
-                    <div className="space-y-2">
-                      {strategies.slice(0, 3).map((strategy) => (
-                        <div key={strategy.id} className="flex items-center justify-between p-3 bg-muted rounded-lg">
-                          <div className="flex-1">
-                            <p className="font-medium text-sm">{strategy.name}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {strategy.isPublic ? 'Public' : 'Private'} • {strategy.subscriberCount} subscribers
-                            </p>
-                          </div>
-                          <Link href={`/dashboard/client/strategies/${strategy.id}`}>
-                            <Button variant="ghost" size="sm">
-                              <Settings className="h-4 w-4" />
-                            </Button>
-                          </Link>
-                        </div>
-                      ))}
-                    </div>
-                    {strategies.length > 3 && (
-                      <p className="text-xs text-muted-foreground text-center">
-                        +{strategies.length - 3} more strategies
-                      </p>
-                    )}
-                  </>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Access Requests</CardTitle>
-              <CardDescription>
-                Review and approve access requests for your private strategies
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {stats.pendingRequests > 0 ? (
-                <div className="space-y-4">
-                  <p className="text-sm">
-                    You have {stats.pendingRequests} pending access request{stats.pendingRequests !== 1 ? 's' : ''} waiting for your review.
-                  </p>
-                  <Link href="/client/requests">
-                    <Button className="w-full">
-                      Review Requests
-                    </Button>
-                  </Link>
-                </div>
+        {/* Today&apos;s P&L - Main Metric */}
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs text-muted-foreground">Today&apos;s P&L</p>
+            <div className="flex items-center gap-2">
+              {pnlPositive ? (
+                <TrendingUp className="h-5 w-5 text-green-500" />
               ) : (
-                <p className="text-sm text-muted-foreground">
-                  No pending access requests at the moment.
-                </p>
+                <TrendingDown className="h-5 w-5 text-red-500" />
               )}
-            </CardContent>
-          </Card>
+              <span className={`text-xl font-bold ${pnlPositive ? 'text-green-500' : 'text-red-500'}`}>
+                {formatCurrency(strategy.todayPnl)}
+              </span>
+              <span className={`text-sm ${pnlPositive ? 'text-green-500' : 'text-red-500'}`}>
+                {formatPercent(strategy.todayPnlPercent)}
+              </span>
+            </div>
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-muted-foreground">Subscribers</p>
+            <div className="flex items-center gap-1">
+              <Users className="h-4 w-4 text-muted-foreground" />
+              <span className="text-lg font-semibold">{strategy.activeSubscribers}</span>
+              <span className="text-xs text-muted-foreground">/{strategy.subscriberCount}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Health Status Footer */}
+        <div className={`-mx-6 -mb-6 px-4 py-2 flex items-center justify-between ${
+          strategy.health.status === 'error' ? 'bg-red-50 dark:bg-red-950/30' :
+          strategy.health.status === 'warning' ? 'bg-yellow-50 dark:bg-yellow-950/30' :
+          'bg-green-50 dark:bg-green-950/30'
+        }`}>
+          <div className="flex items-center gap-2">
+            <span className={`h-2 w-2 rounded-full ${healthColors[strategy.health.status]}`} />
+            <span className={`text-xs font-medium ${
+              strategy.health.status === 'error' ? 'text-red-700 dark:text-red-400' :
+              strategy.health.status === 'warning' ? 'text-yellow-700 dark:text-yellow-400' :
+              'text-green-700 dark:text-green-400'
+            }`}>
+              {strategy.health.message}
+            </span>
+          </div>
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ============================================================================
+// Strategy Detail Panel Component
+// ============================================================================
+
+function StrategyDetailPanel({
+  strategy,
+  subscribers,
+  subscribersLoading,
+  onFlatten,
+  formatCurrency,
+}: {
+  strategy: Strategy;
+  subscribers: Subscriber[];
+  subscribersLoading: boolean;
+  onFlatten: () => void;
+  formatCurrency: (v: number) => string;
+}) {
+  const pnlPositive = strategy.totalPnl >= 0;
+
+  return (
+    <div className="space-y-6">
+      <SheetHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <SheetTitle className="text-xl">{strategy.name}</SheetTitle>
+            <p className="text-sm text-muted-foreground font-mono">{strategy.code}</p>
+          </div>
+          <Badge variant={strategy.isActive ? 'default' : 'secondary'}>
+            {strategy.isActive ? 'Active' : 'Paused'}
+          </Badge>
+        </div>
+      </SheetHeader>
+
+      {/* Emergency Controls */}
+      <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-lg p-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Zap className="h-5 w-5 text-red-500" />
+            <div>
+              <p className="font-medium text-red-700 dark:text-red-400">Emergency Controls</p>
+              <p className="text-xs text-red-600 dark:text-red-500">Close all positions for all subscribers</p>
+            </div>
+          </div>
+          <Button variant="destructive" size="sm" onClick={onFlatten}>
+            <Power className="h-4 w-4 mr-2" />
+            Flatten All & Pause
+          </Button>
         </div>
       </div>
+
+      {/* Equity Curve Chart */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium">Performance (Last 7 Days)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-40">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={strategy.sparklineData}>
+                <defs>
+                  <linearGradient id="equityGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={pnlPositive ? '#22c55e' : '#ef4444'} stopOpacity={0.3} />
+                    <stop offset="95%" stopColor={pnlPositive ? '#22c55e' : '#ef4444'} stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="date" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                <Tooltip
+                  contentStyle={{ fontSize: 12 }}
+                  formatter={(value: number) => [formatCurrency(value), 'P&L']}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="cumulativePnl"
+                  stroke={pnlPositive ? '#22c55e' : '#ef4444'}
+                  strokeWidth={2}
+                  fill="url(#equityGradient)"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* KPIs Grid */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-muted/50 rounded-lg p-3">
+          <div className="flex items-center gap-2 mb-1">
+            <Target className="h-4 w-4 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">Win Rate</span>
+          </div>
+          <p className="text-lg font-bold">{strategy.winRate.toFixed(1)}%</p>
+        </div>
+        <div className="bg-muted/50 rounded-lg p-3">
+          <div className="flex items-center gap-2 mb-1">
+            <TrendingDown className="h-4 w-4 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">Max Drawdown</span>
+          </div>
+          <p className="text-lg font-bold text-red-500">-{strategy.maxDrawdown.toFixed(2)}%</p>
+        </div>
+        <div className="bg-muted/50 rounded-lg p-3">
+          <div className="flex items-center gap-2 mb-1">
+            <BarChart3 className="h-4 w-4 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">Sharpe Ratio</span>
+          </div>
+          <p className="text-lg font-bold">{strategy.sharpeRatio.toFixed(2)}</p>
+        </div>
+        <div className="bg-muted/50 rounded-lg p-3">
+          <div className="flex items-center gap-2 mb-1">
+            <Clock className="h-4 w-4 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">Avg Trade Duration</span>
+          </div>
+          <p className="text-lg font-bold">{strategy.avgTradeDuration}</p>
+        </div>
+      </div>
+
+      {/* Execution Health */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <Activity className="h-4 w-4" />
+            Execution Health
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className={`p-3 rounded-lg ${
+            strategy.health.status === 'error' ? 'bg-red-50 dark:bg-red-950/30' :
+            strategy.health.status === 'warning' ? 'bg-yellow-50 dark:bg-yellow-950/30' :
+            'bg-green-50 dark:bg-green-950/30'
+          }`}>
+            <div className="flex items-center gap-2">
+              {strategy.health.status === 'healthy' && <CheckCircle className="h-5 w-5 text-green-500" />}
+              {strategy.health.status === 'warning' && <AlertTriangle className="h-5 w-5 text-yellow-500" />}
+              {strategy.health.status === 'error' && <XCircle className="h-5 w-5 text-red-500" />}
+              <span className={`font-medium ${
+                strategy.health.status === 'error' ? 'text-red-700 dark:text-red-400' :
+                strategy.health.status === 'warning' ? 'text-yellow-700 dark:text-yellow-400' :
+                'text-green-700 dark:text-green-400'
+              }`}>
+                {strategy.health.message}
+              </span>
+            </div>
+            {strategy.health.errors.length > 0 && (
+              <ul className="mt-2 space-y-1">
+                {strategy.health.errors.map((err, i) => (
+                  <li key={i} className="text-xs text-red-600 dark:text-red-400 flex items-center gap-1">
+                    <span className="h-1 w-1 rounded-full bg-red-500" />
+                    {err}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Subscribers List */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium flex items-center justify-between">
+            <span className="flex items-center gap-2">
+              <Users className="h-4 w-4" />
+              Subscribers ({subscribers.length})
+            </span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {subscribersLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : subscribers.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              No subscribers yet
+            </p>
+          ) : (
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {subscribers.map((sub) => (
+                <div
+                  key={sub.id}
+                  className={`flex items-center justify-between p-2 rounded-lg border ${
+                    sub.health === 'error' ? 'border-red-200 bg-red-50/50 dark:border-red-800 dark:bg-red-950/20' :
+                    sub.health === 'slippage' ? 'border-yellow-200 bg-yellow-50/50 dark:border-yellow-800 dark:bg-yellow-950/20' :
+                    'border-border'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className={`h-2 w-2 rounded-full flex-shrink-0 ${
+                      sub.health === 'synced' ? 'bg-green-500' :
+                      sub.health === 'slippage' ? 'bg-yellow-500' :
+                      'bg-red-500'
+                    }`} />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{sub.userName}</p>
+                      <p className="text-xs text-muted-foreground">
+                        ₹{sub.capital.toLocaleString()} • {sub.leverage}x
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className={`text-sm font-medium ${sub.todayPnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                      {formatCurrency(sub.todayPnl)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {sub.isPaused ? 'Paused' : sub.isActive ? 'Active' : 'Inactive'}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

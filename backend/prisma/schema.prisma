@@ -509,6 +509,7 @@ model Trade {
   @@index([subscriptionId, createdAt])
   @@index([symbol, createdAt])
   @@index([status])
+  @@index([status, createdAt])  // For efficient filtering on status + date range
   @@index([positionId])
   @@map("trades")
 }

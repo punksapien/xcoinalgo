@@ -628,4 +628,248 @@ router.delete('/subscribers/:id', authenticate, requireClientRole, async (req: A
   }
 });
 
+/**
+ * GET /api/client/dashboard
+ * Get enhanced dashboard data with real P&L calculations for strategy owner
+ */
+router.get('/dashboard', async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = req.userId!;
+
+    // Get all strategies owned by this client with subscriber data
+    const strategies = await prisma.strategy.findMany({
+      where: { clientId: userId },
+      include: {
+        subscriptions: {
+          where: { isActive: true },
+          include: {
+            user: {
+              select: { id: true, name: true, email: true }
+            }
+          }
+        },
+        _count: {
+          select: {
+            subscriptions: { where: { isActive: true } },
+            inviteLinks: { where: { isActive: true } },
+            accessRequests: { where: { status: 'PENDING' } }
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    // Get trades for last 30 days only (for performance)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const strategyIds = strategies.map(s => s.id);
+
+    // Get trades for client's strategies - LIMITED to last 30 days + open positions
+    const allTrades = await prisma.trade.findMany({
+      where: {
+        subscription: {
+          strategyId: { in: strategyIds }
+        },
+        // Only get trades from last 30 days OR still open
+        OR: [
+          { createdAt: { gte: thirtyDaysAgo } },
+          { status: 'OPEN' }
+        ]
+      },
+      select: {
+        id: true,
+        status: true,
+        pnl: true,
+        createdAt: true,
+        exitedAt: true,
+        updatedAt: true,
+        subscription: {
+          select: {
+            strategyId: true,
+            capital: true,
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    // Get today's date range
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date();
+    todayEnd.setHours(23, 59, 59, 999);
+
+    // Process each strategy
+    const enhancedStrategies = strategies.map(strategy => {
+      // Get trades for this strategy
+      const strategyTrades = allTrades.filter(t => t.subscription.strategyId === strategy.id);
+      const openTrades = strategyTrades.filter(t => t.status === 'OPEN');
+      const closedTrades = strategyTrades.filter(t => t.status === 'CLOSED');
+
+      // Today's closed trades
+      const todayClosedTrades = closedTrades.filter(t =>
+        t.exitedAt && t.exitedAt >= todayStart && t.exitedAt <= todayEnd
+      );
+
+      // Calculate P&L metrics
+      const totalRealizedPnl = closedTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+      const todayRealizedPnl = todayClosedTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+
+      // Calculate unrealized P&L (simplified - would need current prices from exchange)
+      const totalUnrealizedPnl = openTrades.reduce((sum, t) => {
+        // For now, return 0 as we don't have live prices here
+        // In production, fetch current prices and calculate
+        return sum;
+      }, 0);
+
+      // Win/Loss calculations
+      const winningTrades = closedTrades.filter(t => (t.pnl || 0) > 0).length;
+      const losingTrades = closedTrades.filter(t => (t.pnl || 0) < 0).length;
+      const winRate = closedTrades.length > 0 ? (winningTrades / closedTrades.length) * 100 : 0;
+
+      // Calculate max drawdown (simplified)
+      let maxDrawdown = 0;
+      let peak = 0;
+      let runningPnl = 0;
+      closedTrades
+        .sort((a, b) => (a.exitedAt?.getTime() || 0) - (b.exitedAt?.getTime() || 0))
+        .forEach(trade => {
+          runningPnl += trade.pnl || 0;
+          if (runningPnl > peak) peak = runningPnl;
+          const drawdown = peak - runningPnl;
+          if (drawdown > maxDrawdown) maxDrawdown = drawdown;
+        });
+
+      // Calculate max drawdown percentage (relative to peak)
+      const maxDrawdownPct = peak > 0 ? (maxDrawdown / peak) * 100 : 0;
+
+      // Calculate Sharpe Ratio (simplified - daily returns)
+      const dailyReturns: number[] = [];
+      const dailyPnlMap = new Map<string, number>();
+      closedTrades.forEach(trade => {
+        if (trade.exitedAt) {
+          const dateStr = trade.exitedAt.toISOString().split('T')[0];
+          dailyPnlMap.set(dateStr, (dailyPnlMap.get(dateStr) || 0) + (trade.pnl || 0));
+        }
+      });
+      dailyPnlMap.forEach(pnl => dailyReturns.push(pnl));
+
+      let sharpeRatio = 0;
+      if (dailyReturns.length > 1) {
+        const avgReturn = dailyReturns.reduce((a, b) => a + b, 0) / dailyReturns.length;
+        const variance = dailyReturns.reduce((sum, r) => sum + Math.pow(r - avgReturn, 2), 0) / dailyReturns.length;
+        const stdDev = Math.sqrt(variance);
+        sharpeRatio = stdDev > 0 ? (avgReturn / stdDev) * Math.sqrt(252) : 0; // Annualized
+      }
+
+      // Calculate average trade duration
+      let avgTradeDurationMs = 0;
+      const tradesWithDuration = closedTrades.filter(t => t.exitedAt && t.createdAt);
+      if (tradesWithDuration.length > 0) {
+        avgTradeDurationMs = tradesWithDuration.reduce((sum, t) => {
+          return sum + ((t.exitedAt?.getTime() || 0) - t.createdAt.getTime());
+        }, 0) / tradesWithDuration.length;
+      }
+
+      // Format duration
+      const avgDurationHours = Math.floor(avgTradeDurationMs / (1000 * 60 * 60));
+      const avgDurationMinutes = Math.floor((avgTradeDurationMs % (1000 * 60 * 60)) / (1000 * 60));
+      const avgTradeDuration = avgDurationHours > 0
+        ? `${avgDurationHours}h ${avgDurationMinutes}m`
+        : `${avgDurationMinutes}m`;
+
+      // Generate sparkline data (last 7 days)
+      const sparklineData = [];
+      for (let i = 6; i >= 0; i--) {
+        const date = new Date();
+        date.setDate(date.getDate() - i);
+        const dateStr = date.toISOString().split('T')[0];
+        sparklineData.push({
+          date: dateStr,
+          pnl: dailyPnlMap.get(dateStr) || 0,
+          cumulativePnl: Array.from(dailyPnlMap.entries())
+            .filter(([d]) => d <= dateStr)
+            .reduce((sum, [, pnl]) => sum + pnl, 0),
+        });
+      }
+
+      // Calculate today's P&L percentage
+      const totalCapital = strategy.subscriptions.reduce((sum, sub) => sum + sub.capital, 0);
+      const todayPnlPercent = totalCapital > 0 ? (todayRealizedPnl / totalCapital) * 100 : 0;
+
+      // Subscriber health check (simplified - would need state file comparison)
+      const activeSubscribers = strategy.subscriptions.filter(s => !s.isPaused).length;
+      const pausedSubscribers = strategy.subscriptions.filter(s => s.isPaused).length;
+
+      // Determine health status based on recent errors/issues
+      // For now, base it on whether there are open positions matching expectations
+      let healthStatus: 'healthy' | 'warning' | 'error' = 'healthy';
+      let healthMessage = 'All systems normal';
+      const healthErrors: string[] = [];
+
+      // Check for stale positions (open > 24 hours without update)
+      const staleThreshold = Date.now() - 24 * 60 * 60 * 1000;
+      const staleTrades = openTrades.filter(t => t.updatedAt.getTime() < staleThreshold);
+      if (staleTrades.length > 0) {
+        healthStatus = 'warning';
+        healthMessage = `${staleTrades.length} position(s) not updated recently`;
+      }
+
+      return {
+        id: strategy.id,
+        name: strategy.name,
+        code: strategy.code,
+        description: strategy.description,
+        isPublic: strategy.isPublic,
+        isActive: strategy.isActive,
+        subscriberCount: strategy._count.subscriptions,
+        activeSubscribers,
+        pausedSubscribers,
+        pendingRequests: strategy._count.accessRequests,
+        activeInviteLinks: strategy._count.inviteLinks,
+        // P&L data
+        todayPnl: todayRealizedPnl,
+        todayPnlPercent,
+        unrealizedPnl: totalUnrealizedPnl,
+        totalPnl: totalRealizedPnl,
+        // Health
+        health: {
+          status: healthStatus,
+          message: healthMessage,
+          errors: healthErrors,
+        },
+        // Performance metrics
+        sparklineData,
+        totalTrades: closedTrades.length,
+        winRate,
+        maxDrawdown: maxDrawdownPct,
+        sharpeRatio,
+        avgTradeDuration,
+        openPositions: openTrades.length,
+        lastSignalTime: strategyTrades[0]?.createdAt?.toISOString() || null,
+        // Capital
+        totalCapital,
+      };
+    });
+
+    // Calculate overall summary
+    const summary = {
+      totalStrategies: strategies.length,
+      activeStrategies: strategies.filter(s => s.isActive).length,
+      totalSubscribers: enhancedStrategies.reduce((sum, s) => sum + s.subscriberCount, 0),
+      totalTodayPnl: enhancedStrategies.reduce((sum, s) => sum + s.todayPnl, 0),
+      totalPnl: enhancedStrategies.reduce((sum, s) => sum + s.totalPnl, 0),
+      pendingRequests: enhancedStrategies.reduce((sum, s) => sum + s.pendingRequests, 0),
+    };
+
+    res.json({
+      strategies: enhancedStrategies,
+      summary,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 export { router as clientRoutes };

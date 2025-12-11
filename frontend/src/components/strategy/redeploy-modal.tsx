@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/lib/auth';
 import { StrategyExecutionAPI, type Subscription } from '@/lib/api/strategy-execution-api';
-import { Loader2, DollarSign, Percent, TrendingUp, AlertCircle, CheckCircle } from 'lucide-react';
+import { Loader2, DollarSign, AlertCircle, CheckCircle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { showSuccessToast, showErrorToast } from '@/lib/toast-utils';
 import { getUserFriendlyError } from '@/lib/error-messages';
@@ -38,17 +38,13 @@ export function RedeployModal({
   const [otherSubscriptions, setOtherSubscriptions] = useState<Subscription[]>([]);
   const [allocatedCapital, setAllocatedCapital] = useState<number>(0);
 
-  // Form state - pre-filled with current subscription values
+  // Form state - only capital is editable (risk and leverage use original subscription values)
   const [capital, setCapital] = useState(subscription.capital.toString());
-  const [riskPerTrade, setRiskPerTrade] = useState(subscription.riskPerTrade.toString());
-  const [leverage, setLeverage] = useState(subscription.leverage.toString());
 
   // Reset form when subscription changes
   useEffect(() => {
     if (subscription) {
       setCapital(subscription.capital.toString());
-      setRiskPerTrade(subscription.riskPerTrade.toString());
-      setLeverage(subscription.leverage.toString());
     }
   }, [subscription]);
 
@@ -134,37 +130,21 @@ export function RedeployModal({
       setError(null);
       setValidationErrors({});
 
-      // Check required fields
-      if (!riskPerTrade || !leverage || !capital) {
+      // Check required fields (only capital is editable now)
+      if (!capital) {
         const errors: Record<string, string> = {};
-        if (!capital) errors.capital = 'Capital is required';
-        if (!riskPerTrade) errors.riskPerTrade = 'Risk per trade is required';
-        if (!leverage) errors.leverage = 'Leverage is required';
+        errors.capital = 'Capital is required';
         setValidationErrors(errors);
-        showErrorToast('Required Fields Missing', 'Please fill in all required fields');
+        showErrorToast('Required Fields Missing', 'Please fill in the capital field');
         return;
       }
 
       // Validate numeric values
       const capitalNum = parseFloat(capital);
-      const riskPerTradeNum = parseFloat(riskPerTrade);
-      const leverageNum = parseInt(leverage);
 
       if (isNaN(capitalNum) || capitalNum < 100) {
         setValidationErrors({ capital: 'Capital must be at least ₹100' });
         showErrorToast('Invalid Capital', 'Capital must be at least ₹100');
-        return;
-      }
-
-      if (isNaN(riskPerTradeNum) || riskPerTradeNum < 0.001 || riskPerTradeNum > 0.55) {
-        setValidationErrors({ riskPerTrade: 'Risk per trade must be between 0.1% and 55%' });
-        showErrorToast('Invalid Risk', 'Risk per trade must be between 0.1% and 55%');
-        return;
-      }
-
-      if (isNaN(leverageNum) || leverageNum < 1 || leverageNum > 100) {
-        setValidationErrors({ leverage: 'Leverage must be between 1x and 100x' });
-        showErrorToast('Invalid Leverage', 'Leverage must be between 1x and 100x');
         return;
       }
 
@@ -201,11 +181,9 @@ export function RedeployModal({
         return;
       }
 
-      // Prepare updates (only send changed values)
-      const updates: Partial<{ capital: number; riskPerTrade: number; leverage: number }> = {};
+      // Prepare updates (only capital can be changed - risk and leverage use defaults)
+      const updates: Partial<{ capital: number }> = {};
       if (capitalNum !== subscription.capital) updates.capital = capitalNum;
-      if (riskPerTradeNum !== subscription.riskPerTrade) updates.riskPerTrade = riskPerTradeNum;
-      if (leverageNum !== subscription.leverage) updates.leverage = leverageNum;
 
       console.log('📤 Sending updates:', updates);
 
@@ -232,12 +210,6 @@ export function RedeployModal({
     } finally {
       setLoading(false);
     }
-  };
-
-  const calculateMaxRisk = () => {
-    const cap = parseFloat(capital) || 0;
-    const risk = parseFloat(riskPerTrade) || 0;
-    return (cap * risk).toFixed(2);
   };
 
   return (
@@ -350,75 +322,7 @@ export function RedeployModal({
             )}
           </div>
 
-          {/* Risk Per Trade */}
-          <div className="space-y-2">
-            <Label htmlFor="riskPerTrade" className="flex items-center gap-2">
-              <Percent className="h-4 w-4" />
-              Risk Per Trade *
-            </Label>
-            <div className="flex gap-2">
-              <Input
-                id="riskPerTrade"
-                type="number"
-                min="0.001"
-                max="0.55"
-                step="0.001"
-                value={riskPerTrade}
-                onChange={(e) => setRiskPerTrade(e.target.value)}
-                placeholder="0.02"
-                className={validationErrors.riskPerTrade ? 'border-red-500' : ''}
-                required
-              />
-              <span className="flex items-center px-3 bg-secondary rounded-md">
-                {riskPerTrade ? (parseFloat(riskPerTrade) * 100).toFixed(1) : '0.0'}%
-              </span>
-            </div>
-            {validationErrors.riskPerTrade ? (
-              <p className="text-sm text-red-500 flex items-center gap-1">
-                <AlertCircle className="h-3 w-3" />
-                {validationErrors.riskPerTrade}
-              </p>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Maximum risk: ₹{calculateMaxRisk()} per trade
-              </p>
-            )}
-          </div>
-
-          {/* Leverage */}
-          <div className="space-y-2">
-            <Label htmlFor="leverage" className="flex items-center gap-2">
-              <TrendingUp className="h-4 w-4" />
-              Leverage *
-            </Label>
-            <div className="flex gap-2">
-              <Input
-                id="leverage"
-                type="number"
-                min="1"
-                max="100"
-                step="1"
-                value={leverage}
-                onChange={(e) => setLeverage(e.target.value)}
-                placeholder="10"
-                className={validationErrors.leverage ? 'border-red-500' : ''}
-                required
-              />
-              <span className="flex items-center px-3 bg-secondary rounded-md">
-                {leverage || '0'}x
-              </span>
-            </div>
-            {validationErrors.leverage ? (
-              <p className="text-sm text-red-500 flex items-center gap-1">
-                <AlertCircle className="h-3 w-3" />
-                {validationErrors.leverage}
-              </p>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Trading leverage multiplier (1-100x)
-              </p>
-            )}
-          </div>
+          {/* Risk Per Trade and Leverage are kept as default values from original subscription */}
         </div>
 
         <DialogFooter>

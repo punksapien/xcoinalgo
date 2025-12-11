@@ -526,15 +526,14 @@ router.get('/strategies', authenticate, requireQuantRole, async (req: Authentica
             take: 1,
           },
 
-          // Subscriptions (for deployment count)
-          subscriptions: {
+          // Use _count for efficient subscriber counting instead of fetching all subscriptions
+          _count: {
             select: {
-              id: true,
-              isActive: true,
+              subscriptions: { where: { isActive: true } },
             },
           },
 
-          // Latest backtest results
+          // Latest backtest results - EXCLUDE large JSON fields (equityCurve, tradeHistory)
           backtestResults: {
             select: {
               id: true,
@@ -550,8 +549,7 @@ router.get('/strategies', authenticate, requireQuantRole, async (req: Authentica
               profitFactor: true,
               totalTrades: true,
               avgTrade: true,
-              equityCurve: true,
-              tradeHistory: true,
+              // EXCLUDED: equityCurve and tradeHistory - these are huge JSON blobs
               createdAt: true,
             },
             orderBy: { createdAt: 'desc' },
@@ -571,8 +569,8 @@ router.get('/strategies', authenticate, requireQuantRole, async (req: Authentica
         const supportedPairs = strategy.supportedPairs ? JSON.parse(strategy.supportedPairs as string) : null;
         const timeframes = strategy.timeframes ? JSON.parse(strategy.timeframes as string) : null;
 
-        // Count active subscriptions (subscribers who have deployed this strategy)
-        const deploymentCount = strategy.subscriptions.filter(sub => sub.isActive).length;
+        // Use _count for efficient counting (no need to filter array)
+        const deploymentCount = strategy._count.subscriptions;
 
         return {
           ...strategy,
@@ -592,7 +590,7 @@ router.get('/strategies', authenticate, requireQuantRole, async (req: Authentica
           // Remove internal arrays from response
           botDeployments: undefined,
           backtestResults: undefined,
-          subscriptions: undefined,
+          _count: undefined,
         };
       }),
       pagination: {
