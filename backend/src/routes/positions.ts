@@ -10,9 +10,47 @@ import { AuthenticatedRequest } from '../types';
 import { BotStatus } from '@prisma/client';
 import { Logger } from '../utils/logger';
 import CoinDCXClient from '../services/coindcx-client';
+import { decrypt } from '../utils/encryption';
+import axios from 'axios';
+import crypto from 'crypto';
 
 const logger = new Logger('Positions');
 const router = Router();
+
+// Helper function to create CoinDCX API signature
+function createSignature(body: string, secret: string): string {
+  return crypto
+    .createHmac('sha256', secret)
+    .update(body)
+    .digest('hex');
+}
+
+// Helper function to call CoinDCX API
+async function callCoinDCXAPI(
+  endpoint: string,
+  method: 'GET' | 'POST',
+  apiKey: string,
+  apiSecret: string,
+  payload: any = {}
+) {
+  const timestamp = Date.now();
+  const bodyWithTimestamp = { ...payload, timestamp };
+  const jsonBody = JSON.stringify(bodyWithTimestamp);
+  const signature = createSignature(jsonBody, apiSecret);
+
+  const response = await axios({
+    method,
+    url: `https://api.coindcx.com${endpoint}`,
+    data: method === 'POST' ? jsonBody : undefined,
+    headers: {
+      'Content-Type': 'application/json',
+      'X-AUTH-APIKEY': apiKey,
+      'X-AUTH-SIGNATURE': signature
+    }
+  });
+
+  return response.data;
+}
 
 // Type for CoinDCX ticker data
 interface CoinDCXTicker {
@@ -419,6 +457,324 @@ router.get('/pnl', authenticate, async (req: AuthenticatedRequest, res, next) =>
   } catch (error) {
     logger.error('Failed to get P&L data:', error);
     next(error);
+  }
+});
+
+// POST /api/positions/force-close - Force close a specific position
+router.post('/force-close', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = req.userId!;
+    const { subscriptionId, positionId } = req.body;
+
+    if (!subscriptionId && !positionId) {
+      return res.status(400).json({
+        error: 'Either subscriptionId or positionId is required'
+      });
+    }
+
+    // Get subscription and verify ownership/access
+    let subscription;
+    if (subscriptionId) {
+      subscription = await prisma.strategySubscription.findFirst({
+        where: {
+          id: subscriptionId,
+          OR: [
+            { userId }, // User owns the subscription
+            { strategy: { clientId: userId } }, // User is the strategy owner (client)
+            { strategy: { authorId: userId } } // User is the strategy author
+          ]
+        },
+        include: {
+          brokerCredential: true,
+          strategy: true
+        }
+      });
+    } else {
+      // Find by position/trade
+      const trade = await prisma.trade.findFirst({
+        where: {
+          positionId: positionId!,
+          subscription: {
+            OR: [
+              { userId },
+              { strategy: { clientId: userId } },
+              { strategy: { authorId: userId } }
+            ]
+          }
+        },
+        include: {
+          subscription: {
+            include: {
+              brokerCredential: true,
+              strategy: true
+            }
+          }
+        }
+      });
+
+      if (!trade) {
+        return res.status(404).json({
+          error: 'Trade not found or access denied'
+        });
+      }
+
+      subscription = trade.subscription;
+    }
+
+    if (!subscription) {
+      return res.status(404).json({
+        error: 'Subscription not found or access denied'
+      });
+    }
+
+    if (!subscription.brokerCredential) {
+      return res.status(400).json({
+        error: 'No broker credentials found for this subscription'
+      });
+    }
+
+    // Decrypt credentials
+    const apiKey = decrypt(subscription.brokerCredential.apiKey);
+    const apiSecret = decrypt(subscription.brokerCredential.apiSecret);
+
+    // Get open positions from CoinDCX
+    const positions = await callCoinDCXAPI(
+      '/exchange/v1/derivatives/futures/positions',
+      'POST',
+      apiKey,
+      apiSecret,
+      {
+        page: 1,
+        size: 100,
+        margin_currency_short_name: [subscription.marginCurrency || 'USDT']
+      }
+    );
+
+    // Find the specific position to close
+    let targetPosition;
+    if (positionId) {
+      targetPosition = positions.find((p: any) => p.id === positionId);
+    } else {
+      // Find open position matching the strategy pair
+      const strategyConfig = subscription.strategy.executionConfig as any;
+      const strategyPair = strategyConfig?.pair;
+      targetPosition = positions.find((p: any) =>
+        p.pair === strategyPair && parseFloat(p.active_pos) !== 0
+      );
+    }
+
+    if (!targetPosition) {
+      return res.status(404).json({
+        error: 'No open position found to close'
+      });
+    }
+
+    // Force close the position on CoinDCX
+    const closeResult = await callCoinDCXAPI(
+      '/exchange/v1/derivatives/futures/positions/exit',
+      'POST',
+      apiKey,
+      apiSecret,
+      { id: targetPosition.id }
+    );
+
+    // Update database - mark all open trades for this subscription as closed
+    await prisma.trade.updateMany({
+      where: {
+        subscriptionId: subscription.id,
+        positionId: targetPosition.id,
+        status: 'OPEN'
+      },
+      data: {
+        status: 'CLOSED',
+        exitReason: 'force_close',
+        exitedAt: new Date(),
+        updatedAt: new Date()
+      }
+    });
+
+    // Also update any open trade cycles
+    await prisma.tradeCycle.updateMany({
+      where: {
+        subscriptionId: subscription.id,
+        status: 'OPEN'
+      },
+      data: {
+        status: 'CLOSED',
+        exitReason: 'force_close',
+        closedAt: new Date(),
+        updatedAt: new Date()
+      }
+    });
+
+    logger.info(`Force closed position ${targetPosition.id} for subscription ${subscription.id}`);
+
+    res.json({
+      success: true,
+      message: 'Position closed successfully',
+      positionId: targetPosition.id,
+      result: closeResult
+    });
+  } catch (error: any) {
+    logger.error('Error force closing position:', error);
+    res.status(500).json({
+      error: 'Failed to close position',
+      details: error.message
+    });
+  }
+});
+
+// POST /api/positions/force-close-all - Force close all positions for a strategy
+router.post('/force-close-all', authenticate, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = req.userId!;
+    const { strategyId, pauseStrategy = true } = req.body;
+
+    if (!strategyId) {
+      return res.status(400).json({
+        error: 'strategyId is required'
+      });
+    }
+
+    // Verify user is strategy owner or author
+    const strategy = await prisma.strategy.findFirst({
+      where: {
+        id: strategyId,
+        OR: [
+          { clientId: userId },
+          { authorId: userId }
+        ]
+      }
+    });
+
+    if (!strategy) {
+      return res.status(404).json({
+        error: 'Strategy not found or access denied'
+      });
+    }
+
+    // Get all active subscriptions
+    const subscriptions = await prisma.strategySubscription.findMany({
+      where: {
+        strategyId,
+        isActive: true
+      },
+      include: {
+        brokerCredential: true
+      }
+    });
+
+    const results = [];
+    const errors = [];
+
+    // Close positions for each subscriber
+    for (const subscription of subscriptions) {
+      try {
+        if (!subscription.brokerCredential) {
+          errors.push({
+            subscriptionId: subscription.id,
+            error: 'No broker credentials'
+          });
+          continue;
+        }
+
+        const apiKey = decrypt(subscription.brokerCredential.apiKey);
+        const apiSecret = decrypt(subscription.brokerCredential.apiSecret);
+
+        // Get open positions
+        const positions = await callCoinDCXAPI(
+          '/exchange/v1/derivatives/futures/positions',
+          'POST',
+          apiKey,
+          apiSecret,
+          {
+            page: 1,
+            size: 100,
+            margin_currency_short_name: [subscription.marginCurrency || 'USDT']
+          }
+        );
+
+        // Close all open positions
+        for (const position of positions) {
+          if (parseFloat(position.active_pos) !== 0) {
+            await callCoinDCXAPI(
+              '/exchange/v1/derivatives/futures/positions/exit',
+              'POST',
+              apiKey,
+              apiSecret,
+              { id: position.id }
+            );
+
+            results.push({
+              subscriptionId: subscription.id,
+              positionId: position.id,
+              closed: true
+            });
+          }
+        }
+
+        // Update database
+        await prisma.trade.updateMany({
+          where: {
+            subscriptionId: subscription.id,
+            status: 'OPEN'
+          },
+          data: {
+            status: 'CLOSED',
+            exitReason: 'force_close_all',
+            exitedAt: new Date(),
+            updatedAt: new Date()
+          }
+        });
+
+        await prisma.tradeCycle.updateMany({
+          where: {
+            subscriptionId: subscription.id,
+            status: 'OPEN'
+          },
+          data: {
+            status: 'CLOSED',
+            exitReason: 'force_close_all',
+            closedAt: new Date(),
+            updatedAt: new Date()
+          }
+        });
+
+        // Pause subscription if requested
+        if (pauseStrategy) {
+          await prisma.strategySubscription.update({
+            where: { id: subscription.id },
+            data: {
+              isPaused: true,
+              pausedAt: new Date()
+            }
+          });
+        }
+      } catch (error: any) {
+        errors.push({
+          subscriptionId: subscription.id,
+          error: error.message
+        });
+      }
+    }
+
+    logger.info(`Force closed all positions for strategy ${strategyId}. Success: ${results.length}, Failed: ${errors.length}`);
+
+    res.json({
+      success: true,
+      message: `Closed positions for ${results.length} subscribers`,
+      results,
+      errors,
+      totalSubscriptions: subscriptions.length,
+      successfulClosures: results.length,
+      failedClosures: errors.length
+    });
+  } catch (error: any) {
+    logger.error('Error force closing all positions:', error);
+    res.status(500).json({
+      error: 'Failed to close positions',
+      details: error.message
+    });
   }
 });
 
