@@ -25,7 +25,7 @@ import { showErrorToast } from '@/lib/toast-utils';
  */
 export function useRoleGuard(requiredRole: string) {
   const router = useRouter();
-  const { user, isAuthenticated, hasHydrated, isQuant, hasQuantAccess } = useAuth();
+  const { user, isAuthenticated, hasHydrated, hasQuantAccess } = useAuth();
   const [isChecking, setIsChecking] = useState(true);
   const [isAuthorized, setIsAuthorized] = useState(false);
 

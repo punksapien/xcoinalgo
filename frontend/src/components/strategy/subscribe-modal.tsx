@@ -7,12 +7,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/lib/auth';
-import { StrategyExecutionAPI, type SubscriptionConfig, type Subscription } from '@/lib/api/strategy-execution-api';
-import { Loader2, DollarSign, TrendingUp, AlertCircle, CheckCircle, Award, TrendingDown, Target, ChevronRight, ArrowLeft, Info, Shield } from 'lucide-react';
+import { StrategyExecutionAPI, type Subscription } from '@/lib/api/strategy-execution-api';
+import { Loader2, DollarSign, TrendingUp, AlertCircle, Award, TrendingDown, Target, ChevronRight, ArrowLeft, Info, Shield } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { showSuccessToast, showErrorToast, showWarningToast } from '@/lib/toast-utils';
+import { showSuccessToast, showErrorToast } from '@/lib/toast-utils';
 import { getUserFriendlyError } from '@/lib/error-messages';
-import { validateSubscriptionConfig, validateSufficientBalance } from '@/lib/validation/subscription-schema';
+import { validateSubscriptionConfig } from '@/lib/validation/subscription-schema';
 
 interface SubscribeModalProps {
   open: boolean;
@@ -26,7 +26,6 @@ interface SubscribeModalProps {
     riskReward?: number;
     maxDrawdown?: number;
   };
-  strategyConfig?: Record<string, unknown>; // Strategy executionConfig for defaults
   onSuccess?: () => void;
 }
 
@@ -42,7 +41,6 @@ export function SubscribeModal({
   strategyId,
   strategyName,
   strategyMetrics,
-  strategyConfig,
   onSuccess
 }: SubscribeModalProps) {
   const { token } = useAuth();
