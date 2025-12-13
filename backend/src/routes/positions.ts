@@ -697,7 +697,14 @@ router.post('/force-close-all', authenticate, async (req: AuthenticatedRequest, 
               margin_currency_short_name: [subscription.marginCurrency || 'USDT']
             }
           );
-          logger.info(`Got ${Array.isArray(positions) ? positions.length : 0} positions from CoinDCX`);
+          logger.info(`CoinDCX positions response:`, JSON.stringify(positions).substring(0, 500));
+
+          // Handle if response is wrapped in object
+          if (positions && !Array.isArray(positions) && positions.data) {
+            positions = positions.data;
+          }
+
+          logger.info(`Got ${Array.isArray(positions) ? positions.length : 'non-array'} positions from CoinDCX`);
         } catch (apiError: any) {
           logger.error(`CoinDCX API error fetching positions: ${apiError.message}`, apiError.response?.data);
           errors.push({
@@ -708,7 +715,13 @@ router.post('/force-close-all', authenticate, async (req: AuthenticatedRequest, 
         }
 
         // Close all open positions
+        if (!Array.isArray(positions)) {
+          logger.warn(`Positions is not an array, got: ${typeof positions}`);
+          continue;
+        }
+
         for (const position of positions) {
+          logger.info(`Checking position: id=${position.id}, pair=${position.pair}, active_pos=${position.active_pos}`);
           if (parseFloat(position.active_pos) !== 0) {
             await callCoinDCXAPI(
               '/exchange/v1/derivatives/futures/positions/exit',
