@@ -670,6 +670,7 @@ router.post('/force-close-all', authenticate, async (req: AuthenticatedRequest, 
     for (const subscription of subscriptions) {
       try {
         if (!subscription.brokerCredential) {
+          logger.warn(`Subscription ${subscription.id} has no broker credentials`);
           errors.push({
             subscriptionId: subscription.id,
             error: 'No broker credentials'
@@ -680,18 +681,31 @@ router.post('/force-close-all', authenticate, async (req: AuthenticatedRequest, 
         const apiKey = subscription.brokerCredential.apiKey;
         const apiSecret = subscription.brokerCredential.apiSecret;
 
+        logger.info(`Force closing positions for subscription ${subscription.id}, marginCurrency: ${subscription.marginCurrency || 'USDT'}`);
+
         // Get open positions
-        const positions = await callCoinDCXAPI(
-          '/exchange/v1/derivatives/futures/positions',
-          'POST',
-          apiKey,
-          apiSecret,
-          {
-            page: 1,
-            size: 100,
-            margin_currency_short_name: [subscription.marginCurrency || 'USDT']
-          }
-        );
+        let positions;
+        try {
+          positions = await callCoinDCXAPI(
+            '/exchange/v1/derivatives/futures/positions',
+            'POST',
+            apiKey,
+            apiSecret,
+            {
+              page: 1,
+              size: 100,
+              margin_currency_short_name: [subscription.marginCurrency || 'USDT']
+            }
+          );
+          logger.info(`Got ${Array.isArray(positions) ? positions.length : 0} positions from CoinDCX`);
+        } catch (apiError: any) {
+          logger.error(`CoinDCX API error fetching positions: ${apiError.message}`, apiError.response?.data);
+          errors.push({
+            subscriptionId: subscription.id,
+            error: `CoinDCX API error: ${apiError.message}`
+          });
+          continue;
+        }
 
         // Close all open positions
         for (const position of positions) {
@@ -750,6 +764,7 @@ router.post('/force-close-all', authenticate, async (req: AuthenticatedRequest, 
           });
         }
       } catch (error: any) {
+        logger.error(`Error force closing for subscription ${subscription.id}: ${error.message}`, error.response?.data || error.stack);
         errors.push({
           subscriptionId: subscription.id,
           error: error.message
@@ -758,6 +773,9 @@ router.post('/force-close-all', authenticate, async (req: AuthenticatedRequest, 
     }
 
     logger.info(`Force closed all positions for strategy ${strategyId}. Success: ${results.length}, Failed: ${errors.length}`);
+    if (errors.length > 0) {
+      logger.warn(`Force close errors:`, errors);
+    }
 
     res.json({
       success: true,
