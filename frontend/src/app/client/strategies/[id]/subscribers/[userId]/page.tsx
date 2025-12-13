@@ -2,7 +2,8 @@
 
 import { use, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Download, FileDown, TrendingUp, TrendingDown, Clock, Target } from 'lucide-react';
+import { ArrowLeft, Download, TrendingUp } from 'lucide-react';
+import { type Subscription } from '@/lib/api/strategy-execution-api';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -13,7 +14,8 @@ import {
   Title,
   Tooltip,
   Legend,
-  Filler
+  Filler,
+  TooltipItem
 } from 'chart.js';
 
 ChartJS.register(
@@ -87,7 +89,7 @@ export default function SubscriberAuditView({ params }: { params: Promise<{ id: 
   const [tradeCycles, setTradeCycles] = useState<TradeCycle[]>([]);
   const [selectedCycle, setSelectedCycle] = useState<TradeCycle | null>(null);
   const [showOrderModal, setShowOrderModal] = useState(false);
-  const [subscription, setSubscription] = useState<any>(null);
+  const [subscription, setSubscription] = useState<Subscription | null>(null);
 
   useEffect(() => {
     fetchSubscriberData();
@@ -103,7 +105,7 @@ export default function SubscriberAuditView({ params }: { params: Promise<{ id: 
       });
       const subsData = await subsResponse.json();
       const sub = subsData.subscriptions?.find(
-        (s: any) => s.strategyId === resolvedParams.id && s.userId === resolvedParams.userId
+        (s: Subscription) => s.strategyId === resolvedParams.id && s.userId === resolvedParams.userId
       );
 
       if (!sub) {
@@ -211,14 +213,14 @@ export default function SubscriberAuditView({ params }: { params: Promise<{ id: 
         mode: 'index' as const,
         intersect: false,
         callbacks: {
-          label: (context: any) => `P&L: ${formatCurrency(context.parsed.y)}`
+          label: (context: TooltipItem<'line'>) => `P&L: ${formatCurrency(context.parsed.y ?? 0)}`
         }
       }
     },
     scales: {
       y: {
         ticks: {
-          callback: (value: any) => formatCurrency(value)
+          callback: (value: number | string) => formatCurrency(Number(value))
         }
       }
     }

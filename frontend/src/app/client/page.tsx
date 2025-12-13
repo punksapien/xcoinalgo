@@ -337,8 +337,10 @@ export default function ClientDashboardPage() {
       if (selectedStrategy) {
         loadStrategySubscribers(selectedStrategy.id);
       }
-    } catch (err: any) {
-      const errorMsg = err.response?.data?.error || 'Failed to force close position';
+    } catch (err) {
+      const errorMsg = axios.isAxiosError(err) && err.response?.data?.error
+        ? err.response.data.error
+        : 'Failed to force close position';
       toast.error(errorMsg);
     }
   };
