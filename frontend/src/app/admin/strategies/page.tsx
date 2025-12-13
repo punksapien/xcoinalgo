@@ -7,7 +7,8 @@ import { StrategySubscribersModal } from '@/components/admin/strategy-subscriber
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { AlertCircle, UserCheck, UserX, Trash2, Edit, Settings, Save, X, RefreshCw } from 'lucide-react';
+import { AlertCircle, UserCheck, UserX, Trash2, Edit, Settings, Save, X, RefreshCw, Power } from 'lucide-react';
+import { toast } from 'sonner';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -225,6 +226,45 @@ export default function AdminStrategiesPage() {
     }
   };
 
+  const forceExitAllPositions = async (strategyId: string, strategyName: string, subscriberCount: number) => {
+    if (!token) return;
+
+    if (subscriberCount === 0) {
+      toast.warning('No subscribers to force exit');
+      return;
+    }
+
+    const confirmed = confirm(
+      `⚠️ EMERGENCY: Force close ALL positions for ${subscriberCount} subscribers of "${strategyName}"?\n\nThis will:\n- Exit all open positions on the exchange\n- Pause all subscriptions\n\nAre you absolutely sure?`
+    );
+    if (!confirmed) return;
+
+    try {
+      const authToken = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
+
+      const response = await axios.post(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/positions/force-close-all`,
+        { strategyId, pauseStrategy: true },
+        { headers: { Authorization: authToken } }
+      );
+
+      const { successfulClosures, failedClosures, totalSubscriptions } = response.data;
+
+      if (successfulClosures > 0) {
+        toast.success(`✅ Successfully closed positions for ${successfulClosures}/${totalSubscriptions} subscribers`);
+      }
+
+      if (failedClosures > 0) {
+        toast.warning(`⚠️ Failed to close positions for ${failedClosures} subscribers`);
+      }
+
+      loadData();
+    } catch (err) {
+      const error = err as { response?: { data?: { error?: string } } };
+      toast.error(error?.response?.data?.error || 'Failed to force close positions');
+    }
+  };
+
   const openEditModal = (strategy: Strategy) => {
     setEditingStrategy(strategy);
     setEditForm({
@@ -355,6 +395,16 @@ export default function AdminStrategiesPage() {
                         disabled={strategy.subscriberCount === 0}
                       >
                         <Settings className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
+                        onClick={() => forceExitAllPositions(strategy.id, strategy.name, strategy.subscriberCount)}
+                        title="Force close all positions for all subscribers"
+                        disabled={strategy.subscriberCount === 0}
+                      >
+                        <Power className="h-4 w-4" />
                       </Button>
                       <Button
                         size="sm"

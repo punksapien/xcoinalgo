@@ -285,8 +285,8 @@ export default function ClientDashboardPage() {
     }
   };
 
-  const handleEmergencyFlatten = async (_strategyId: string) => {
-    if (!confirm('⚠️ EMERGENCY: This will close ALL positions for ALL subscribers of this strategy. Are you absolutely sure?')) {
+  const handleEmergencyFlatten = async (strategyId: string) => {
+    if (!confirm('⚠️ EMERGENCY: This will close ALL positions for ALL subscribers of this strategy and pause all subscriptions. Are you absolutely sure?')) {
       return;
     }
 
@@ -294,11 +294,52 @@ export default function ClientDashboardPage() {
       const authToken = getAuthToken();
       if (!authToken) throw new Error('No authentication token found');
 
-      // TODO: Implement actual API call to flatten positions
-      toast.success('Emergency flatten signal sent to all subscribers');
+      const response = await axios.post(
+        '/api/positions/force-close-all',
+        { strategyId, pauseStrategy: true },
+        { headers: { Authorization: `Bearer ${authToken}` } }
+      );
+
+      const { successfulClosures, failedClosures, totalSubscriptions } = response.data;
+
+      if (successfulClosures > 0) {
+        toast.success(`✅ Successfully closed positions for ${successfulClosures}/${totalSubscriptions} subscribers`);
+      }
+
+      if (failedClosures > 0) {
+        toast.warning(`⚠️ Failed to close positions for ${failedClosures} subscribers. Check logs for details.`);
+      }
+
       loadDashboardData(true);
     } catch (_err) {
-      toast.error('Failed to send flatten signal');
+      toast.error('Failed to force close positions');
+    }
+  };
+
+  const handleForceCloseSubscriber = async (subscriptionId: string, subscriberName: string) => {
+    if (!confirm(`⚠️ Force close position for ${subscriberName}? This will immediately exit their position on the exchange.`)) {
+      return;
+    }
+
+    try {
+      const authToken = getAuthToken();
+      if (!authToken) throw new Error('No authentication token found');
+
+      await axios.post(
+        '/api/positions/force-close',
+        { subscriptionId },
+        { headers: { Authorization: `Bearer ${authToken}` } }
+      );
+
+      toast.success(`✅ Position closed for ${subscriberName}`);
+
+      // Reload subscribers list
+      if (selectedStrategy) {
+        loadStrategySubscribers(selectedStrategy.id);
+      }
+    } catch (err: any) {
+      const errorMsg = err.response?.data?.error || 'Failed to force close position';
+      toast.error(errorMsg);
     }
   };
 
@@ -412,6 +453,7 @@ export default function ClientDashboardPage() {
               subscribers={subscribers}
               subscribersLoading={subscribersLoading}
               onFlatten={() => handleEmergencyFlatten(selectedStrategy.id)}
+              onForceCloseSubscriber={handleForceCloseSubscriber}
               formatCurrency={formatCurrency}
             />
           )}
@@ -563,12 +605,14 @@ function StrategyDetailPanel({
   subscribers,
   subscribersLoading,
   onFlatten,
+  onForceCloseSubscriber,
   formatCurrency,
 }: {
   strategy: Strategy;
   subscribers: Subscriber[];
   subscribersLoading: boolean;
   onFlatten: () => void;
+  onForceCloseSubscriber: (subscriptionId: string, subscriberName: string) => void;
   formatCurrency: (v: number) => string;
 }) {
   const pnlPositive = strategy.totalPnl >= 0;
@@ -740,26 +784,39 @@ function StrategyDetailPanel({
                     'border-border'
                   }`}
                 >
-                  <div className="flex items-center gap-2 min-w-0">
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
                     <span className={`h-2 w-2 rounded-full flex-shrink-0 ${
                       sub.health === 'synced' ? 'bg-green-500' :
                       sub.health === 'slippage' ? 'bg-yellow-500' :
                       'bg-red-500'
                     }`} />
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium truncate">{sub.userName}</p>
                       <p className="text-xs text-muted-foreground">
                         ₹{sub.capital.toLocaleString()} • {sub.leverage}x
                       </p>
                     </div>
                   </div>
-                  <div className="text-right flex-shrink-0">
-                    <p className={`text-sm font-medium ${sub.todayPnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                      {formatCurrency(sub.todayPnl)}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {sub.isPaused ? 'Paused' : sub.isActive ? 'Active' : 'Inactive'}
-                    </p>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <div className="text-right">
+                      <p className={`text-sm font-medium ${sub.todayPnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                        {formatCurrency(sub.todayPnl)}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {sub.isPaused ? 'Paused' : sub.isActive ? 'Active' : 'Inactive'}
+                      </p>
+                    </div>
+                    {sub.openPositions > 0 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                        onClick={() => onForceCloseSubscriber(sub.id, sub.userName)}
+                        title="Force close position"
+                      >
+                        <XCircle className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
                 </div>
               ))}
