@@ -424,6 +424,12 @@ class SubscriptionService {
         return false
       }
 
+      // Check if already inactive - prevent double unsubscribe
+      if (!subscription.isActive) {
+        console.warn(`Subscription ${subscriptionId} is already inactive`)
+        return true // Already unsubscribed, nothing to do
+      }
+
       // Mark as inactive and set unsubscribedAt
       await prisma.strategySubscription.update({
         where: { id: subscriptionId },
