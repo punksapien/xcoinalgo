@@ -433,13 +433,15 @@ class SubscriptionService {
         },
       })
 
-      // Decrement subscriber count
-      await prisma.strategy.update({
-        where: { id: subscription.strategyId },
-        data: {
-          subscriberCount: { decrement: 1 },
-        },
-      })
+      // Decrement subscriber count (only if > 0 to prevent negative counts)
+      if (subscription.strategy.subscriberCount > 0) {
+        await prisma.strategy.update({
+          where: { id: subscription.strategyId },
+          data: {
+            subscriberCount: { decrement: 1 },
+          },
+        })
+      }
 
       // Remove from Redis
       await settingsService.updateSubscriptionSettings(
