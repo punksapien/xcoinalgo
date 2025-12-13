@@ -10,7 +10,6 @@ import { AuthenticatedRequest } from '../types';
 import { BotStatus } from '@prisma/client';
 import { Logger } from '../utils/logger';
 import CoinDCXClient from '../services/coindcx-client';
-import { decrypt } from '../utils/encryption';
 import axios from 'axios';
 import crypto from 'crypto';
 
@@ -533,9 +532,9 @@ router.post('/force-close', authenticate, async (req: AuthenticatedRequest, res)
       });
     }
 
-    // Decrypt credentials
-    const apiKey = decrypt(subscription.brokerCredential.apiKey);
-    const apiSecret = decrypt(subscription.brokerCredential.apiSecret);
+    // Get credentials (stored as plain text)
+    const apiKey = subscription.brokerCredential.apiKey;
+    const apiSecret = subscription.brokerCredential.apiSecret;
 
     // Get open positions from CoinDCX
     const positions = await callCoinDCXAPI(
@@ -678,8 +677,8 @@ router.post('/force-close-all', authenticate, async (req: AuthenticatedRequest, 
           continue;
         }
 
-        const apiKey = decrypt(subscription.brokerCredential.apiKey);
-        const apiSecret = decrypt(subscription.brokerCredential.apiSecret);
+        const apiKey = subscription.brokerCredential.apiKey;
+        const apiSecret = subscription.brokerCredential.apiSecret;
 
         // Get open positions
         const positions = await callCoinDCXAPI(
