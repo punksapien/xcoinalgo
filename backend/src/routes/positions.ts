@@ -33,7 +33,7 @@ async function callCoinDCXAPI(
   payload: any = {}
 ) {
   const timestamp = Date.now();
-  const bodyWithTimestamp = { ...payload, timestamp };
+  const bodyWithTimestamp = { timestamp, ...payload };  // timestamp must be first for CoinDCX signature
   const jsonBody = JSON.stringify(bodyWithTimestamp);
   const signature = createSignature(jsonBody, apiSecret);
 
