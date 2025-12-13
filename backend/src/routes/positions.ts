@@ -461,7 +461,7 @@ router.get('/pnl', authenticate, async (req: AuthenticatedRequest, res, next) =>
 });
 
 // POST /api/positions/force-close - Force close a specific position
-router.post('/force-close', authenticate, async (req: AuthenticatedRequest, res, next) => {
+router.post('/force-close', authenticate, async (req: AuthenticatedRequest, res) => {
   try {
     const userId = req.userId!;
     const { subscriptionId, positionId } = req.body;
@@ -473,7 +473,7 @@ router.post('/force-close', authenticate, async (req: AuthenticatedRequest, res,
     }
 
     // Get subscription and verify ownership/access
-    let subscription;
+    let subscription: any;
     if (subscriptionId) {
       subscription = await prisma.strategySubscription.findFirst({
         where: {
@@ -551,7 +551,7 @@ router.post('/force-close', authenticate, async (req: AuthenticatedRequest, res,
     );
 
     // Find the specific position to close
-    let targetPosition;
+    let targetPosition: any;
     if (positionId) {
       targetPosition = positions.find((p: any) => p.id === positionId);
     } else {
@@ -625,7 +625,7 @@ router.post('/force-close', authenticate, async (req: AuthenticatedRequest, res,
 });
 
 // POST /api/positions/force-close-all - Force close all positions for a strategy
-router.post('/force-close-all', authenticate, async (req: AuthenticatedRequest, res, next) => {
+router.post('/force-close-all', authenticate, async (req: AuthenticatedRequest, res) => {
   try {
     const userId = req.userId!;
     const { strategyId, pauseStrategy = true } = req.body;
