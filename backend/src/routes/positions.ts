@@ -652,6 +652,18 @@ router.post('/force-close-all', authenticate, async (req: AuthenticatedRequest, 
       });
     }
 
+    // Get strategy's trading pair from executionConfig
+    const strategyConfig = strategy.executionConfig as any;
+    const strategyPair = strategyConfig?.pair || strategyConfig?.symbol;
+
+    if (!strategyPair) {
+      return res.status(400).json({
+        error: 'Strategy has no trading pair configured'
+      });
+    }
+
+    logger.info(`Force closing positions for strategy ${strategyId}, pair: ${strategyPair}`);
+
     // Get all active subscriptions
     const subscriptions = await prisma.strategySubscription.findMany({
       where: {
@@ -714,29 +726,54 @@ router.post('/force-close-all', authenticate, async (req: AuthenticatedRequest, 
           continue;
         }
 
-        // Close all open positions
+        // Find position matching strategy's pair with active_pos != 0
         if (!Array.isArray(positions)) {
           logger.warn(`Positions is not an array, got: ${typeof positions}`);
+          errors.push({
+            subscriptionId: subscription.id,
+            error: 'Invalid positions response from CoinDCX'
+          });
           continue;
         }
 
-        for (const position of positions) {
-          logger.info(`Checking position: id=${position.id}, pair=${position.pair}, active_pos=${position.active_pos}`);
-          if (parseFloat(position.active_pos) !== 0) {
-            await callCoinDCXAPI(
-              '/exchange/v1/derivatives/futures/positions/exit',
-              'POST',
-              apiKey,
-              apiSecret,
-              { id: position.id }
-            );
+        // Match exactly like Python: find position where pair matches AND active_pos != 0
+        const activePosition = positions.find(
+          (p: any) => p.pair === strategyPair && (parseFloat(p.active_pos) !== 0)
+        );
 
-            results.push({
-              subscriptionId: subscription.id,
-              positionId: position.id,
-              closed: true
-            });
-          }
+        if (!activePosition) {
+          logger.info(`No active position found for pair ${strategyPair}`);
+          // Not an error - just no position to close
+          continue;
+        }
+
+        logger.info(`Found active position: id=${activePosition.id}, pair=${activePosition.pair}, active_pos=${activePosition.active_pos}`);
+
+        // Close this specific position
+        try {
+          await callCoinDCXAPI(
+            '/exchange/v1/derivatives/futures/positions/exit',
+            'POST',
+            apiKey,
+            apiSecret,
+            { id: activePosition.id }
+          );
+
+          logger.info(`Successfully closed position ${activePosition.id}`);
+
+          results.push({
+            subscriptionId: subscription.id,
+            positionId: activePosition.id,
+            pair: strategyPair,
+            closed: true
+          });
+        } catch (exitError: any) {
+          logger.error(`Failed to close position ${activePosition.id}: ${exitError.message}`, exitError.response?.data);
+          errors.push({
+            subscriptionId: subscription.id,
+            positionId: activePosition.id,
+            error: `Exit failed: ${exitError.message}`
+          });
         }
 
         // Update database
