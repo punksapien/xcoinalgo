@@ -1180,11 +1180,22 @@ class ExecutionCoordinator {
         logger.info(`Futures order placed: ${primaryOrder.id}`);
 
         // Fetch position to get position ID and liquidation price
+        // Small delay to ensure position is created on exchange
+        await new Promise(resolve => setTimeout(resolve, 500));
+
         const positions = await CoinDCXClient.listFuturesPositions(apiKey, apiSecret, {
           margin_currency_short_name: [marginCurrency],
         });
 
-        const position = positions.find(p => p.pair === symbol && p.side === orderSide);
+        // Match like Python: find by pair and active_pos != 0
+        const position = positions.find(p =>
+          p.pair === symbol && parseFloat(p.active_pos || '0') !== 0
+        );
+
+        logger.info(`Position lookup for ${symbol}: found ${positions.length} positions, matched: ${position?.id || 'none'}`);
+        if (!position && positions.length > 0) {
+          logger.info(`Available positions: ${positions.map(p => `${p.pair}:${p.active_pos}`).join(', ')}`);
+        }
 
         return {
           success: true,
