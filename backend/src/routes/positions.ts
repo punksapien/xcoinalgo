@@ -693,61 +693,70 @@ router.post('/force-close-all', authenticate, async (req: AuthenticatedRequest, 
         const apiKey = subscription.brokerCredential.apiKey;
         const apiSecret = subscription.brokerCredential.apiSecret;
 
-        logger.info(`Force closing positions for subscription ${subscription.id}, marginCurrency: ${subscription.marginCurrency || 'USDT'}`);
+        logger.info(`Force closing positions for subscription ${subscription.id}`);
 
-        // Get open positions
-        let positions;
-        try {
-          positions = await callCoinDCXAPI(
-            '/exchange/v1/derivatives/futures/positions',
-            'POST',
-            apiKey,
-            apiSecret,
-            {
-              page: 1,
-              size: 100,
-              margin_currency_short_name: [subscription.marginCurrency || 'USDT']
-            }
-          );
-          logger.info(`CoinDCX positions response:`, JSON.stringify(positions).substring(0, 500));
-
-          // Handle if response is wrapped in object
-          if (positions && !Array.isArray(positions) && positions.data) {
-            positions = positions.data;
+        // FIRST: Try to get position ID from our database (most reliable)
+        const openTrades = await prisma.trade.findMany({
+          where: {
+            subscriptionId: subscription.id,
+            status: 'OPEN',
+            positionId: { not: null }
+          },
+          select: {
+            id: true,
+            positionId: true,
+            symbol: true
           }
+        });
 
-          logger.info(`Got ${Array.isArray(positions) ? positions.length : 'non-array'} positions from CoinDCX`);
-        } catch (apiError: any) {
-          logger.error(`CoinDCX API error fetching positions: ${apiError.message}`, apiError.response?.data);
-          errors.push({
-            subscriptionId: subscription.id,
-            error: `CoinDCX API error: ${apiError.message}`
-          });
-          continue;
+        let positionIdToClose: string | null = null;
+
+        if (openTrades.length > 0 && openTrades[0].positionId) {
+          // Use stored position ID from database
+          positionIdToClose = openTrades[0].positionId;
+          logger.info(`Using stored positionId from DB: ${positionIdToClose}`);
+        } else {
+          // FALLBACK: Fetch from CoinDCX and match by pair (for older trades without positionId)
+          logger.info(`No stored positionId, falling back to CoinDCX lookup for pair: ${strategyPair}`);
+
+          try {
+            const positions = await callCoinDCXAPI(
+              '/exchange/v1/derivatives/futures/positions',
+              'POST',
+              apiKey,
+              apiSecret,
+              {
+                page: 1,
+                size: 100,
+                margin_currency_short_name: [subscription.marginCurrency || 'USDT']
+              }
+            );
+
+            const positionsArray = Array.isArray(positions) ? positions :
+              (positions?.data && Array.isArray(positions.data)) ? positions.data : [];
+
+            logger.info(`CoinDCX returned ${positionsArray.length} positions`);
+
+            const activePosition = positionsArray.find(
+              (p: any) => p.pair === strategyPair && parseFloat(p.active_pos || '0') !== 0
+            );
+
+            if (activePosition) {
+              positionIdToClose = activePosition.id;
+              logger.info(`Found position by pair match: ${positionIdToClose}`);
+            }
+          } catch (apiError: any) {
+            logger.error(`CoinDCX API error: ${apiError.message}`, apiError.response?.data);
+          }
         }
 
-        // Find position matching strategy's pair with active_pos != 0
-        if (!Array.isArray(positions)) {
-          logger.warn(`Positions is not an array, got: ${typeof positions}`);
-          errors.push({
-            subscriptionId: subscription.id,
-            error: 'Invalid positions response from CoinDCX'
-          });
-          continue;
-        }
-
-        // Match exactly like Python: find position where pair matches AND active_pos != 0
-        const activePosition = positions.find(
-          (p: any) => p.pair === strategyPair && (parseFloat(p.active_pos) !== 0)
-        );
-
-        if (!activePosition) {
-          logger.info(`No active position found for pair ${strategyPair}`);
+        if (!positionIdToClose) {
+          logger.info(`No position to close for subscription ${subscription.id}`);
           // Not an error - just no position to close
           continue;
         }
 
-        logger.info(`Found active position: id=${activePosition.id}, pair=${activePosition.pair}, active_pos=${activePosition.active_pos}`);
+        logger.info(`Closing position: ${positionIdToClose}`);
 
         // Close this specific position
         try {
@@ -756,22 +765,22 @@ router.post('/force-close-all', authenticate, async (req: AuthenticatedRequest, 
             'POST',
             apiKey,
             apiSecret,
-            { id: activePosition.id }
+            { id: positionIdToClose }
           );
 
-          logger.info(`Successfully closed position ${activePosition.id}`);
+          logger.info(`Successfully closed position ${positionIdToClose}`);
 
           results.push({
             subscriptionId: subscription.id,
-            positionId: activePosition.id,
+            positionId: positionIdToClose,
             pair: strategyPair,
             closed: true
           });
         } catch (exitError: any) {
-          logger.error(`Failed to close position ${activePosition.id}: ${exitError.message}`, exitError.response?.data);
+          logger.error(`Failed to close position ${positionIdToClose}: ${exitError.message}`, exitError.response?.data);
           errors.push({
             subscriptionId: subscription.id,
-            positionId: activePosition.id,
+            positionId: positionIdToClose,
             error: `Exit failed: ${exitError.message}`
           });
         }
