@@ -354,50 +354,51 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
         logging.info("✅ Strategy classes loaded successfully")
 
         # ====================================================================
-        # TRADE INTERCEPTION: Wrap CoinDCXClient.create_order to report trades
+        # TRADE INTERCEPTION: Wrap create_order to report trades to backend
         # ====================================================================
-        if 'CoinDCXClient' in exec_scope:
-            CoinDCXClient = exec_scope['CoinDCXClient']
-            original_create_order = CoinDCXClient.create_order
+        # Thread-local storage for current subscriber context (always set up)
+        import threading
+        _trade_context = threading.local()
+        _pending_reports = []  # Track pending report threads
 
-            # Thread-local storage for current subscriber context
-            import threading
-            _trade_context = threading.local()
+        def set_trade_context(context):
+            """Set the current subscriber context for trade reporting"""
+            _trade_context.data = context
 
-            def set_trade_context(context):
-                """Set the current subscriber context for trade reporting"""
-                _trade_context.data = context
+        def get_trade_context():
+            """Get the current subscriber context"""
+            return getattr(_trade_context, 'data', {})
 
-            def get_trade_context():
-                """Get the current subscriber context"""
-                return getattr(_trade_context, 'data', {})
+        def report_trade_to_backend(trade_data):
+            """Send trade data to the backend API"""
+            try:
+                import requests
+                backend_url = os.environ.get('BACKEND_URL', 'http://localhost:3001')
+                internal_key = os.environ.get('INTERNAL_API_KEY', 'xcoinalgo-internal-key-2024')
 
-            def report_trade_to_backend(trade_data):
-                """Send trade data to the backend API"""
-                try:
-                    import requests
-                    backend_url = os.environ.get('BACKEND_URL', 'http://localhost:3001')
-                    internal_key = os.environ.get('INTERNAL_API_KEY', 'xcoinalgo-internal-key-2024')
+                logging.info(f"🔄 Reporting trade to backend: {backend_url}/api/strategies/trades")
 
-                    response = requests.post(
-                        f"{backend_url}/api/strategies/trades",
-                        json=trade_data,
-                        headers={
-                            'Content-Type': 'application/json',
-                            'X-Internal-Key': internal_key
-                        },
-                        timeout=5
-                    )
+                response = requests.post(
+                    f"{backend_url}/api/strategies/trades",
+                    json=trade_data,
+                    headers={
+                        'Content-Type': 'application/json',
+                        'X-Internal-Key': internal_key
+                    },
+                    timeout=10  # Increased timeout
+                )
 
-                    if response.status_code == 200:
-                        logging.info(f"📊 Trade reported to backend: {trade_data.get('side')} {trade_data.get('quantity')} {trade_data.get('symbol')}")
-                    else:
-                        logging.warning(f"⚠️ Trade report failed: {response.status_code} - {response.text}")
+                if response.status_code == 200:
+                    logging.info(f"📊 Trade reported to backend: {trade_data.get('side')} {trade_data.get('quantity')} {trade_data.get('symbol')}")
+                else:
+                    logging.warning(f"⚠️ Trade report failed: {response.status_code} - {response.text}")
 
-                except Exception as e:
-                    # Don't let reporting failures affect trading
-                    logging.warning(f"⚠️ Trade reporting error (non-fatal): {e}")
+            except Exception as e:
+                # Don't let reporting failures affect trading
+                logging.warning(f"⚠️ Trade reporting error (non-fatal): {e}")
 
+        def create_intercepted_create_order(original_create_order):
+            """Factory to create an intercepted create_order with closure over original"""
             def intercepted_create_order(self, pair, side, order_type, total_quantity, leverage, **kwargs):
                 """Wrapper that intercepts orders and reports them to the backend"""
                 # Call original method first - THIS MUST ALWAYS SUCCEED
@@ -407,6 +408,10 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
                 try:
                     # Get current subscriber context
                     context = get_trade_context()
+
+                    if not context.get('subscription_id'):
+                        logging.warning(f"⚠️ No subscription context set, skipping trade report")
+                        return response
 
                     # Determine if this is an entry or exit based on client_order_id
                     client_order_id = kwargs.get('client_order_id', '')
@@ -468,25 +473,34 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
                         trade_data['filledPrice'] = first_order.get('avg_price') or first_order.get('price')
                         trade_data['filledQuantity'] = first_order.get('filled_quantity') or first_order.get('total_quantity')
 
-                    # Report trade asynchronously (don't block trading)
-                    import threading
-                    report_thread = threading.Thread(target=report_trade_to_backend, args=(trade_data,))
-                    report_thread.daemon = True
-                    report_thread.start()
+                    # Report trade synchronously (daemon threads may be killed)
+                    # This adds ~1s latency but ensures trades are reported
+                    report_trade_to_backend(trade_data)
 
                 except Exception as e:
                     # NEVER let trade reporting crash the actual trading - just log and continue
                     logging.warning(f"⚠️ Trade interception error (non-fatal, trade still executed): {e}")
 
                 return response
+            return intercepted_create_order
 
-            # Replace the method on the class
-            CoinDCXClient.create_order = intercepted_create_order
+        # Find and patch ANY class with create_order method
+        # This handles cases where CoinDCXClient is imported from a module
+        classes_patched = []
+        for name, obj in exec_scope.items():
+            if isinstance(obj, type) and hasattr(obj, 'create_order') and callable(getattr(obj, 'create_order', None)):
+                original_method = obj.create_order
+                obj.create_order = create_intercepted_create_order(original_method)
+                classes_patched.append(name)
+                logging.info(f"📊 Patched {name}.create_order for trade interception")
 
-            # Store set_trade_context in exec_scope so we can use it when processing subscribers
-            exec_scope['_set_trade_context'] = set_trade_context
+        # Store set_trade_context in exec_scope so we can use it when processing subscribers
+        exec_scope['_set_trade_context'] = set_trade_context
 
-            logging.info("📊 Trade interception enabled - all orders will be reported to backend")
+        if classes_patched:
+            logging.info(f"📊 Trade interception enabled for: {', '.join(classes_patched)}")
+        else:
+            logging.warning(f"⚠️ No class with create_order method found - trades will NOT be reported to backend!")
 
         # ====================================================================
         # STEP 2: Fetch market data ONCE (shared across all subscribers)

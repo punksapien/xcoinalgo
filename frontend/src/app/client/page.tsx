@@ -649,10 +649,11 @@ function StrategyDetailPanel({
       if (!tradesData[subscriptionId]) {
         setLoadingTrades(prev => new Set(prev).add(subscriptionId));
         try {
-          const token = localStorage.getItem('auth_token');
+          const authToken = getAuthToken();
+          if (!authToken) throw new Error('No authentication token');
           const response = await axios.get(
             `/api/client/subscribers/${subscriptionId}/trades`,
-            { headers: { Authorization: `Bearer ${token}` } }
+            { headers: { Authorization: `Bearer ${authToken}` } }
           );
           setTradesData(prev => ({
             ...prev,
