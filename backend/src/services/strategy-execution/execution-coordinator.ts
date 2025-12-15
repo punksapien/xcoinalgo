@@ -1189,7 +1189,7 @@ class ExecutionCoordinator {
 
         // Match like Python: find by pair and active_pos != 0
         const position = positions.find(p =>
-          p.pair === symbol && parseFloat(p.active_pos || '0') !== 0
+          p.pair === symbol && parseFloat(String(p.active_pos || '0')) !== 0
         );
 
         logger.info(`Position lookup for ${symbol}: found ${positions.length} positions, matched: ${position?.id || 'none'}`);
