@@ -30,6 +30,9 @@ import {
   BarChart3,
   Clock,
   Target,
+  Eye,
+  Pause,
+  Play,
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import axios from 'axios';
@@ -447,7 +450,7 @@ export default function ClientDashboardPage() {
 
       {/* Strategy Detail Dialog */}
       <Dialog open={!!selectedStrategy} onOpenChange={(open) => !open && setSelectedStrategy(null)}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
           {selectedStrategy && (
             <StrategyDetailPanel
               strategy={selectedStrategy}
@@ -744,14 +747,12 @@ function StrategyDetailPanel({
         </CardContent>
       </Card>
 
-      {/* Subscribers List */}
+      {/* Subscribers Table */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium flex items-center justify-between">
-            <span className="flex items-center gap-2">
-              <Users className="h-4 w-4" />
-              Subscribers ({subscribers.length})
-            </span>
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <Users className="h-4 w-4" />
+            Subscribers ({subscribers.length})
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -764,52 +765,79 @@ function StrategyDetailPanel({
               No subscribers yet
             </p>
           ) : (
-            <div className="space-y-2 max-h-64 overflow-y-auto">
-              {subscribers.map((sub) => (
-                <div
-                  key={sub.id}
-                  className={`flex items-center justify-between p-2 rounded-lg border ${
-                    sub.health === 'error' ? 'border-red-200 bg-red-50/50 dark:border-red-800 dark:bg-red-950/20' :
-                    sub.health === 'slippage' ? 'border-yellow-200 bg-yellow-50/50 dark:border-yellow-800 dark:bg-yellow-950/20' :
-                    'border-border'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 min-w-0 flex-1">
-                    <span className={`h-2 w-2 rounded-full flex-shrink-0 ${
-                      sub.health === 'synced' ? 'bg-green-500' :
-                      sub.health === 'slippage' ? 'bg-yellow-500' :
-                      'bg-red-500'
-                    }`} />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium truncate">{sub.userName}</p>
-                      <p className="text-xs text-muted-foreground">
-                        ₹{sub.capital.toLocaleString()} • {sub.leverage}x
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <div className="text-right">
-                      <p className={`text-sm font-medium ${sub.todayPnl >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                        {formatCurrency(sub.todayPnl)}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {sub.isPaused ? 'Paused' : sub.isActive ? 'Active' : 'Inactive'}
-                      </p>
-                    </div>
-                    {sub.openPositions > 0 && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
-                        onClick={() => onForceCloseSubscriber(sub.id, sub.userName)}
-                        title="Force close position"
-                      >
-                        <XCircle className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              ))}
+            <div className="border rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="text-left py-2 px-3 font-medium">User</th>
+                    <th className="text-right py-2 px-3 font-medium">Capital</th>
+                    <th className="text-right py-2 px-3 font-medium">Leverage</th>
+                    <th className="text-right py-2 px-3 font-medium">Total PnL</th>
+                    <th className="text-center py-2 px-3 font-medium">Status</th>
+                    <th className="text-center py-2 px-3 font-medium">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {subscribers.map((sub) => (
+                    <tr key={sub.id} className="hover:bg-muted/30">
+                      <td className="py-2 px-3">
+                        <div>
+                          <p className="font-medium">{sub.userName}</p>
+                          <p className="text-xs text-muted-foreground">{sub.userEmail}</p>
+                        </div>
+                      </td>
+                      <td className="text-right py-2 px-3">
+                        ₹{sub.capital.toLocaleString()}
+                      </td>
+                      <td className="text-right py-2 px-3">
+                        {sub.leverage}x
+                      </td>
+                      <td className={`text-right py-2 px-3 font-medium ${sub.totalPnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {formatCurrency(sub.totalPnl)}
+                      </td>
+                      <td className="text-center py-2 px-3">
+                        {sub.isPaused ? (
+                          <Badge variant="secondary" className="bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">
+                            <Pause className="h-3 w-3 mr-1" />
+                            Paused
+                          </Badge>
+                        ) : sub.isActive ? (
+                          <Badge variant="secondary" className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                            <Play className="h-3 w-3 mr-1" />
+                            Active
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary">
+                            Inactive
+                          </Badge>
+                        )}
+                      </td>
+                      <td className="text-center py-2 px-3">
+                        <div className="flex items-center justify-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0"
+                            onClick={() => window.open(`/client/trades?subscriptionId=${sub.id}`, '_blank')}
+                            title="View trades"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                            onClick={() => onForceCloseSubscriber(sub.id, sub.userName)}
+                            title="Exit position"
+                          >
+                            <Power className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </CardContent>
