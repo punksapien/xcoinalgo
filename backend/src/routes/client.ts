@@ -1059,20 +1059,18 @@ router.get('/dashboard', async (req: AuthenticatedRequest, res, next) => {
         ? `${avgDurationHours}h ${avgDurationMinutes}m`
         : `${avgDurationMinutes}m`;
 
-      // Generate sparkline data (last 7 days)
-      const sparklineData = [];
-      for (let i = 6; i >= 0; i--) {
-        const date = new Date();
-        date.setDate(date.getDate() - i);
-        const dateStr = date.toISOString().split('T')[0];
-        sparklineData.push({
+      // Generate sparkline data (all time - sorted by date)
+      const sortedDates = Array.from(dailyPnlMap.keys()).sort();
+      let cumulativePnl = 0;
+      const sparklineData = sortedDates.map(dateStr => {
+        const dailyPnl = dailyPnlMap.get(dateStr) || 0;
+        cumulativePnl += dailyPnl;
+        return {
           date: dateStr,
-          pnl: dailyPnlMap.get(dateStr) || 0,
-          cumulativePnl: Array.from(dailyPnlMap.entries())
-            .filter(([d]) => d <= dateStr)
-            .reduce((sum, [, pnl]) => sum + pnl, 0),
-        });
-      }
+          pnl: dailyPnl,
+          cumulativePnl: Math.round(cumulativePnl * 100) / 100,
+        };
+      });
 
       // Calculate today's P&L percentage
       const totalCapital = strategy.subscriptions.reduce((sum, sub) => sum + sub.capital, 0);

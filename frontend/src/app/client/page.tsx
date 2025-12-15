@@ -20,10 +20,6 @@ import {
   Users,
   TrendingUp,
   TrendingDown,
-  Activity,
-  AlertTriangle,
-  CheckCircle,
-  XCircle,
   Power,
   RefreshCw,
   ChevronRight,
@@ -714,7 +710,7 @@ function StrategyDetailPanel({
       {/* Equity Curve Chart */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium">Performance (Last 7 Days)</CardTitle>
+          <CardTitle className="text-sm font-medium">Performance (All Time)</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="h-40">
@@ -776,46 +772,6 @@ function StrategyDetailPanel({
           <p className="text-lg font-bold">{strategy.avgTradeDuration}</p>
         </div>
       </div>
-
-      {/* Execution Health */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <Activity className="h-4 w-4" />
-            Execution Health
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className={`p-3 rounded-lg ${
-            strategy.health.status === 'error' ? 'bg-red-50 dark:bg-red-950/30' :
-            strategy.health.status === 'warning' ? 'bg-yellow-50 dark:bg-yellow-950/30' :
-            'bg-green-50 dark:bg-green-950/30'
-          }`}>
-            <div className="flex items-center gap-2">
-              {strategy.health.status === 'healthy' && <CheckCircle className="h-5 w-5 text-green-500" />}
-              {strategy.health.status === 'warning' && <AlertTriangle className="h-5 w-5 text-yellow-500" />}
-              {strategy.health.status === 'error' && <XCircle className="h-5 w-5 text-red-500" />}
-              <span className={`font-medium ${
-                strategy.health.status === 'error' ? 'text-red-700 dark:text-red-400' :
-                strategy.health.status === 'warning' ? 'text-yellow-700 dark:text-yellow-400' :
-                'text-green-700 dark:text-green-400'
-              }`}>
-                {strategy.health.message}
-              </span>
-            </div>
-            {strategy.health.errors.length > 0 && (
-              <ul className="mt-2 space-y-1">
-                {strategy.health.errors.map((err, i) => (
-                  <li key={i} className="text-xs text-red-600 dark:text-red-400 flex items-center gap-1">
-                    <span className="h-1 w-1 rounded-full bg-red-500" />
-                    {err}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Subscribers Table */}
       <Card>
