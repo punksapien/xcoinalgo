@@ -514,17 +514,27 @@ router.get('/subscribers', async (req: AuthenticatedRequest, res, next) => {
 /**
  * GET /api/client/subscribers/:id/trades
  * Get trades for a specific subscriber (client viewing their subscriber's trades)
+ * Falls back to CoinDCX exchange API if database has no trades
  */
 router.get('/subscribers/:id/trades', async (req: AuthenticatedRequest, res, next) => {
   try {
     const userId = req.userId!;
     const { id: subscriptionId } = req.params;
+    const { includeExchange } = req.query;
 
     // Verify the subscription belongs to a strategy owned by this client
     const subscription = await prisma.strategySubscription.findFirst({
       where: {
         id: subscriptionId,
         strategy: { clientId: userId }
+      },
+      include: {
+        brokerCredential: {
+          select: { apiKey: true, apiSecret: true }
+        },
+        strategy: {
+          select: { executionConfig: true }
+        }
       }
     });
 
@@ -532,8 +542,8 @@ router.get('/subscribers/:id/trades', async (req: AuthenticatedRequest, res, nex
       return res.status(404).json({ error: 'Subscription not found or not authorized' });
     }
 
-    // Get trades for this subscription
-    const trades = await prisma.trade.findMany({
+    // Get trades from database
+    const dbTrades = await prisma.trade.findMany({
       where: { subscriptionId },
       orderBy: { createdAt: 'desc' },
       take: 100,
@@ -548,13 +558,90 @@ router.get('/subscribers/:id/trades', async (req: AuthenticatedRequest, res, nex
         pnl: true,
         createdAt: true,
         exitedAt: true,
-        positionId: true
+        positionId: true,
+        orderId: true,
+        leverage: true,
+        orderType: true
       }
     });
 
+    // If we have trades in DB and user didn't explicitly request exchange data, return DB trades
+    if (dbTrades.length > 0 && includeExchange !== 'true') {
+      return res.json({
+        trades: dbTrades,
+        count: dbTrades.length,
+        source: 'database'
+      });
+    }
+
+    // If DB is empty or user wants exchange data, fetch from CoinDCX
+    let exchangeTrades: any[] = [];
+    if (subscription.brokerCredential?.apiKey && subscription.brokerCredential?.apiSecret) {
+      try {
+        const CoinDCXClient = await import('../services/coindcx-client');
+        const tradingType = subscription.tradingType || 'futures';
+        const executionConfig = subscription.strategy?.executionConfig as any;
+        const pair = executionConfig?.pair || executionConfig?.symbol;
+        const marginCurrency = subscription.marginCurrency || 'USDT';
+
+        if (tradingType === 'futures') {
+          // Fetch futures orders from exchange
+          const orders = await CoinDCXClient.listFuturesOrders(
+            subscription.brokerCredential.apiKey,
+            subscription.brokerCredential.apiSecret,
+            {
+              timestamp: Date.now(),
+              status: 'all',
+              side: 'all',
+              page: '1',
+              size: '100',
+              margin_currency_short_name: [marginCurrency]
+            }
+          );
+
+          // Transform exchange orders to trade format
+          exchangeTrades = orders
+            .filter((order: any) => !pair || order.pair === pair)
+            .map((order: any) => ({
+              id: `exchange_${order.id}`,
+              orderId: order.id,
+              symbol: order.pair,
+              side: order.side?.toUpperCase(),
+              quantity: parseFloat(order.total_quantity || order.quantity || 0),
+              entryPrice: parseFloat(order.avg_price || order.price || 0),
+              exitPrice: null,
+              status: order.status === 'filled' ? 'CLOSED' : (order.status === 'open' ? 'OPEN' : order.status?.toUpperCase()),
+              pnl: parseFloat(order.realized_pnl || 0),
+              createdAt: order.created_at || order.timestamp,
+              exitedAt: order.updated_at,
+              positionId: order.position_id,
+              source: 'exchange',
+              leverage: order.leverage,
+              orderType: order.order_type
+            }));
+        }
+      } catch (exchangeError) {
+        console.error('Failed to fetch from exchange:', exchangeError);
+        // Don't fail the request, just return DB trades
+      }
+    }
+
+    // Merge DB trades and exchange trades, removing duplicates by orderId
+    const dbOrderIds = new Set(dbTrades.map(t => (t as any).orderId).filter(Boolean));
+    const uniqueExchangeTrades = exchangeTrades.filter(t => !dbOrderIds.has(t.orderId));
+
+    // Combine: DB trades first (more accurate), then exchange-only trades
+    const allTrades = [
+      ...dbTrades.map(t => ({ ...t, source: 'database' })),
+      ...uniqueExchangeTrades
+    ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
     res.json({
-      trades,
-      count: trades.length
+      trades: allTrades,
+      count: allTrades.length,
+      dbCount: dbTrades.length,
+      exchangeCount: exchangeTrades.length,
+      source: dbTrades.length > 0 ? 'database+exchange' : 'exchange'
     });
   } catch (error) {
     next(error);
