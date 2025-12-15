@@ -675,15 +675,6 @@ function StrategyDetailPanel({
     }
   };
 
-  // Auto-fetch trades for all subscribers to show PnL immediately
-  useEffect(() => {
-    subscribers.forEach(sub => {
-      if (!tradesData[sub.id]) {
-        fetchTrades(sub.id, 1);
-      }
-    });
-  }, [subscribers]);
-
   const toggleRow = async (subscriptionId: string) => {
     const newExpanded = new Set(expandedRows);
 
@@ -896,8 +887,8 @@ function StrategyDetailPanel({
                           <td className="text-right py-2 px-3">
                             {sub.leverage}x
                           </td>
-                          <td className={`text-right py-2 px-3 font-medium ${(summary?.netPnl ?? sub.totalPnl) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            {formatCurrency(summary?.netPnl ?? sub.totalPnl)}
+                          <td className={`text-right py-2 px-3 font-medium ${sub.totalPnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {formatCurrency(sub.totalPnl)}
                           </td>
                           <td className="text-center py-2 px-3">
                             {sub.isPaused ? (

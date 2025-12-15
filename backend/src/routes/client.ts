@@ -474,13 +474,45 @@ router.get('/subscribers', async (req: AuthenticatedRequest, res, next) => {
             isPublic: true,
             executionConfig: true
           }
+        },
+        trades: {
+          select: {
+            id: true,
+            side: true,
+            quantity: true,
+            entryPrice: true,
+            exitPrice: true,
+            pnl: true,
+            status: true
+          }
         }
       },
       orderBy: { subscribedAt: 'desc' }
     });
 
-    res.json({
-      subscribers: subscriptions.map(sub => ({
+    // Calculate net PnL for each subscriber from their trades
+    const subscribersWithPnl = subscriptions.map(sub => {
+      let calculatedPnl = 0;
+      let closedTrades = 0;
+      let openTrades = 0;
+
+      for (const trade of sub.trades) {
+        if (trade.status === 'OPEN') {
+          openTrades++;
+          continue;
+        }
+        closedTrades++;
+        if (trade.pnl) {
+          calculatedPnl += trade.pnl;
+        } else if (trade.entryPrice && trade.exitPrice) {
+          const priceDiff = trade.side === 'BUY'
+            ? trade.exitPrice - trade.entryPrice
+            : trade.entryPrice - trade.exitPrice;
+          calculatedPnl += priceDiff * (trade.quantity || 0);
+        }
+      }
+
+      return {
         id: sub.id,
         user: sub.user,
         strategy: sub.strategy,
@@ -498,14 +530,18 @@ router.get('/subscribers', async (req: AuthenticatedRequest, res, next) => {
         subscribedAt: sub.subscribedAt,
         pausedAt: sub.pausedAt,
         unsubscribedAt: sub.unsubscribedAt,
-        // Performance
-        totalTrades: sub.totalTrades,
+        // Performance (calculated from trades)
+        totalTrades: sub.trades.length,
+        closedTrades,
+        openTrades,
         winningTrades: sub.winningTrades,
         losingTrades: sub.losingTrades,
-        totalPnl: sub.totalPnl,
-        winRate: sub.totalTrades > 0 ? (sub.winningTrades / sub.totalTrades) * 100 : 0
-      }))
+        totalPnl: Math.round(calculatedPnl * 100) / 100, // Calculated net PnL
+        winRate: sub.trades.length > 0 ? (sub.winningTrades / sub.trades.length) * 100 : 0
+      };
     });
+
+    res.json({ subscribers: subscribersWithPnl });
   } catch (error) {
     next(error);
   }
