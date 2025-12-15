@@ -634,8 +634,43 @@ function StrategyDetailPanel({
 }) {
   const pnlPositive = strategy.totalPnl >= 0;
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
-  const [tradesData, setTradesData] = useState<Record<string, Trade[]>>({});
+  const [tradesData, setTradesData] = useState<Record<string, {
+    trades: Trade[];
+    pagination: { page: number; totalPages: number; totalCount: number; hasMore: boolean };
+    meta: { source: string; dbCount: number; exchangeCount: number };
+  }>>({});
   const [loadingTrades, setLoadingTrades] = useState<Set<string>>(new Set());
+
+  const fetchTrades = async (subscriptionId: string, page: number = 1) => {
+    setLoadingTrades(prev => new Set(prev).add(subscriptionId));
+    try {
+      const tokenStorage = localStorage.getItem('auth-storage');
+      const authData = tokenStorage ? JSON.parse(tokenStorage) : null;
+      const authToken = authData?.state?.token;
+      if (!authToken) throw new Error('No authentication token');
+      const response = await axios.get(
+        `/api/client/subscribers/${subscriptionId}/trades?page=${page}&limit=20`,
+        { headers: { Authorization: `Bearer ${authToken}` } }
+      );
+      setTradesData(prev => ({
+        ...prev,
+        [subscriptionId]: {
+          trades: response.data.trades || [],
+          pagination: response.data.pagination || { page: 1, totalPages: 1, totalCount: 0, hasMore: false },
+          meta: response.data.meta || { source: 'database', dbCount: 0, exchangeCount: 0 }
+        }
+      }));
+    } catch (err) {
+      console.error('Failed to load trades:', err);
+      toast.error('Failed to load trades');
+    } finally {
+      setLoadingTrades(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(subscriptionId);
+        return newSet;
+      });
+    }
+  };
 
   const toggleRow = async (subscriptionId: string) => {
     const newExpanded = new Set(expandedRows);
@@ -644,34 +679,9 @@ function StrategyDetailPanel({
       newExpanded.delete(subscriptionId);
     } else {
       newExpanded.add(subscriptionId);
-
       // Fetch trades if not already loaded
       if (!tradesData[subscriptionId]) {
-        setLoadingTrades(prev => new Set(prev).add(subscriptionId));
-        try {
-          // Get auth token from Zustand storage
-          const tokenStorage = localStorage.getItem('auth-storage');
-          const authData = tokenStorage ? JSON.parse(tokenStorage) : null;
-          const authToken = authData?.state?.token;
-          if (!authToken) throw new Error('No authentication token');
-          const response = await axios.get(
-            `/api/client/subscribers/${subscriptionId}/trades`,
-            { headers: { Authorization: `Bearer ${authToken}` } }
-          );
-          setTradesData(prev => ({
-            ...prev,
-            [subscriptionId]: response.data.trades || []
-          }));
-        } catch (err) {
-          console.error('Failed to load trades:', err);
-          toast.error('Failed to load trades');
-        } finally {
-          setLoadingTrades(prev => {
-            const newSet = new Set(prev);
-            newSet.delete(subscriptionId);
-            return newSet;
-          });
-        }
+        await fetchTrades(subscriptionId, 1);
       }
     }
 
@@ -839,11 +849,14 @@ function StrategyDetailPanel({
                   {subscribers.map((sub) => {
                     const isExpanded = expandedRows.has(sub.id);
                     const isLoadingTrades = loadingTrades.has(sub.id);
-                    const trades = tradesData[sub.id] || [];
+                    const tradeInfo = tradesData[sub.id];
+                    const trades = tradeInfo?.trades || [];
+                    const pagination = tradeInfo?.pagination;
+                    const meta = tradeInfo?.meta;
 
                     return (
-                      <>
-                        <tr key={sub.id} className="hover:bg-muted/30">
+                      <React.Fragment key={sub.id}>
+                        <tr className="hover:bg-muted/30">
                           <td className="py-2 px-2">
                             <Button
                               variant="ghost"
@@ -918,9 +931,22 @@ function StrategyDetailPanel({
                                 </p>
                               ) : (
                                 <div className="space-y-2">
-                                  <p className="text-xs font-medium text-muted-foreground mb-2">
-                                    Recent Trades ({trades.length})
-                                  </p>
+                                  <div className="flex items-center justify-between mb-2">
+                                    <p className="text-xs font-medium text-muted-foreground">
+                                      Recent Trades ({pagination?.totalCount || trades.length})
+                                    </p>
+                                    {meta && (
+                                      <span className={`text-xs px-2 py-0.5 rounded ${
+                                        meta.source === 'exchange' ? 'bg-orange-100 text-orange-700' :
+                                        meta.source === 'database+exchange' ? 'bg-purple-100 text-purple-700' :
+                                        'bg-blue-100 text-blue-700'
+                                      }`}>
+                                        {meta.source === 'exchange' ? '📡 Exchange' :
+                                         meta.source === 'database+exchange' ? '🔄 DB + Exchange' :
+                                         '💾 Database'}
+                                      </span>
+                                    )}
+                                  </div>
                                   <div className="border rounded bg-background">
                                     <table className="w-full text-xs">
                                       <thead className="bg-muted/50">
@@ -936,7 +962,7 @@ function StrategyDetailPanel({
                                         </tr>
                                       </thead>
                                       <tbody className="divide-y divide-border">
-                                        {trades.slice(0, 10).map((trade) => (
+                                        {trades.map((trade) => (
                                           <tr key={trade.id}>
                                             <td className="py-1.5 px-2 font-mono">{trade.symbol}</td>
                                             <td className="text-center py-1.5 px-2">
@@ -971,17 +997,40 @@ function StrategyDetailPanel({
                                       </tbody>
                                     </table>
                                   </div>
-                                  {trades.length > 10 && (
-                                    <p className="text-xs text-muted-foreground text-center">
-                                      Showing 10 of {trades.length} trades
-                                    </p>
+                                  {/* Pagination Controls */}
+                                  {pagination && pagination.totalPages > 1 && (
+                                    <div className="flex items-center justify-between pt-2">
+                                      <p className="text-xs text-muted-foreground">
+                                        Page {pagination.page} of {pagination.totalPages}
+                                      </p>
+                                      <div className="flex gap-1">
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          className="h-7 px-2 text-xs"
+                                          disabled={pagination.page <= 1 || isLoadingTrades}
+                                          onClick={() => fetchTrades(sub.id, pagination.page - 1)}
+                                        >
+                                          ← Prev
+                                        </Button>
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          className="h-7 px-2 text-xs"
+                                          disabled={!pagination.hasMore || isLoadingTrades}
+                                          onClick={() => fetchTrades(sub.id, pagination.page + 1)}
+                                        >
+                                          Next →
+                                        </Button>
+                                      </div>
+                                    </div>
                                   )}
                                 </div>
                               )}
                             </td>
                           </tr>
                         )}
-                      </>
+                      </React.Fragment>
                     );
                   })}
                 </tbody>

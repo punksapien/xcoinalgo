@@ -520,7 +520,9 @@ router.get('/subscribers/:id/trades', async (req: AuthenticatedRequest, res, nex
   try {
     const userId = req.userId!;
     const { id: subscriptionId } = req.params;
-    const { includeExchange } = req.query;
+    const { includeExchange, page = '1', limit = '20' } = req.query;
+    const pageNum = Math.max(1, parseInt(page as string) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit as string) || 20));
 
     // Verify the subscription belongs to a strategy owned by this client
     const subscription = await prisma.strategySubscription.findFirst({
@@ -567,10 +569,25 @@ router.get('/subscribers/:id/trades', async (req: AuthenticatedRequest, res, nex
 
     // If we have trades in DB and user didn't explicitly request exchange data, return DB trades
     if (dbTrades.length > 0 && includeExchange !== 'true') {
+      const totalCount = dbTrades.length;
+      const totalPages = Math.ceil(totalCount / limitNum);
+      const startIndex = (pageNum - 1) * limitNum;
+      const paginatedTrades = dbTrades.slice(startIndex, startIndex + limitNum);
+
       return res.json({
-        trades: dbTrades,
-        count: dbTrades.length,
-        source: 'database'
+        trades: paginatedTrades.map(t => ({ ...t, source: 'database' })),
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          totalCount,
+          totalPages,
+          hasMore: pageNum < totalPages
+        },
+        meta: {
+          dbCount: totalCount,
+          exchangeCount: 0,
+          source: 'database'
+        }
       });
     }
 
@@ -600,8 +617,14 @@ router.get('/subscribers/:id/trades', async (req: AuthenticatedRequest, res, nex
           );
 
           // Transform exchange orders to trade format
+          // Filter for OUR orders only (xc_ or xcoin_ prefix in client_order_id)
           exchangeTrades = orders
-            .filter((order: any) => !pair || order.pair === pair)
+            .filter((order: any) => {
+              const clientOrderId = (order.client_order_id || '').toLowerCase();
+              const isOurOrder = clientOrderId.startsWith('xc_') || clientOrderId.startsWith('xcoin_');
+              const matchesPair = !pair || order.pair === pair;
+              return isOurOrder && matchesPair;
+            })
             .map((order: any) => ({
               id: `exchange_${order.id}`,
               orderId: order.id,
@@ -617,7 +640,8 @@ router.get('/subscribers/:id/trades', async (req: AuthenticatedRequest, res, nex
               positionId: order.position_id,
               source: 'exchange',
               leverage: order.leverage,
-              orderType: order.order_type
+              orderType: order.order_type,
+              clientOrderId: order.client_order_id
             }));
         }
       } catch (exchangeError) {
@@ -632,16 +656,32 @@ router.get('/subscribers/:id/trades', async (req: AuthenticatedRequest, res, nex
 
     // Combine: DB trades first (more accurate), then exchange-only trades
     const allTrades = [
-      ...dbTrades.map(t => ({ ...t, source: 'database' })),
+      ...dbTrades.map(t => ({ ...t, source: 'database' as const })),
       ...uniqueExchangeTrades
     ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
+    // Apply pagination
+    const totalCount = allTrades.length;
+    const totalPages = Math.ceil(totalCount / limitNum);
+    const startIndex = (pageNum - 1) * limitNum;
+    const paginatedTrades = allTrades.slice(startIndex, startIndex + limitNum);
+
     res.json({
-      trades: allTrades,
-      count: allTrades.length,
-      dbCount: dbTrades.length,
-      exchangeCount: exchangeTrades.length,
-      source: dbTrades.length > 0 ? 'database+exchange' : 'exchange'
+      trades: paginatedTrades,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        totalCount,
+        totalPages,
+        hasMore: pageNum < totalPages
+      },
+      meta: {
+        dbCount: dbTrades.length,
+        exchangeCount: uniqueExchangeTrades.length,
+        source: dbTrades.length > 0
+          ? (uniqueExchangeTrades.length > 0 ? 'database+exchange' : 'database')
+          : 'exchange'
+      }
     });
   } catch (error) {
     next(error);
