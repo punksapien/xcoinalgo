@@ -649,7 +649,10 @@ function StrategyDetailPanel({
       if (!tradesData[subscriptionId]) {
         setLoadingTrades(prev => new Set(prev).add(subscriptionId));
         try {
-          const authToken = getAuthToken();
+          // Get auth token from Zustand storage
+          const tokenStorage = localStorage.getItem('auth-storage');
+          const authData = tokenStorage ? JSON.parse(tokenStorage) : null;
+          const authToken = authData?.state?.token;
           if (!authToken) throw new Error('No authentication token');
           const response = await axios.get(
             `/api/client/subscribers/${subscriptionId}/trades`,
