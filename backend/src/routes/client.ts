@@ -512,10 +512,60 @@ router.get('/subscribers', async (req: AuthenticatedRequest, res, next) => {
 });
 
 /**
+ * GET /api/client/subscribers/:id/trades
+ * Get trades for a specific subscriber (client viewing their subscriber's trades)
+ */
+router.get('/subscribers/:id/trades', authenticate, requireClientRole, async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const userId = req.userId!;
+    const { id: subscriptionId } = req.params;
+
+    // Verify the subscription belongs to a strategy owned by this client
+    const subscription = await prisma.strategySubscription.findFirst({
+      where: {
+        id: subscriptionId,
+        strategy: { clientId: userId }
+      }
+    });
+
+    if (!subscription) {
+      return res.status(404).json({ error: 'Subscription not found or not authorized' });
+    }
+
+    // Get trades for this subscription
+    const trades = await prisma.trade.findMany({
+      where: { subscriptionId },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+      select: {
+        id: true,
+        symbol: true,
+        side: true,
+        quantity: true,
+        entryPrice: true,
+        exitPrice: true,
+        status: true,
+        pnl: true,
+        createdAt: true,
+        exitedAt: true,
+        positionId: true
+      }
+    });
+
+    res.json({
+      trades,
+      count: trades.length
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
  * PUT /api/client/subscribers/:id/parameters
  * Update individual subscriber's trading parameters
  */
-router.put('/subscribers/:id/parameters', async (req: AuthenticatedRequest, res, next) => {
+router.put('/subscribers/:id/parameters', authenticate, requireClientRole, async (req: AuthenticatedRequest, res, next) => {
   try {
     const userId = req.userId!;
     const { id: subscriptionId } = req.params;

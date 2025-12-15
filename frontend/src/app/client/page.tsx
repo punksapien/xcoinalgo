@@ -27,10 +27,10 @@ import {
   Power,
   RefreshCw,
   ChevronRight,
+  ChevronDown,
   BarChart3,
   Clock,
   Target,
-  Eye,
   Pause,
   Play,
 } from 'lucide-react';
@@ -450,7 +450,7 @@ export default function ClientDashboardPage() {
 
       {/* Strategy Detail Dialog */}
       <Dialog open={!!selectedStrategy} onOpenChange={(open) => !open && setSelectedStrategy(null)}>
-        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[95vw] max-w-6xl max-h-[90vh] overflow-y-auto">
           {selectedStrategy && (
             <StrategyDetailPanel
               strategy={selectedStrategy}
@@ -604,6 +604,19 @@ function StrategyCommandCard({
 // Strategy Detail Panel Component
 // ============================================================================
 
+interface Trade {
+  id: string;
+  symbol: string;
+  side: string;
+  quantity: number;
+  entryPrice: number;
+  exitPrice?: number;
+  status: string;
+  pnl?: number;
+  createdAt: string;
+  exitedAt?: string;
+}
+
 function StrategyDetailPanel({
   strategy,
   subscribers,
@@ -620,6 +633,46 @@ function StrategyDetailPanel({
   formatCurrency: (v: number) => string;
 }) {
   const pnlPositive = strategy.totalPnl >= 0;
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [tradesData, setTradesData] = useState<Record<string, Trade[]>>({});
+  const [loadingTrades, setLoadingTrades] = useState<Set<string>>(new Set());
+
+  const toggleRow = async (subscriptionId: string) => {
+    const newExpanded = new Set(expandedRows);
+
+    if (newExpanded.has(subscriptionId)) {
+      newExpanded.delete(subscriptionId);
+    } else {
+      newExpanded.add(subscriptionId);
+
+      // Fetch trades if not already loaded
+      if (!tradesData[subscriptionId]) {
+        setLoadingTrades(prev => new Set(prev).add(subscriptionId));
+        try {
+          const token = localStorage.getItem('auth_token');
+          const response = await axios.get(
+            `/api/client/subscribers/${subscriptionId}/trades`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          setTradesData(prev => ({
+            ...prev,
+            [subscriptionId]: response.data.trades || []
+          }));
+        } catch (err) {
+          console.error('Failed to load trades:', err);
+          toast.error('Failed to load trades');
+        } finally {
+          setLoadingTrades(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(subscriptionId);
+            return newSet;
+          });
+        }
+      }
+    }
+
+    setExpandedRows(newExpanded);
+  };
 
   return (
     <div className="space-y-6">
@@ -769,6 +822,7 @@ function StrategyDetailPanel({
               <table className="w-full text-sm">
                 <thead className="bg-muted/50">
                   <tr>
+                    <th className="w-8"></th>
                     <th className="text-left py-2 px-3 font-medium">User</th>
                     <th className="text-right py-2 px-3 font-medium">Capital</th>
                     <th className="text-right py-2 px-3 font-medium">Leverage</th>
@@ -778,64 +832,154 @@ function StrategyDetailPanel({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {subscribers.map((sub) => (
-                    <tr key={sub.id} className="hover:bg-muted/30">
-                      <td className="py-2 px-3">
-                        <div>
-                          <p className="font-medium">{sub.userName}</p>
-                          <p className="text-xs text-muted-foreground">{sub.userEmail}</p>
-                        </div>
-                      </td>
-                      <td className="text-right py-2 px-3">
-                        ₹{sub.capital.toLocaleString()}
-                      </td>
-                      <td className="text-right py-2 px-3">
-                        {sub.leverage}x
-                      </td>
-                      <td className={`text-right py-2 px-3 font-medium ${sub.totalPnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {formatCurrency(sub.totalPnl)}
-                      </td>
-                      <td className="text-center py-2 px-3">
-                        {sub.isPaused ? (
-                          <Badge variant="secondary" className="bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">
-                            <Pause className="h-3 w-3 mr-1" />
-                            Paused
-                          </Badge>
-                        ) : sub.isActive ? (
-                          <Badge variant="secondary" className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                            <Play className="h-3 w-3 mr-1" />
-                            Active
-                          </Badge>
-                        ) : (
-                          <Badge variant="secondary">
-                            Inactive
-                          </Badge>
+                  {subscribers.map((sub) => {
+                    const isExpanded = expandedRows.has(sub.id);
+                    const isLoadingTrades = loadingTrades.has(sub.id);
+                    const trades = tradesData[sub.id] || [];
+
+                    return (
+                      <>
+                        <tr key={sub.id} className="hover:bg-muted/30">
+                          <td className="py-2 px-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 w-6 p-0"
+                              onClick={() => toggleRow(sub.id)}
+                            >
+                              {isExpanded ? (
+                                <ChevronDown className="h-4 w-4" />
+                              ) : (
+                                <ChevronRight className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </td>
+                          <td className="py-2 px-3">
+                            <div>
+                              <p className="font-medium">{sub.userName}</p>
+                              <p className="text-xs text-muted-foreground">{sub.userEmail}</p>
+                            </div>
+                          </td>
+                          <td className="text-right py-2 px-3">
+                            ₹{sub.capital.toLocaleString()}
+                          </td>
+                          <td className="text-right py-2 px-3">
+                            {sub.leverage}x
+                          </td>
+                          <td className={`text-right py-2 px-3 font-medium ${sub.totalPnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {formatCurrency(sub.totalPnl)}
+                          </td>
+                          <td className="text-center py-2 px-3">
+                            {sub.isPaused ? (
+                              <Badge variant="secondary" className="bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">
+                                <Pause className="h-3 w-3 mr-1" />
+                                Paused
+                              </Badge>
+                            ) : sub.isActive ? (
+                              <Badge variant="secondary" className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                                <Play className="h-3 w-3 mr-1" />
+                                Active
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary">
+                                Inactive
+                              </Badge>
+                            )}
+                          </td>
+                          <td className="text-center py-2 px-3">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2 text-red-600 hover:text-red-700 hover:bg-red-50"
+                              onClick={() => onForceCloseSubscriber(sub.id, sub.userName)}
+                              title="Exit position"
+                            >
+                              <Power className="h-4 w-4 mr-1" />
+                              Exit
+                            </Button>
+                          </td>
+                        </tr>
+                        {/* Expanded Trades Row */}
+                        {isExpanded && (
+                          <tr key={`${sub.id}-trades`}>
+                            <td colSpan={7} className="bg-muted/30 p-3">
+                              {isLoadingTrades ? (
+                                <div className="flex items-center justify-center py-4">
+                                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                                  <span className="ml-2 text-sm text-muted-foreground">Loading trades...</span>
+                                </div>
+                              ) : trades.length === 0 ? (
+                                <p className="text-sm text-muted-foreground text-center py-2">
+                                  No trades found for this subscriber
+                                </p>
+                              ) : (
+                                <div className="space-y-2">
+                                  <p className="text-xs font-medium text-muted-foreground mb-2">
+                                    Recent Trades ({trades.length})
+                                  </p>
+                                  <div className="border rounded bg-background">
+                                    <table className="w-full text-xs">
+                                      <thead className="bg-muted/50">
+                                        <tr>
+                                          <th className="text-left py-1.5 px-2 font-medium">Symbol</th>
+                                          <th className="text-center py-1.5 px-2 font-medium">Side</th>
+                                          <th className="text-right py-1.5 px-2 font-medium">Qty</th>
+                                          <th className="text-right py-1.5 px-2 font-medium">Entry</th>
+                                          <th className="text-right py-1.5 px-2 font-medium">Exit</th>
+                                          <th className="text-right py-1.5 px-2 font-medium">PnL</th>
+                                          <th className="text-center py-1.5 px-2 font-medium">Status</th>
+                                          <th className="text-right py-1.5 px-2 font-medium">Date</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-border">
+                                        {trades.slice(0, 10).map((trade) => (
+                                          <tr key={trade.id}>
+                                            <td className="py-1.5 px-2 font-mono">{trade.symbol}</td>
+                                            <td className="text-center py-1.5 px-2">
+                                              <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
+                                                trade.side === 'BUY' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                                              }`}>
+                                                {trade.side}
+                                              </span>
+                                            </td>
+                                            <td className="text-right py-1.5 px-2">{trade.quantity}</td>
+                                            <td className="text-right py-1.5 px-2">{trade.entryPrice?.toFixed(2) || '-'}</td>
+                                            <td className="text-right py-1.5 px-2">{trade.exitPrice?.toFixed(2) || '-'}</td>
+                                            <td className={`text-right py-1.5 px-2 font-medium ${
+                                              (trade.pnl || 0) >= 0 ? 'text-green-600' : 'text-red-600'
+                                            }`}>
+                                              {trade.pnl ? formatCurrency(trade.pnl) : '-'}
+                                            </td>
+                                            <td className="text-center py-1.5 px-2">
+                                              <span className={`px-1.5 py-0.5 rounded text-xs ${
+                                                trade.status === 'OPEN' ? 'bg-blue-100 text-blue-700' :
+                                                trade.status === 'CLOSED' ? 'bg-gray-100 text-gray-700' :
+                                                'bg-yellow-100 text-yellow-700'
+                                              }`}>
+                                                {trade.status}
+                                              </span>
+                                            </td>
+                                            <td className="text-right py-1.5 px-2 text-muted-foreground">
+                                              {new Date(trade.createdAt).toLocaleDateString()}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                  {trades.length > 10 && (
+                                    <p className="text-xs text-muted-foreground text-center">
+                                      Showing 10 of {trades.length} trades
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                          </tr>
                         )}
-                      </td>
-                      <td className="text-center py-2 px-3">
-                        <div className="flex items-center justify-center gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 w-7 p-0"
-                            onClick={() => window.open(`/client/trades?subscriptionId=${sub.id}`, '_blank')}
-                            title="View trades"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
-                            onClick={() => onForceCloseSubscriber(sub.id, sub.userName)}
-                            title="Exit position"
-                          >
-                            <Power className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                      </>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
