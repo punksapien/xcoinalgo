@@ -615,6 +615,7 @@ interface Trade {
   pnl?: number;
   createdAt: string;
   exitedAt?: string;
+  source?: 'database' | 'exchange';
 }
 
 function StrategyDetailPanel({
@@ -962,38 +963,78 @@ function StrategyDetailPanel({
                                         </tr>
                                       </thead>
                                       <tbody className="divide-y divide-border">
-                                        {trades.map((trade) => (
-                                          <tr key={trade.id}>
-                                            <td className="py-1.5 px-2 font-mono">{trade.symbol}</td>
-                                            <td className="text-center py-1.5 px-2">
-                                              <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
-                                                trade.side === 'BUY' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                                        {trades.map((trade) => {
+                                          // Calculate PnL if not provided but we have entry/exit prices
+                                          let calculatedPnl = trade.pnl;
+                                          if (!calculatedPnl && trade.entryPrice && trade.exitPrice) {
+                                            const priceDiff = trade.side === 'BUY'
+                                              ? trade.exitPrice - trade.entryPrice
+                                              : trade.entryPrice - trade.exitPrice;
+                                            calculatedPnl = priceDiff * trade.quantity;
+                                          }
+
+                                          // Format timestamp to IST
+                                          const formatToIST = (dateStr: string | undefined) => {
+                                            if (!dateStr) return null;
+                                            const date = new Date(dateStr);
+                                            return date.toLocaleString('en-IN', {
+                                              timeZone: 'Asia/Kolkata',
+                                              day: '2-digit',
+                                              month: 'short',
+                                              year: 'numeric',
+                                              hour: '2-digit',
+                                              minute: '2-digit',
+                                              second: '2-digit',
+                                              hour12: true
+                                            });
+                                          };
+
+                                          const entryTimeIST = formatToIST(trade.createdAt);
+                                          const exitTimeIST = formatToIST(trade.exitedAt);
+
+                                          return (
+                                            <tr key={trade.id}>
+                                              <td className="py-1.5 px-2 font-mono">{trade.symbol}</td>
+                                              <td className="text-center py-1.5 px-2">
+                                                <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
+                                                  trade.side === 'BUY' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                                                }`}>
+                                                  {trade.side}
+                                                </span>
+                                              </td>
+                                              <td className="text-right py-1.5 px-2">{trade.quantity}</td>
+                                              <td
+                                                className="text-right py-1.5 px-2 cursor-help"
+                                                title={entryTimeIST ? `Entry: ${entryTimeIST}` : undefined}
+                                              >
+                                                {trade.entryPrice?.toFixed(2) || '-'}
+                                              </td>
+                                              <td
+                                                className="text-right py-1.5 px-2 cursor-help"
+                                                title={exitTimeIST ? `Exit: ${exitTimeIST}` : undefined}
+                                              >
+                                                {trade.exitPrice?.toFixed(2) || '-'}
+                                              </td>
+                                              <td className={`text-right py-1.5 px-2 font-medium ${
+                                                (calculatedPnl || 0) >= 0 ? 'text-green-600' : 'text-red-600'
                                               }`}>
-                                                {trade.side}
-                                              </span>
-                                            </td>
-                                            <td className="text-right py-1.5 px-2">{trade.quantity}</td>
-                                            <td className="text-right py-1.5 px-2">{trade.entryPrice?.toFixed(2) || '-'}</td>
-                                            <td className="text-right py-1.5 px-2">{trade.exitPrice?.toFixed(2) || '-'}</td>
-                                            <td className={`text-right py-1.5 px-2 font-medium ${
-                                              (trade.pnl || 0) >= 0 ? 'text-green-600' : 'text-red-600'
-                                            }`}>
-                                              {trade.pnl ? formatCurrency(trade.pnl) : '-'}
-                                            </td>
-                                            <td className="text-center py-1.5 px-2">
-                                              <span className={`px-1.5 py-0.5 rounded text-xs ${
-                                                trade.status === 'OPEN' ? 'bg-blue-100 text-blue-700' :
-                                                trade.status === 'CLOSED' ? 'bg-gray-100 text-gray-700' :
-                                                'bg-yellow-100 text-yellow-700'
-                                              }`}>
-                                                {trade.status}
-                                              </span>
-                                            </td>
-                                            <td className="text-right py-1.5 px-2 text-muted-foreground">
-                                              {new Date(trade.createdAt).toLocaleDateString()}
-                                            </td>
-                                          </tr>
-                                        ))}
+                                                {calculatedPnl ? formatCurrency(calculatedPnl) : '-'}
+                                              </td>
+                                              <td className="text-center py-1.5 px-2">
+                                                <span className={`px-1.5 py-0.5 rounded text-xs ${
+                                                  trade.status === 'OPEN' ? 'bg-blue-100 text-blue-700' :
+                                                  trade.status === 'CLOSED' ? 'bg-gray-100 text-gray-700' :
+                                                  'bg-yellow-100 text-yellow-700'
+                                                }`}>
+                                                  {trade.status}
+                                                </span>
+                                              </td>
+                                              <td className="text-right py-1.5 px-2 text-muted-foreground">
+                                                {new Date(trade.createdAt).toLocaleDateString()}
+                                              </td>
+                                            </tr>
+                                          );
+                                        })}
                                       </tbody>
                                     </table>
                                   </div>
