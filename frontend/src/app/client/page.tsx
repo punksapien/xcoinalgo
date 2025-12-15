@@ -675,6 +675,15 @@ function StrategyDetailPanel({
     }
   };
 
+  // Auto-fetch trades for all subscribers to show PnL immediately
+  useEffect(() => {
+    subscribers.forEach(sub => {
+      if (!tradesData[sub.id]) {
+        fetchTrades(sub.id, 1);
+      }
+    });
+  }, [subscribers]);
+
   const toggleRow = async (subscriptionId: string) => {
     const newExpanded = new Set(expandedRows);
 
