@@ -887,8 +887,8 @@ function StrategyDetailPanel({
                           <td className="text-right py-2 px-3">
                             {sub.leverage}x
                           </td>
-                          <td className={`text-right py-2 px-3 font-medium ${sub.totalPnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            {formatCurrency(sub.totalPnl)}
+                          <td className={`text-right py-2 px-3 font-medium ${(summary?.netPnl ?? sub.totalPnl) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {formatCurrency(summary?.netPnl ?? sub.totalPnl)}
                           </td>
                           <td className="text-center py-2 px-3">
                             {sub.isPaused ? (
@@ -936,21 +936,14 @@ function StrategyDetailPanel({
                               ) : (
                                 <div className="space-y-2">
                                   <div className="flex items-center justify-between mb-2">
-                                    <div className="flex items-center gap-4">
-                                      <p className="text-xs font-medium text-muted-foreground">
-                                        Recent Trades ({pagination?.totalCount || trades.length})
-                                      </p>
+                                    <p className="text-xs font-medium text-muted-foreground">
+                                      Recent Trades ({pagination?.totalCount || trades.length})
                                       {summary && (
-                                        <div className="flex items-center gap-3 text-xs">
-                                          <span className={`font-semibold ${summary.netPnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                            Net P&L: {summary.netPnl >= 0 ? '+' : ''}{formatCurrency(summary.netPnl)}
-                                          </span>
-                                          <span className="text-muted-foreground">
-                                            ({summary.closedTrades} closed{summary.openTrades > 0 ? `, ${summary.openTrades} open` : ''})
-                                          </span>
-                                        </div>
+                                        <span className="ml-2 text-muted-foreground">
+                                          • {summary.closedTrades} closed{summary.openTrades > 0 ? `, ${summary.openTrades} open` : ''}
+                                        </span>
                                       )}
-                                    </div>
+                                    </p>
                                     {meta && (
                                       <span className={`text-xs px-2 py-0.5 rounded ${
                                         meta.source === 'exchange' ? 'bg-orange-100 text-orange-700' :
