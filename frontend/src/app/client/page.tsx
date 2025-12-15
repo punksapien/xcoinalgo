@@ -638,6 +638,7 @@ function StrategyDetailPanel({
   const [tradesData, setTradesData] = useState<Record<string, {
     trades: Trade[];
     pagination: { page: number; totalPages: number; totalCount: number; hasMore: boolean };
+    summary: { netPnl: number; closedTrades: number; openTrades: number };
     meta: { source: string; dbCount: number; exchangeCount: number };
   }>>({});
   const [loadingTrades, setLoadingTrades] = useState<Set<string>>(new Set());
@@ -658,6 +659,7 @@ function StrategyDetailPanel({
         [subscriptionId]: {
           trades: response.data.trades || [],
           pagination: response.data.pagination || { page: 1, totalPages: 1, totalCount: 0, hasMore: false },
+          summary: response.data.summary || { netPnl: 0, closedTrades: 0, openTrades: 0 },
           meta: response.data.meta || { source: 'database', dbCount: 0, exchangeCount: 0 }
         }
       }));
@@ -853,6 +855,7 @@ function StrategyDetailPanel({
                     const tradeInfo = tradesData[sub.id];
                     const trades = tradeInfo?.trades || [];
                     const pagination = tradeInfo?.pagination;
+                    const summary = tradeInfo?.summary;
                     const meta = tradeInfo?.meta;
 
                     return (
@@ -933,9 +936,21 @@ function StrategyDetailPanel({
                               ) : (
                                 <div className="space-y-2">
                                   <div className="flex items-center justify-between mb-2">
-                                    <p className="text-xs font-medium text-muted-foreground">
-                                      Recent Trades ({pagination?.totalCount || trades.length})
-                                    </p>
+                                    <div className="flex items-center gap-4">
+                                      <p className="text-xs font-medium text-muted-foreground">
+                                        Recent Trades ({pagination?.totalCount || trades.length})
+                                      </p>
+                                      {summary && (
+                                        <div className="flex items-center gap-3 text-xs">
+                                          <span className={`font-semibold ${summary.netPnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                            Net P&L: {summary.netPnl >= 0 ? '+' : ''}{formatCurrency(summary.netPnl)}
+                                          </span>
+                                          <span className="text-muted-foreground">
+                                            ({summary.closedTrades} closed{summary.openTrades > 0 ? `, ${summary.openTrades} open` : ''})
+                                          </span>
+                                        </div>
+                                      )}
+                                    </div>
                                     {meta && (
                                       <span className={`text-xs px-2 py-0.5 rounded ${
                                         meta.source === 'exchange' ? 'bg-orange-100 text-orange-700' :

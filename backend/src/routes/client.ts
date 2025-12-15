@@ -574,6 +574,26 @@ router.get('/subscribers/:id/trades', async (req: AuthenticatedRequest, res, nex
       const startIndex = (pageNum - 1) * limitNum;
       const paginatedTrades = dbTrades.slice(startIndex, startIndex + limitNum);
 
+      // Calculate net PnL for DB trades
+      let netPnl = 0;
+      let closedTradesCount = 0;
+      let openTradesCount = 0;
+      for (const trade of dbTrades) {
+        if (trade.status === 'OPEN') {
+          openTradesCount++;
+          continue;
+        }
+        closedTradesCount++;
+        if (trade.pnl) {
+          netPnl += trade.pnl;
+        } else if (trade.entryPrice && trade.exitPrice) {
+          const priceDiff = trade.side === 'BUY'
+            ? trade.exitPrice - trade.entryPrice
+            : trade.entryPrice - trade.exitPrice;
+          netPnl += priceDiff * (trade.quantity || 0);
+        }
+      }
+
       return res.json({
         trades: paginatedTrades.map(t => ({ ...t, source: 'database' })),
         pagination: {
@@ -582,6 +602,11 @@ router.get('/subscribers/:id/trades', async (req: AuthenticatedRequest, res, nex
           totalCount,
           totalPages,
           hasMore: pageNum < totalPages
+        },
+        summary: {
+          netPnl: Math.round(netPnl * 100) / 100,
+          closedTrades: closedTradesCount,
+          openTrades: openTradesCount
         },
         meta: {
           dbCount: totalCount,
@@ -660,6 +685,27 @@ router.get('/subscribers/:id/trades', async (req: AuthenticatedRequest, res, nex
       ...uniqueExchangeTrades
     ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
+    // Calculate net PnL across ALL trades (not just current page)
+    let netPnl = 0;
+    let closedTradesCount = 0;
+    let openTradesCount = 0;
+    for (const trade of allTrades) {
+      if (trade.status === 'OPEN') {
+        openTradesCount++;
+        continue;
+      }
+      closedTradesCount++;
+      // Use provided PnL or calculate from prices
+      if (trade.pnl) {
+        netPnl += trade.pnl;
+      } else if (trade.entryPrice && trade.exitPrice) {
+        const priceDiff = trade.side === 'BUY'
+          ? trade.exitPrice - trade.entryPrice
+          : trade.entryPrice - trade.exitPrice;
+        netPnl += priceDiff * (trade.quantity || 0);
+      }
+    }
+
     // Apply pagination
     const totalCount = allTrades.length;
     const totalPages = Math.ceil(totalCount / limitNum);
@@ -674,6 +720,11 @@ router.get('/subscribers/:id/trades', async (req: AuthenticatedRequest, res, nex
         totalCount,
         totalPages,
         hasMore: pageNum < totalPages
+      },
+      summary: {
+        netPnl: Math.round(netPnl * 100) / 100, // Round to 2 decimal places
+        closedTrades: closedTradesCount,
+        openTrades: openTradesCount
       },
       meta: {
         dbCount: dbTrades.length,
