@@ -944,6 +944,10 @@ router.get('/dashboard', async (req: AuthenticatedRequest, res, next) => {
       select: {
         id: true,
         status: true,
+        side: true,
+        quantity: true,
+        entryPrice: true,
+        exitPrice: true,
         pnl: true,
         createdAt: true,
         exitedAt: true,
@@ -964,6 +968,18 @@ router.get('/dashboard', async (req: AuthenticatedRequest, res, next) => {
     const todayEnd = new Date();
     todayEnd.setHours(23, 59, 59, 999);
 
+    // Helper to calculate PnL from trade data (use stored pnl or calculate from prices)
+    const getTradePnl = (trade: typeof allTrades[0]): number => {
+      if (trade.pnl) return trade.pnl;
+      if (trade.entryPrice && trade.exitPrice && trade.quantity) {
+        const priceDiff = trade.side === 'BUY'
+          ? trade.exitPrice - trade.entryPrice
+          : trade.entryPrice - trade.exitPrice;
+        return priceDiff * trade.quantity;
+      }
+      return 0;
+    };
+
     // Process each strategy
     const enhancedStrategies = strategies.map(strategy => {
       // Get trades for this strategy
@@ -976,9 +992,9 @@ router.get('/dashboard', async (req: AuthenticatedRequest, res, next) => {
         t.exitedAt && t.exitedAt >= todayStart && t.exitedAt <= todayEnd
       );
 
-      // Calculate P&L metrics
-      const totalRealizedPnl = closedTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
-      const todayRealizedPnl = todayClosedTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+      // Calculate P&L metrics (use helper to get actual PnL)
+      const totalRealizedPnl = closedTrades.reduce((sum, t) => sum + getTradePnl(t), 0);
+      const todayRealizedPnl = todayClosedTrades.reduce((sum, t) => sum + getTradePnl(t), 0);
 
       // Calculate unrealized P&L (simplified - would need current prices from exchange)
       const totalUnrealizedPnl = openTrades.reduce((sum, t) => {
@@ -987,9 +1003,9 @@ router.get('/dashboard', async (req: AuthenticatedRequest, res, next) => {
         return sum;
       }, 0);
 
-      // Win/Loss calculations
-      const winningTrades = closedTrades.filter(t => (t.pnl || 0) > 0).length;
-      const losingTrades = closedTrades.filter(t => (t.pnl || 0) < 0).length;
+      // Win/Loss calculations (use getTradePnl for accurate calculations)
+      const winningTrades = closedTrades.filter(t => getTradePnl(t) > 0).length;
+      const losingTrades = closedTrades.filter(t => getTradePnl(t) < 0).length;
       const winRate = closedTrades.length > 0 ? (winningTrades / closedTrades.length) * 100 : 0;
 
       // Calculate max drawdown (simplified)
@@ -999,7 +1015,7 @@ router.get('/dashboard', async (req: AuthenticatedRequest, res, next) => {
       closedTrades
         .sort((a, b) => (a.exitedAt?.getTime() || 0) - (b.exitedAt?.getTime() || 0))
         .forEach(trade => {
-          runningPnl += trade.pnl || 0;
+          runningPnl += getTradePnl(trade);
           if (runningPnl > peak) peak = runningPnl;
           const drawdown = peak - runningPnl;
           if (drawdown > maxDrawdown) maxDrawdown = drawdown;
@@ -1014,7 +1030,7 @@ router.get('/dashboard', async (req: AuthenticatedRequest, res, next) => {
       closedTrades.forEach(trade => {
         if (trade.exitedAt) {
           const dateStr = trade.exitedAt.toISOString().split('T')[0];
-          dailyPnlMap.set(dateStr, (dailyPnlMap.get(dateStr) || 0) + (trade.pnl || 0));
+          dailyPnlMap.set(dateStr, (dailyPnlMap.get(dateStr) || 0) + getTradePnl(trade));
         }
       });
       dailyPnlMap.forEach(pnl => dailyReturns.push(pnl));
