@@ -9,11 +9,11 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Switch } from '@/components/ui/switch';
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   AlertCircle,
   Loader2,
@@ -27,7 +27,6 @@ import {
   Power,
   RefreshCw,
   ChevronRight,
-  Zap,
   BarChart3,
   Clock,
   Target,
@@ -446,21 +445,21 @@ export default function ClientDashboardPage() {
         )}
       </div>
 
-      {/* Strategy Detail Sheet */}
-      <Sheet open={!!selectedStrategy} onOpenChange={(open) => !open && setSelectedStrategy(null)}>
-        <SheetContent className="w-full sm:max-w-2xl overflow-y-auto">
+      {/* Strategy Detail Dialog */}
+      <Dialog open={!!selectedStrategy} onOpenChange={(open) => !open && setSelectedStrategy(null)}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           {selectedStrategy && (
             <StrategyDetailPanel
               strategy={selectedStrategy}
               subscribers={subscribers}
               subscribersLoading={subscribersLoading}
-              onFlatten={() => handleEmergencyFlatten(selectedStrategy.id)}
+              onExitAll={() => handleEmergencyFlatten(selectedStrategy.id)}
               onForceCloseSubscriber={handleForceCloseSubscriber}
               formatCurrency={formatCurrency}
             />
           )}
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -606,14 +605,14 @@ function StrategyDetailPanel({
   strategy,
   subscribers,
   subscribersLoading,
-  onFlatten,
+  onExitAll,
   onForceCloseSubscriber,
   formatCurrency,
 }: {
   strategy: Strategy;
   subscribers: Subscriber[];
   subscribersLoading: boolean;
-  onFlatten: () => void;
+  onExitAll: () => void;
   onForceCloseSubscriber: (subscriptionId: string, subscriberName: string) => void;
   formatCurrency: (v: number) => string;
 }) {
@@ -621,34 +620,23 @@ function StrategyDetailPanel({
 
   return (
     <div className="space-y-6">
-      <SheetHeader>
+      <DialogHeader>
         <div className="flex items-center justify-between">
           <div>
-            <SheetTitle className="text-xl">{strategy.name}</SheetTitle>
+            <DialogTitle className="text-xl">{strategy.name}</DialogTitle>
             <p className="text-sm text-muted-foreground font-mono">{strategy.code}</p>
           </div>
-          <Badge variant={strategy.isActive ? 'default' : 'secondary'}>
-            {strategy.isActive ? 'Active' : 'Paused'}
-          </Badge>
-        </div>
-      </SheetHeader>
-
-      {/* Emergency Controls */}
-      <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-lg p-4">
-        <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Zap className="h-5 w-5 text-red-500" />
-            <div>
-              <p className="font-medium text-red-700 dark:text-red-400">Emergency Controls</p>
-              <p className="text-xs text-red-600 dark:text-red-500">Close all positions for all subscribers</p>
-            </div>
+            <Badge variant={strategy.isActive ? 'default' : 'secondary'}>
+              {strategy.isActive ? 'Active' : 'Paused'}
+            </Badge>
+            <Button variant="destructive" size="sm" onClick={onExitAll}>
+              <Power className="h-4 w-4 mr-2" />
+              Exit All
+            </Button>
           </div>
-          <Button variant="destructive" size="sm" onClick={onFlatten}>
-            <Power className="h-4 w-4 mr-2" />
-            Flatten All & Pause
-          </Button>
         </div>
-      </div>
+      </DialogHeader>
 
       {/* Equity Curve Chart */}
       <Card>

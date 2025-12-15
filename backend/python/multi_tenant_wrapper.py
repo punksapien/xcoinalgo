@@ -411,6 +411,25 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
                     # Determine if this is an entry or exit based on client_order_id
                     client_order_id = kwargs.get('client_order_id', '')
                     is_exit = '_ex' in client_order_id if client_order_id else False
+                    is_entry = '_en' in client_order_id or not is_exit
+
+                    # Fetch position ID for entry orders (needed for force close)
+                    position_id = None
+                    if is_entry:
+                        try:
+                            import time
+                            time.sleep(0.5)  # Wait for position to be created on exchange
+                            margin_currency = kwargs.get('margin_currency_short_name', 'USDT')
+                            positions = self.list_positions(margin_currency_short_name=[margin_currency])
+
+                            # Find position matching this pair with active quantity
+                            for pos in positions:
+                                if pos.get('pair') == pair and float(pos.get('active_pos', 0)) != 0:
+                                    position_id = pos.get('id')
+                                    logging.info(f"📍 Captured position ID: {position_id} for {pair}")
+                                    break
+                        except Exception as e:
+                            logging.warning(f"⚠️ Could not fetch position ID (non-fatal): {e}")
 
                     # Build trade report data
                     trade_data = {
@@ -426,6 +445,7 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
                         'takeProfit': kwargs.get('take_profit_price'),
                         'clientOrderId': client_order_id,
                         'marginCurrency': kwargs.get('margin_currency_short_name'),
+                        'positionId': position_id,  # Include position ID for force close
                         'metadata': {
                             'raw_response': response if isinstance(response, dict) else str(response),
                             'timestamp': datetime.now().isoformat()

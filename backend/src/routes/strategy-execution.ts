@@ -1463,6 +1463,8 @@ router.post('/trades', async (req, res, next) => {
       status,
       filledPrice,
       filledQuantity,
+      // Position ID (for force close)
+      positionId,
       // Exit details (optional - for exit trades)
       exitPrice,
       exitReason,
@@ -1542,6 +1544,7 @@ router.post('/trades', async (req, res, next) => {
         stopLoss,
         takeProfit,
         orderId,
+        positionId,  // Store position ID for force close
         status: 'OPEN',
         filledPrice,
         filledQuantity,
@@ -1551,7 +1554,7 @@ router.post('/trades', async (req, res, next) => {
       }
     });
 
-    logger.info(`[Trade Reporter] Entry trade recorded: ${trade.id}, ${side} ${quantity} ${symbol} @ ${entryPrice || filledPrice}`);
+    logger.info(`[Trade Reporter] Entry trade recorded: ${trade.id}, ${side} ${quantity} ${symbol} @ ${entryPrice || filledPrice}, positionId: ${positionId || 'N/A'}`);
 
     res.json({
       success: true,
