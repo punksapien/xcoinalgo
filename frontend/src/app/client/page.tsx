@@ -450,7 +450,7 @@ export default function ClientDashboardPage() {
 
       {/* Strategy Detail Dialog */}
       <Dialog open={!!selectedStrategy} onOpenChange={(open) => !open && setSelectedStrategy(null)}>
-        <DialogContent className="w-[95vw] max-w-6xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[98vw] max-w-[1400px] max-h-[90vh] overflow-y-auto">
           {selectedStrategy && (
             <StrategyDetailPanel
               strategy={selectedStrategy}

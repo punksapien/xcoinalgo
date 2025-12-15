@@ -515,7 +515,7 @@ router.get('/subscribers', async (req: AuthenticatedRequest, res, next) => {
  * GET /api/client/subscribers/:id/trades
  * Get trades for a specific subscriber (client viewing their subscriber's trades)
  */
-router.get('/subscribers/:id/trades', authenticate, requireClientRole, async (req: AuthenticatedRequest, res, next) => {
+router.get('/subscribers/:id/trades', async (req: AuthenticatedRequest, res, next) => {
   try {
     const userId = req.userId!;
     const { id: subscriptionId } = req.params;
@@ -565,7 +565,7 @@ router.get('/subscribers/:id/trades', authenticate, requireClientRole, async (re
  * PUT /api/client/subscribers/:id/parameters
  * Update individual subscriber's trading parameters
  */
-router.put('/subscribers/:id/parameters', authenticate, requireClientRole, async (req: AuthenticatedRequest, res, next) => {
+router.put('/subscribers/:id/parameters', async (req: AuthenticatedRequest, res, next) => {
   try {
     const userId = req.userId!;
     const { id: subscriptionId } = req.params;
