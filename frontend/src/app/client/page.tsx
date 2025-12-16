@@ -298,13 +298,13 @@ export default function ClientDashboardPage() {
 
       if (currentState) {
         // Strategy is active -> deactivate it
-        await axios.delete(`/api/strategies/${strategyId}/deactivate`, {
+        await axios.patch(`/api/strategy-upload/${strategyId}/deactivate`, {}, {
           headers: { Authorization: `Bearer ${authToken}` }
         });
         toast.success('Strategy paused successfully');
       } else {
         // Strategy is inactive -> activate it
-        await axios.patch(`/api/strategies/${strategyId}/activate`, {}, {
+        await axios.patch(`/api/strategy-upload/${strategyId}/activate`, {}, {
           headers: { Authorization: `Bearer ${authToken}` }
         });
         toast.success('Strategy activated successfully');
