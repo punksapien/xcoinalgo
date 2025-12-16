@@ -13,7 +13,19 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
+  DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
   AlertCircle,
   Loader2,
@@ -147,6 +159,15 @@ export default function ClientDashboardPage() {
   const [subscribersLoading, setSubscribersLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Confirmation dialog state
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    type: 'exitAll' | 'exitOne';
+    strategyId?: string;
+    subscriptionId?: string;
+    subscriberName?: string;
+  }>({ open: false, type: 'exitAll' });
+
   // ============================================================================
   // Auth Check & Data Loading
   // ============================================================================
@@ -270,23 +291,59 @@ export default function ClientDashboardPage() {
   // Actions
   // ============================================================================
 
-  const handleToggleStrategy = async (_strategyId: string, currentState: boolean) => {
+  const handleToggleStrategy = async (strategyId: string, currentState: boolean) => {
     try {
       const authToken = getAuthToken();
       if (!authToken) throw new Error('No authentication token found');
 
-      // TODO: Implement actual API call to toggle strategy
-      toast.success(`Strategy ${currentState ? 'paused' : 'activated'}`);
+      if (currentState) {
+        // Strategy is active -> deactivate it
+        await axios.delete(`/api/strategies/${strategyId}/deactivate`, {
+          headers: { Authorization: `Bearer ${authToken}` }
+        });
+        toast.success('Strategy paused successfully');
+      } else {
+        // Strategy is inactive -> activate it
+        await axios.patch(`/api/strategies/${strategyId}/activate`, {}, {
+          headers: { Authorization: `Bearer ${authToken}` }
+        });
+        toast.success('Strategy activated successfully');
+      }
+
       loadDashboardData(true);
-    } catch (_err) {
-      toast.error('Failed to toggle strategy');
+    } catch (err) {
+      const errorMsg = axios.isAxiosError(err) && err.response?.data?.error
+        ? err.response.data.error
+        : 'Failed to toggle strategy';
+      toast.error(errorMsg);
     }
   };
 
-  const handleEmergencyFlatten = async (strategyId: string) => {
-    if (!confirm('⚠️ EMERGENCY: This will close ALL positions for ALL subscribers of this strategy and pause all subscriptions. Are you absolutely sure?')) {
-      return;
-    }
+  // Open confirmation dialog for exit all
+  const requestExitAll = (strategyId: string) => {
+    setConfirmDialog({
+      open: true,
+      type: 'exitAll',
+      strategyId,
+    });
+  };
+
+  // Open confirmation dialog for exit one subscriber
+  const requestExitOne = (subscriptionId: string, subscriberName: string) => {
+    setConfirmDialog({
+      open: true,
+      type: 'exitOne',
+      subscriptionId,
+      subscriberName,
+    });
+  };
+
+  // Execute exit all after confirmation
+  const handleEmergencyFlatten = async () => {
+    const strategyId = confirmDialog.strategyId;
+    if (!strategyId) return;
+
+    setConfirmDialog({ open: false, type: 'exitAll' });
 
     try {
       const authToken = getAuthToken();
@@ -301,11 +358,11 @@ export default function ClientDashboardPage() {
       const { successfulClosures, failedClosures, totalSubscriptions } = response.data;
 
       if (successfulClosures > 0) {
-        toast.success(`✅ Successfully closed positions for ${successfulClosures}/${totalSubscriptions} subscribers`);
+        toast.success(`Successfully closed positions for ${successfulClosures}/${totalSubscriptions} subscribers`);
       }
 
       if (failedClosures > 0) {
-        toast.warning(`⚠️ Failed to close positions for ${failedClosures} subscribers. Check logs for details.`);
+        toast.warning(`Failed to close positions for ${failedClosures} subscribers. Check logs for details.`);
       }
 
       loadDashboardData(true);
@@ -314,10 +371,13 @@ export default function ClientDashboardPage() {
     }
   };
 
-  const handleForceCloseSubscriber = async (subscriptionId: string, subscriberName: string) => {
-    if (!confirm(`⚠️ Force close position for ${subscriberName}? This will immediately exit their position on the exchange.`)) {
-      return;
-    }
+  // Execute exit one after confirmation
+  const handleForceCloseSubscriber = async () => {
+    const subscriptionId = confirmDialog.subscriptionId;
+    const subscriberName = confirmDialog.subscriberName;
+    if (!subscriptionId) return;
+
+    setConfirmDialog({ open: false, type: 'exitAll' });
 
     try {
       const authToken = getAuthToken();
@@ -329,7 +389,7 @@ export default function ClientDashboardPage() {
         { headers: { Authorization: `Bearer ${authToken}` } }
       );
 
-      toast.success(`✅ Position closed for ${subscriberName}`);
+      toast.success(`Position closed for ${subscriberName}`);
 
       // Reload subscribers list
       if (selectedStrategy) {
@@ -386,28 +446,17 @@ export default function ClientDashboardPage() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Strategy Command Center</h1>
+            <h1 className="text-2xl font-bold text-foreground">My Strategies</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Monitor and manage your strategies in real-time
+              Monitor and manage your trading strategies
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            {refreshing && (
-              <span className="text-xs text-muted-foreground flex items-center gap-1">
-                <RefreshCw className="h-3 w-3 animate-spin" />
-                Updating...
-              </span>
-            )}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => loadDashboardData(true)}
-              disabled={refreshing}
-            >
-              <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-              Refresh
-            </Button>
-          </div>
+          {refreshing && (
+            <span className="text-xs text-muted-foreground flex items-center gap-1">
+              <RefreshCw className="h-3 w-3 animate-spin" />
+              Syncing...
+            </span>
+          )}
         </div>
 
         {error && (
@@ -452,13 +501,46 @@ export default function ClientDashboardPage() {
               strategy={selectedStrategy}
               subscribers={subscribers}
               subscribersLoading={subscribersLoading}
-              onExitAll={() => handleEmergencyFlatten(selectedStrategy.id)}
-              onForceCloseSubscriber={handleForceCloseSubscriber}
+              onExitAll={() => requestExitAll(selectedStrategy.id)}
+              onForceCloseSubscriber={requestExitOne}
               formatCurrency={formatCurrency}
             />
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Confirmation Dialog for Exit Actions */}
+      <AlertDialog open={confirmDialog.open} onOpenChange={(open) => !open && setConfirmDialog({ open: false, type: 'exitAll' })}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-red-600">
+              {confirmDialog.type === 'exitAll' ? 'Square Off All Positions?' : 'Square Off Position?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              {confirmDialog.type === 'exitAll' ? (
+                <>
+                  <p>This will immediately close <strong>ALL open positions</strong> for <strong>ALL subscribers</strong> of this strategy.</p>
+                  <p className="text-red-600 font-medium">This action cannot be undone. All positions will be market-closed on the exchange.</p>
+                </>
+              ) : (
+                <>
+                  <p>This will immediately close the open position for <strong>{confirmDialog.subscriberName}</strong>.</p>
+                  <p className="text-red-600 font-medium">This action cannot be undone. The position will be market-closed on the exchange.</p>
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700"
+              onClick={confirmDialog.type === 'exitAll' ? handleEmergencyFlatten : handleForceCloseSubscriber}
+            >
+              Yes, Square Off
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -480,6 +562,11 @@ function StrategyCommandCard({
   formatCurrency: (v: number) => string;
   formatPercent: (v: number) => string;
 }) {
+  // Determine chart color based on cumulative PnL trend (last value)
+  const lastSparklineValue = strategy.sparklineData.length > 0
+    ? strategy.sparklineData[strategy.sparklineData.length - 1].cumulativePnl
+    : 0;
+  const chartTrendPositive = lastSparklineValue >= 0;
   const pnlPositive = strategy.todayPnl >= 0;
   const healthColors = {
     healthy: 'bg-green-500',
@@ -530,14 +617,14 @@ function StrategyCommandCard({
             <AreaChart data={strategy.sparklineData}>
               <defs>
                 <linearGradient id={`gradient-${strategy.id}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={pnlPositive ? '#22c55e' : '#ef4444'} stopOpacity={0.3} />
-                  <stop offset="95%" stopColor={pnlPositive ? '#22c55e' : '#ef4444'} stopOpacity={0} />
+                  <stop offset="5%" stopColor={chartTrendPositive ? '#22c55e' : '#ef4444'} stopOpacity={0.3} />
+                  <stop offset="95%" stopColor={chartTrendPositive ? '#22c55e' : '#ef4444'} stopOpacity={0} />
                 </linearGradient>
               </defs>
               <Area
                 type="monotone"
                 dataKey="cumulativePnl"
-                stroke={pnlPositive ? '#22c55e' : '#ef4444'}
+                stroke={chartTrendPositive ? '#22c55e' : '#ef4444'}
                 strokeWidth={2}
                 fill={`url(#gradient-${strategy.id})`}
               />
@@ -629,7 +716,11 @@ function StrategyDetailPanel({
   onForceCloseSubscriber: (subscriptionId: string, subscriberName: string) => void;
   formatCurrency: (v: number) => string;
 }) {
-  const pnlPositive = strategy.totalPnl >= 0;
+  // Determine chart color based on cumulative PnL trend (last value in sparkline)
+  const lastSparklineValue = strategy.sparklineData.length > 0
+    ? strategy.sparklineData[strategy.sparklineData.length - 1].cumulativePnl
+    : 0;
+  const chartTrendPositive = lastSparklineValue >= 0;
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [tradesData, setTradesData] = useState<Record<string, {
     trades: Trade[];
@@ -690,22 +781,24 @@ function StrategyDetailPanel({
   return (
     <div className="space-y-6">
       <DialogHeader>
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between pr-8">
           <div>
             <DialogTitle className="text-xl">{strategy.name}</DialogTitle>
             <p className="text-sm text-muted-foreground font-mono">{strategy.code}</p>
           </div>
-          <div className="flex items-center gap-3">
-            <Badge variant={strategy.isActive ? 'default' : 'secondary'}>
-              {strategy.isActive ? 'Active' : 'Paused'}
-            </Badge>
-            <Button variant="destructive" size="sm" onClick={onExitAll}>
-              <Power className="h-4 w-4 mr-2" />
-              Exit All
-            </Button>
-          </div>
+          <Badge variant={strategy.isActive ? 'default' : 'secondary'}>
+            {strategy.isActive ? 'Active' : 'Paused'}
+          </Badge>
         </div>
       </DialogHeader>
+
+      {/* Emergency Exit All Button - Separated from close button */}
+      <div className="flex justify-end border-b pb-4">
+        <Button variant="destructive" size="sm" onClick={onExitAll}>
+          <Power className="h-4 w-4 mr-2" />
+          Square Off All Positions
+        </Button>
+      </div>
 
       {/* Equity Curve Chart */}
       <Card>
@@ -718,8 +811,8 @@ function StrategyDetailPanel({
               <AreaChart data={strategy.sparklineData}>
                 <defs>
                   <linearGradient id="equityGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={pnlPositive ? '#22c55e' : '#ef4444'} stopOpacity={0.3} />
-                    <stop offset="95%" stopColor={pnlPositive ? '#22c55e' : '#ef4444'} stopOpacity={0} />
+                    <stop offset="5%" stopColor={chartTrendPositive ? '#22c55e' : '#ef4444'} stopOpacity={0.3} />
+                    <stop offset="95%" stopColor={chartTrendPositive ? '#22c55e' : '#ef4444'} stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <XAxis dataKey="date" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
@@ -731,7 +824,7 @@ function StrategyDetailPanel({
                 <Area
                   type="monotone"
                   dataKey="cumulativePnl"
-                  stroke={pnlPositive ? '#22c55e' : '#ef4444'}
+                  stroke={chartTrendPositive ? '#22c55e' : '#ef4444'}
                   strokeWidth={2}
                   fill="url(#equityGradient)"
                 />
