@@ -747,6 +747,13 @@ router.put('/:id', authenticate, requireQuantRole, upload.single('strategyFile')
         // Update executionConfig in database
         updateData.executionConfig = mergedConfig;
 
+        // ✅ Also update the instrument field (displayed in UI)
+        const newPair = mergedConfig.pair || mergedConfig.symbol || extractedConfig.pair || extractedConfig.symbol;
+        if (newPair) {
+          updateData.instrument = newPair;
+          logger.info(`Updated instrument to: ${newPair}`);
+        }
+
         logger.info(
           `Extracted STRATEGY_CONFIG: ${configExtraction.extractedParams.join(', ')}`
         );
@@ -2581,6 +2588,13 @@ router.put('/:id/code', authenticate, requireQuantRole, async (req: Authenticate
       };
 
       updateData.executionConfig = mergedConfig;
+
+      // ✅ Also update the instrument field (displayed in UI)
+      const newPair = mergedConfig.pair || mergedConfig.symbol || configExtraction.config.pair || configExtraction.config.symbol;
+      if (newPair) {
+        updateData.instrument = newPair;
+        logger.info(`Updated instrument to: ${newPair}`);
+      }
 
       logger.info(
         `✅ Extracted STRATEGY_CONFIG for ${strategyId}: ${configExtraction.extractedParams.join(', ')}`
