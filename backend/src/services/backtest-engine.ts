@@ -429,7 +429,8 @@ class BacktestEngine {
 numpy>=1.24.0
 pandas-ta>=0.3.14b
 requests>=2.31.0
-loguru>=0.7.0`
+loguru>=0.7.0
+scipy>=1.10.0`
           logger.info('Using default backtest requirements')
         }
 
