@@ -179,7 +179,7 @@ export default function AdminStrategyMonitoringPage() {
       const authToken = getAuthToken();
       const baseURL = process.env.NEXT_PUBLIC_API_URL;
 
-      const response = await axios.get(`${baseURL}/api/admin/strategies/${strategyId}/subscribers`, {
+      const response = await axios.get(`${baseURL}/api/admin/subscribers?strategyId=${strategyId}`, {
         headers: { Authorization: authToken }
       });
 
@@ -622,15 +622,25 @@ function StrategyDetailPanel({
 
       const baseURL = process.env.NEXT_PUBLIC_API_URL;
       const response = await axios.get(
-        `${baseURL}/api/client/subscribers/${subscriptionId}/trades?page=${page}&limit=20`,
+        `${baseURL}/api/admin/subscribers/${subscriptionId}/trades?page=${page}&limit=20`,
         { headers: { Authorization: `Bearer ${authToken}` } }
       );
+      const data = response.data;
       setTradesData(prev => ({
         ...prev,
         [subscriptionId]: {
-          trades: response.data.trades || [],
-          pagination: response.data.pagination || { page: 1, totalPages: 1, totalCount: 0, hasMore: false },
-          summary: response.data.summary || { netPnl: 0, closedTrades: 0, openTrades: 0 },
+          trades: data.trades || [],
+          pagination: {
+            page: data.currentPage || 1,
+            totalPages: data.totalPages || 1,
+            totalCount: data.totalCount || 0,
+            hasMore: (data.currentPage || 1) < (data.totalPages || 1)
+          },
+          summary: {
+            netPnl: data.netPnl || 0,
+            closedTrades: data.closedTrades || 0,
+            openTrades: data.openTrades || 0
+          },
         }
       }));
     } catch (err) {

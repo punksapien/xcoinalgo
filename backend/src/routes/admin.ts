@@ -1910,4 +1910,202 @@ router.get('/dashboard', async (req: AuthenticatedRequest, res, next) => {
   }
 });
 
+/**
+ * GET /api/admin/subscribers
+ * Get subscribers for a strategy (admin view - no clientId filter)
+ */
+router.get('/subscribers', async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const { strategyId, status } = req.query;
+
+    // Build filter conditions
+    const whereConditions: any = {};
+
+    // Filter by specific strategy
+    if (strategyId) {
+      whereConditions.strategyId = strategyId;
+    }
+
+    // Filter by subscription status
+    if (status === 'active') {
+      whereConditions.isActive = true;
+      whereConditions.isPaused = false;
+    } else if (status === 'paused') {
+      whereConditions.isPaused = true;
+    } else if (status === 'inactive') {
+      whereConditions.isActive = false;
+    }
+
+    const subscriptions = await prisma.strategySubscription.findMany({
+      where: whereConditions,
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            createdAt: true
+          }
+        },
+        strategy: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            isPublic: true,
+            executionConfig: true
+          }
+        },
+        trades: {
+          select: {
+            id: true,
+            side: true,
+            quantity: true,
+            entryPrice: true,
+            exitPrice: true,
+            pnl: true,
+            status: true
+          }
+        }
+      },
+      orderBy: { subscribedAt: 'desc' }
+    });
+
+    // Calculate net PnL for each subscriber from their trades
+    const subscribersWithPnl = subscriptions.map(sub => {
+      let calculatedPnl = 0;
+      let closedTrades = 0;
+      let openTrades = 0;
+
+      for (const trade of sub.trades) {
+        if (trade.status === 'OPEN') {
+          openTrades++;
+          continue;
+        }
+        closedTrades++;
+        if (trade.pnl) {
+          calculatedPnl += trade.pnl;
+        } else if (trade.entryPrice && trade.exitPrice) {
+          const priceDiff = trade.side === 'BUY'
+            ? trade.exitPrice - trade.entryPrice
+            : trade.entryPrice - trade.exitPrice;
+          calculatedPnl += priceDiff * (trade.quantity || 0);
+        }
+      }
+
+      return {
+        id: sub.id,
+        user: sub.user,
+        strategy: sub.strategy,
+        capital: sub.capital,
+        riskPerTrade: sub.riskPerTrade,
+        leverage: sub.leverage,
+        maxPositions: sub.maxPositions,
+        maxDailyLoss: sub.maxDailyLoss,
+        tradingType: sub.tradingType,
+        marginCurrency: sub.marginCurrency,
+        isActive: sub.isActive,
+        isPaused: sub.isPaused,
+        subscribedAt: sub.subscribedAt,
+        pausedAt: sub.pausedAt,
+        unsubscribedAt: sub.unsubscribedAt,
+        totalTrades: sub.trades.length,
+        closedTrades,
+        openTrades,
+        winningTrades: sub.winningTrades,
+        losingTrades: sub.losingTrades,
+        totalPnl: Math.round(calculatedPnl * 100) / 100,
+        winRate: sub.trades.length > 0 ? (sub.winningTrades / sub.trades.length) * 100 : 0
+      };
+    });
+
+    res.json({ subscribers: subscribersWithPnl });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/admin/subscribers/:id/trades
+ * Get trades for a specific subscriber (admin view)
+ */
+router.get('/subscribers/:id/trades', async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const { id: subscriptionId } = req.params;
+    const { page = '1', limit = '20' } = req.query;
+    const pageNum = Math.max(1, parseInt(page as string) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit as string) || 20));
+
+    // Verify the subscription exists
+    const subscription = await prisma.strategySubscription.findUnique({
+      where: { id: subscriptionId }
+    });
+
+    if (!subscription) {
+      return res.status(404).json({ error: 'Subscription not found' });
+    }
+
+    // Get trades from database
+    const dbTrades = await prisma.trade.findMany({
+      where: { subscriptionId },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+      select: {
+        id: true,
+        symbol: true,
+        side: true,
+        quantity: true,
+        entryPrice: true,
+        exitPrice: true,
+        status: true,
+        pnl: true,
+        createdAt: true,
+        exitedAt: true,
+        positionId: true,
+        orderId: true,
+        leverage: true,
+        orderType: true
+      }
+    });
+
+    const totalCount = dbTrades.length;
+    const totalPages = Math.ceil(totalCount / limitNum);
+    const startIndex = (pageNum - 1) * limitNum;
+    const paginatedTrades = dbTrades.slice(startIndex, startIndex + limitNum);
+
+    // Calculate net PnL
+    let netPnl = 0;
+    let closedTradesCount = 0;
+    let openTradesCount = 0;
+    for (const trade of dbTrades) {
+      if (trade.status === 'OPEN') {
+        openTradesCount++;
+        continue;
+      }
+      closedTradesCount++;
+      if (trade.pnl) {
+        netPnl += trade.pnl;
+      } else if (trade.entryPrice && trade.exitPrice) {
+        const priceDiff = trade.side === 'BUY'
+          ? trade.exitPrice - trade.entryPrice
+          : trade.entryPrice - trade.exitPrice;
+        netPnl += priceDiff * (trade.quantity || 0);
+      }
+    }
+
+    res.json({
+      trades: paginatedTrades,
+      totalCount,
+      totalPages,
+      currentPage: pageNum,
+      netPnl: Math.round(netPnl * 100) / 100,
+      openTrades: openTradesCount,
+      closedTrades: closedTradesCount,
+      source: 'database'
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 export { router as adminRoutes };
