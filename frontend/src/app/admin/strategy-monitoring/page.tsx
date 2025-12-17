@@ -1,557 +1,915 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth';
-import axios from 'axios';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Switch } from '@/components/ui/switch';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
-  Activity,
   AlertCircle,
-  CheckCircle,
-  Clock,
-  RefreshCw,
-  TrendingUp,
+  Loader2,
   Users,
-  XCircle,
-  Zap,
-  AlertTriangle,
-  Server,
+  TrendingUp,
+  TrendingDown,
+  Power,
+  RefreshCw,
+  ChevronRight,
+  ChevronDown,
+  BarChart3,
+  Pause,
+  Play,
 } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
+import axios from 'axios';
+import { toast } from 'sonner';
+
+// ============================================================================
+// Types
+// ============================================================================
 
 interface StrategyHealth {
-  id: string;
-  name: string;
-  code: string;
-  symbol: string;
-  resolution: string;
-  isActive: boolean;
-  healthStatus: 'healthy' | 'warning' | 'critical' | 'unknown';
-  metrics: {
-    subscriberCount: number;
-    activeSubscribers: number;
-    totalExecutions: number;
-    successfulExecutions: number;
-    failedExecutions: number;
-    skippedExecutions: number;
-    successRate: number;
-    lastExecutedAt: string | null;
-    minutesSinceLastExecution: number | null;
-    lastExecutionStatus: string | null;
-    lastExecutionDuration: number | null;
-    lastExecutionError: string | null;
-    avgDuration: number;
-  };
-  recentFailures: Array<{
-    executedAt: string;
-    error: string | null;
-    duration: number | null;
-  }>;
-}
-
-interface PlatformStats {
-  totalStrategies: number;
-  healthyStrategies: number;
-  warningStrategies: number;
-  criticalStrategies: number;
-  unknownStrategies: number;
-  totalSubscribers: number;
-  totalExecutions: number;
-  avgSuccessRate: number;
-}
-
-interface Execution {
-  id: string;
-  executedAt: string;
-  status: string;
-  duration: number | null;
-  subscribersCount: number;
-  tradesGenerated: number | null;
-  error: string | null;
-  strategy: {
-    id: string;
-    name: string;
-    code: string;
-  };
-}
-
-interface SchedulerHealth {
-  isHealthy: boolean;
-  recentExecutions: number;
-  lastChecked: string;
-  status: string;
+  status: 'healthy' | 'warning' | 'error';
   message: string;
 }
 
-export default function StrategyMonitoringPage() {
+interface Strategy {
+  id: string;
+  name: string;
+  code: string;
+  description: string;
+  isPublic: boolean;
+  isActive: boolean;
+  subscriberCount: number;
+  activeSubscribers: number;
+  pausedSubscribers: number;
+  todayPnl: number;
+  todayPnlPercent: number;
+  totalPnl: number;
+  health: StrategyHealth;
+  totalTrades: number;
+  openPositions: number;
+  totalCapital: number;
+  client: {
+    id: string;
+    email: string;
+    name: string | null;
+  };
+}
+
+interface Subscriber {
+  id: string;
+  userName: string;
+  userEmail: string;
+  capital: number;
+  leverage: number;
+  isActive: boolean;
+  isPaused: boolean;
+  totalPnl: number;
+}
+
+interface Trade {
+  id: string;
+  symbol: string;
+  side: string;
+  quantity: number;
+  entryPrice: number;
+  exitPrice?: number;
+  status: string;
+  pnl?: number;
+  createdAt: string;
+  exitedAt?: string;
+}
+
+// ============================================================================
+// Main Component
+// ============================================================================
+
+export default function AdminStrategyMonitoringPage() {
   const { token } = useAuth();
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [strategies, setStrategies] = useState<StrategyHealth[]>([]);
-  const [platformStats, setPlatformStats] = useState<PlatformStats | null>(null);
-  const [executions, setExecutions] = useState<Execution[]>([]);
-  const [schedulerHealth, setSchedulerHealth] = useState<SchedulerHealth | null>(null);
-  const [autoRefresh, setAutoRefresh] = useState(true);
-  const [timeRange, setTimeRange] = useState('24');
-  const [executionFilter, setExecutionFilter] = useState<string>('all');
+
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [strategies, setStrategies] = useState<Strategy[]>([]);
+  const [selectedStrategy, setSelectedStrategy] = useState<Strategy | null>(null);
+  const [subscribers, setSubscribers] = useState<Subscriber[]>([]);
+  const [subscribersLoading, setSubscribersLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Confirmation dialog state
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    type: 'exitAll' | 'exitOne';
+    strategyId?: string;
+    subscriptionId?: string;
+    subscriberName?: string;
+  }>({ open: false, type: 'exitAll' });
+
+  // Currency toggle state
+  const [currency, setCurrency] = useState<'USD' | 'INR'>('USD');
+  const USD_TO_INR = 96;
+
+  // ============================================================================
+  // Data Loading
+  // ============================================================================
 
   useEffect(() => {
     if (token) {
-      loadData();
+      loadDashboardData();
     }
-  }, [token, timeRange]);
+  }, [token]);
 
+  // Auto-refresh every 10 seconds
   useEffect(() => {
-    if (!autoRefresh) return;
-
     const interval = setInterval(() => {
-      loadData(true); // Silent refresh
-    }, 30000); // Refresh every 30 seconds
-
+      if (!isLoading && token) {
+        loadDashboardData(true);
+      }
+    }, 10000);
     return () => clearInterval(interval);
-  }, [autoRefresh, token, timeRange]);
+  }, [isLoading, token]);
 
-  const loadData = async (silent = false) => {
-    if (!silent) setLoading(true);
-    setError(null);
+  const getAuthToken = () => {
+    return token?.startsWith('Bearer ') ? token : `Bearer ${token}`;
+  };
 
+  const loadDashboardData = async (silent = false) => {
     try {
-      const authToken = token?.startsWith('Bearer ') ? token : `Bearer ${token}`;
+      if (!silent) setIsLoading(true);
+      else setRefreshing(true);
+      setError('');
+
+      const authToken = getAuthToken();
       const baseURL = process.env.NEXT_PUBLIC_API_URL;
 
-      const [healthRes, executionsRes, schedulerRes] = await Promise.all([
-        axios.get(`${baseURL}/api/admin/strategy-health?hours=${timeRange}`, {
-          headers: { Authorization: authToken }
-        }),
-        axios.get(`${baseURL}/api/admin/strategy-executions?hours=${timeRange}&limit=100`, {
-          headers: { Authorization: authToken }
-        }),
-        axios.get(`${baseURL}/api/admin/scheduler-health`, {
-          headers: { Authorization: authToken }
-        })
-      ]);
+      const response = await axios.get(`${baseURL}/api/admin/dashboard`, {
+        headers: { Authorization: authToken }
+      });
 
-      setStrategies(healthRes.data.strategies);
-      setPlatformStats(healthRes.data.platformStats);
-      setExecutions(executionsRes.data.executions);
-      setSchedulerHealth(schedulerRes.data.scheduler);
-    } catch (err: unknown) {
+      setStrategies(response.data.strategies || []);
+    } catch (err) {
+      console.error('Failed to load dashboard data:', err);
       const error = err as { response?: { data?: { error?: string } } };
-      setError(error?.response?.data?.error || 'Failed to load monitoring data');
-      console.error('Strategy monitoring load error:', err);
+      setError(error.response?.data?.error || 'Failed to load dashboard data');
     } finally {
-      if (!silent) setLoading(false);
+      setIsLoading(false);
+      setRefreshing(false);
     }
   };
 
-  const getHealthStatusIcon = (status: string) => {
-    switch (status) {
-      case 'healthy':
-        return <CheckCircle className="h-5 w-5 text-green-500" />;
-      case 'warning':
-        return <AlertTriangle className="h-5 w-5 text-yellow-500" />;
-      case 'critical':
-        return <XCircle className="h-5 w-5 text-red-500" />;
-      default:
-        return <AlertCircle className="h-5 w-5 text-gray-500" />;
+  const loadStrategySubscribers = async (strategyId: string) => {
+    try {
+      setSubscribersLoading(true);
+      const authToken = getAuthToken();
+      const baseURL = process.env.NEXT_PUBLIC_API_URL;
+
+      const response = await axios.get(`${baseURL}/api/admin/strategies/${strategyId}/subscribers`, {
+        headers: { Authorization: authToken }
+      });
+
+      const subs = response.data.subscribers || [];
+      setSubscribers(subs.map((sub: { id: string; user: { name?: string; email: string }; capital: number; leverage: number; isActive: boolean; isPaused: boolean; totalPnl?: number }) => ({
+        id: sub.id,
+        userName: sub.user.name || sub.user.email,
+        userEmail: sub.user.email,
+        capital: sub.capital,
+        leverage: sub.leverage,
+        isActive: sub.isActive,
+        isPaused: sub.isPaused,
+        totalPnl: sub.totalPnl || 0,
+      })));
+    } catch (err) {
+      console.error('Failed to load subscribers:', err);
+      toast.error('Failed to load subscriber details');
+    } finally {
+      setSubscribersLoading(false);
     }
   };
 
-  const getHealthStatusBadge = (status: string): "default" | "secondary" | "destructive" | "outline" => {
-    switch (status) {
-      case 'healthy':
-        return 'default';
-      case 'warning':
-        return 'secondary';
-      case 'critical':
-        return 'destructive';
-      default:
-        return 'outline';
+  // ============================================================================
+  // Actions
+  // ============================================================================
+
+  const handleToggleStrategy = async (strategyId: string, currentState: boolean) => {
+    try {
+      const authToken = getAuthToken();
+      const baseURL = process.env.NEXT_PUBLIC_API_URL;
+
+      if (currentState) {
+        await axios.patch(`${baseURL}/api/strategy-upload/${strategyId}/deactivate`, {}, {
+          headers: { Authorization: authToken }
+        });
+        toast.success('Strategy paused successfully');
+      } else {
+        await axios.patch(`${baseURL}/api/strategy-upload/${strategyId}/activate`, {}, {
+          headers: { Authorization: authToken }
+        });
+        toast.success('Strategy activated successfully');
+      }
+
+      loadDashboardData(true);
+    } catch (err) {
+      const errorMsg = axios.isAxiosError(err) && err.response?.data?.error
+        ? err.response.data.error
+        : 'Failed to toggle strategy';
+      toast.error(errorMsg);
     }
   };
 
-  const getExecutionStatusIcon = (status: string) => {
-    switch (status) {
-      case 'SUCCESS':
-        return <CheckCircle className="h-4 w-4 text-green-500" />;
-      case 'FAILED':
-        return <XCircle className="h-4 w-4 text-red-500" />;
-      case 'SKIPPED':
-        return <Clock className="h-4 w-4 text-gray-500" />;
-      default:
-        return <AlertCircle className="h-4 w-4 text-gray-500" />;
+  const requestExitAll = (strategyId: string) => {
+    setConfirmDialog({ open: true, type: 'exitAll', strategyId });
+  };
+
+  const requestExitOne = (subscriptionId: string, subscriberName: string) => {
+    setConfirmDialog({ open: true, type: 'exitOne', subscriptionId, subscriberName });
+  };
+
+  const handleEmergencyFlatten = async () => {
+    const strategyId = confirmDialog.strategyId;
+    if (!strategyId) return;
+
+    setConfirmDialog({ open: false, type: 'exitAll' });
+
+    try {
+      const authToken = getAuthToken();
+      const baseURL = process.env.NEXT_PUBLIC_API_URL;
+
+      const response = await axios.post(
+        `${baseURL}/api/positions/force-close-all`,
+        { strategyId, pauseStrategy: true },
+        { headers: { Authorization: authToken } }
+      );
+
+      const { successfulClosures, failedClosures, totalSubscriptions } = response.data;
+
+      if (successfulClosures > 0) {
+        toast.success(`Successfully closed positions for ${successfulClosures}/${totalSubscriptions} subscribers`);
+      }
+      if (failedClosures > 0) {
+        toast.warning(`Failed to close positions for ${failedClosures} subscribers`);
+      }
+
+      loadDashboardData(true);
+    } catch {
+      toast.error('Failed to force close positions');
     }
   };
 
-  const getExecutionStatusBadge = (status: string): "default" | "secondary" | "destructive" | "outline" => {
-    switch (status) {
-      case 'SUCCESS':
-        return 'default';
-      case 'FAILED':
-        return 'destructive';
-      default:
-        return 'secondary';
+  const handleForceCloseSubscriber = async () => {
+    const subscriptionId = confirmDialog.subscriptionId;
+    const subscriberName = confirmDialog.subscriberName;
+    if (!subscriptionId) return;
+
+    setConfirmDialog({ open: false, type: 'exitAll' });
+
+    try {
+      const authToken = getAuthToken();
+      const baseURL = process.env.NEXT_PUBLIC_API_URL;
+
+      await axios.post(
+        `${baseURL}/api/positions/force-close`,
+        { subscriptionId },
+        { headers: { Authorization: authToken } }
+      );
+
+      toast.success(`Position closed for ${subscriberName}`);
+
+      if (selectedStrategy) {
+        loadStrategySubscribers(selectedStrategy.id);
+      }
+    } catch (err) {
+      const errorMsg = axios.isAxiosError(err) && err.response?.data?.error
+        ? err.response.data.error
+        : 'Failed to force close position';
+      toast.error(errorMsg);
     }
   };
 
-  const filteredExecutions = executions.filter(exec => {
-    if (executionFilter === 'all') return true;
-    return exec.status === executionFilter;
-  });
+  const openStrategyDetail = (strategy: Strategy) => {
+    setSelectedStrategy(strategy);
+    loadStrategySubscribers(strategy.id);
+  };
 
-  if (loading) {
+  // ============================================================================
+  // Helpers
+  // ============================================================================
+
+  const formatCurrency = (value: number) => {
+    const prefix = value >= 0 ? '+' : '-';
+    const absValue = Math.abs(value);
+
+    if (currency === 'USD') {
+      return `${prefix}$${absValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    } else {
+      const inrValue = absValue * USD_TO_INR;
+      return `${prefix}₹${inrValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
+  };
+
+  const formatPercent = (value: number) => {
+    const prefix = value >= 0 ? '+' : '';
+    return `${prefix}${value.toFixed(2)}%`;
+  };
+
+  // ============================================================================
+  // Loading State
+  // ============================================================================
+
+  if (isLoading) {
     return (
-      <div className="container max-w-7xl mx-auto p-4 md:p-6 space-y-6">
-        <div className="animate-pulse space-y-6">
-          <div className="h-8 bg-muted rounded w-1/3"></div>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {[...Array(4)].map((_, i) => (
-              <div key={i} className="h-32 bg-muted rounded"></div>
-            ))}
-          </div>
+      <div className="container mx-auto px-4 py-8">
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
       </div>
     );
   }
 
+  // ============================================================================
+  // Render
+  // ============================================================================
+
   return (
-    <div className="container max-w-7xl mx-auto p-4 md:p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Strategy Monitoring</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Real-time health monitoring for all active strategies
-          </p>
+    <div className="container mx-auto px-4 py-6">
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">All Strategies</h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Monitor all strategies across the platform
+            </p>
+          </div>
+          <div className="flex items-center gap-4">
+            {/* Currency Toggle */}
+            <div className="flex items-center gap-1 bg-muted rounded-lg p-1">
+              <Button
+                variant={currency === 'USD' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setCurrency('USD')}
+                className="h-7 px-3"
+              >
+                USD
+              </Button>
+              <Button
+                variant={currency === 'INR' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setCurrency('INR')}
+                className="h-7 px-3"
+              >
+                INR
+              </Button>
+            </div>
+            {refreshing && (
+              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                <RefreshCw className="h-3 w-3 animate-spin" />
+                Syncing...
+              </span>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          <Select value={timeRange} onValueChange={setTimeRange}>
-            <SelectTrigger className="w-[140px]">
-              <SelectValue placeholder="Time range" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="1">Last 1 hour</SelectItem>
-              <SelectItem value="6">Last 6 hours</SelectItem>
-              <SelectItem value="24">Last 24 hours</SelectItem>
-              <SelectItem value="168">Last 7 days</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button
-            onClick={() => loadData()}
-            variant="outline"
-            size="sm"
-            className="gap-2"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </Button>
-          <Button
-            onClick={() => setAutoRefresh(!autoRefresh)}
-            variant={autoRefresh ? 'default' : 'outline'}
-            size="sm"
-            className="gap-2"
-          >
-            <Activity className="h-4 w-4" />
-            {autoRefresh ? 'Auto-refresh ON' : 'Auto-refresh OFF'}
-          </Button>
-        </div>
+
+        {error && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
+        {/* Strategy Cards Grid */}
+        {strategies.length === 0 ? (
+          <Card className="p-12">
+            <div className="text-center">
+              <BarChart3 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-medium mb-2">No Strategies Found</h3>
+              <p className="text-muted-foreground mb-4">
+                No strategies have been created yet.
+              </p>
+            </div>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+            {strategies.map((strategy) => (
+              <StrategyCard
+                key={strategy.id}
+                strategy={strategy}
+                onToggle={() => handleToggleStrategy(strategy.id, strategy.isActive)}
+                onClick={() => openStrategyDetail(strategy)}
+                formatCurrency={formatCurrency}
+                formatPercent={formatPercent}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
-      {error && (
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Error</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
+      {/* Strategy Detail Dialog */}
+      <Dialog open={!!selectedStrategy} onOpenChange={(open) => !open && setSelectedStrategy(null)}>
+        <DialogContent className="w-[98vw] max-w-[1200px] max-h-[90vh] overflow-y-auto">
+          {selectedStrategy && (
+            <StrategyDetailPanel
+              strategy={selectedStrategy}
+              subscribers={subscribers}
+              subscribersLoading={subscribersLoading}
+              onExitAll={() => requestExitAll(selectedStrategy.id)}
+              onForceCloseSubscriber={requestExitOne}
+              formatCurrency={formatCurrency}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
 
-      {/* Scheduler Health Alert */}
-      {schedulerHealth && !schedulerHealth.isHealthy && (
-        <Alert variant="destructive">
-          <Server className="h-4 w-4" />
-          <AlertTitle>Scheduler Warning</AlertTitle>
-          <AlertDescription>{schedulerHealth.message}</AlertDescription>
-        </Alert>
-      )}
+      {/* Confirmation Dialog */}
+      <AlertDialog open={confirmDialog.open} onOpenChange={(open) => !open && setConfirmDialog({ open: false, type: 'exitAll' })}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-red-600">
+              {confirmDialog.type === 'exitAll' ? 'Square Off All Positions?' : 'Square Off Position?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              {confirmDialog.type === 'exitAll' ? (
+                <>
+                  <p>This will immediately close <strong>ALL open positions</strong> for <strong>ALL subscribers</strong> of this strategy.</p>
+                  <p className="text-red-600 font-medium">This action cannot be undone.</p>
+                </>
+              ) : (
+                <>
+                  <p>This will immediately close the open position for <strong>{confirmDialog.subscriberName}</strong>.</p>
+                  <p className="text-red-600 font-medium">This action cannot be undone.</p>
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700"
+              onClick={confirmDialog.type === 'exitAll' ? handleEmergencyFlatten : handleForceCloseSubscriber}
+            >
+              Yes, Square Off
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
 
-      {/* Platform Stats */}
-      {platformStats && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Total Strategies
+// ============================================================================
+// Strategy Card Component (Simplified - No Sparkline)
+// ============================================================================
+
+function StrategyCard({
+  strategy,
+  onToggle,
+  onClick,
+  formatCurrency,
+  formatPercent,
+}: {
+  strategy: Strategy;
+  onToggle: () => void;
+  onClick: () => void;
+  formatCurrency: (v: number) => string;
+  formatPercent: (v: number) => string;
+}) {
+  const pnlPositive = strategy.todayPnl >= 0;
+  const healthColors = {
+    healthy: 'bg-green-500',
+    warning: 'bg-yellow-500',
+    error: 'bg-red-500 animate-pulse',
+  };
+
+  return (
+    <Card
+      className={`relative overflow-hidden transition-all hover:shadow-lg cursor-pointer border-l-4 ${
+        strategy.health.status === 'error' ? 'border-l-red-500' :
+        strategy.health.status === 'warning' ? 'border-l-yellow-500' :
+        'border-l-green-500'
+      }`}
+      onClick={onClick}
+    >
+      <CardHeader className="pb-2">
+        <div className="flex items-start justify-between">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <CardTitle className="text-base font-semibold truncate">
+                {strategy.name}
               </CardTitle>
-              <Activity className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-foreground">
-                {platformStats.totalStrategies}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {platformStats.healthyStrategies} healthy, {platformStats.criticalStrategies} critical
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Total Subscribers
-              </CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-foreground">
-                {platformStats.totalSubscribers}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Active strategy subscriptions
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Executions
-              </CardTitle>
-              <Zap className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-foreground">
-                {platformStats.totalExecutions}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                in selected period
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Avg Success Rate
-              </CardTitle>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-foreground">
-                {platformStats.avgSuccessRate.toFixed(1)}%
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Platform-wide average
-              </p>
-            </CardContent>
-          </Card>
+              {strategy.health.status === 'error' && (
+                <span className="flex h-2 w-2 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground font-mono">{strategy.code}</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              by {strategy.client.email}
+            </p>
+          </div>
+          <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+            <Switch
+              checked={strategy.isActive}
+              onCheckedChange={onToggle}
+              className="data-[state=checked]:bg-green-500"
+            />
+          </div>
         </div>
-      )}
+      </CardHeader>
 
-      {/* Strategy Health Cards */}
+      <CardContent className="space-y-4">
+        {/* Today's P&L */}
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs text-muted-foreground">Today&apos;s P&L</p>
+            <div className="flex items-center gap-2">
+              {pnlPositive ? (
+                <TrendingUp className="h-5 w-5 text-green-500" />
+              ) : (
+                <TrendingDown className="h-5 w-5 text-red-500" />
+              )}
+              <span className={`text-xl font-bold ${pnlPositive ? 'text-green-500' : 'text-red-500'}`}>
+                {formatCurrency(strategy.todayPnl)}
+              </span>
+              <span className={`text-sm ${pnlPositive ? 'text-green-500' : 'text-red-500'}`}>
+                {formatPercent(strategy.todayPnlPercent)}
+              </span>
+            </div>
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-muted-foreground">Subscribers</p>
+            <div className="flex items-center gap-1">
+              <Users className="h-4 w-4 text-muted-foreground" />
+              <span className="text-lg font-semibold">{strategy.activeSubscribers}</span>
+              <span className="text-xs text-muted-foreground">/{strategy.subscriberCount}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Health Status Footer */}
+        <div className={`-mx-6 -mb-6 px-4 py-2 flex items-center justify-between ${
+          strategy.health.status === 'error' ? 'bg-red-50 dark:bg-red-950/30' :
+          strategy.health.status === 'warning' ? 'bg-yellow-50 dark:bg-yellow-950/30' :
+          'bg-green-50 dark:bg-green-950/30'
+        }`}>
+          <div className="flex items-center gap-2">
+            <span className={`h-2 w-2 rounded-full ${healthColors[strategy.health.status]}`} />
+            <span className={`text-xs font-medium ${
+              strategy.health.status === 'error' ? 'text-red-700 dark:text-red-400' :
+              strategy.health.status === 'warning' ? 'text-yellow-700 dark:text-yellow-400' :
+              'text-green-700 dark:text-green-400'
+            }`}>
+              {strategy.health.message}
+            </span>
+          </div>
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ============================================================================
+// Strategy Detail Panel (Simplified - No Equity Curve, No Stats Grid)
+// ============================================================================
+
+function StrategyDetailPanel({
+  strategy,
+  subscribers,
+  subscribersLoading,
+  onExitAll,
+  onForceCloseSubscriber,
+  formatCurrency,
+}: {
+  strategy: Strategy;
+  subscribers: Subscriber[];
+  subscribersLoading: boolean;
+  onExitAll: () => void;
+  onForceCloseSubscriber: (subscriptionId: string, subscriberName: string) => void;
+  formatCurrency: (v: number) => string;
+}) {
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [tradesData, setTradesData] = useState<Record<string, {
+    trades: Trade[];
+    pagination: { page: number; totalPages: number; totalCount: number; hasMore: boolean };
+    summary: { netPnl: number; closedTrades: number; openTrades: number };
+  }>>({});
+  const [loadingTrades, setLoadingTrades] = useState<Set<string>>(new Set());
+
+  const fetchTrades = async (subscriptionId: string, page: number = 1) => {
+    setLoadingTrades(prev => new Set(prev).add(subscriptionId));
+    try {
+      const tokenStorage = localStorage.getItem('auth-storage');
+      const authData = tokenStorage ? JSON.parse(tokenStorage) : null;
+      const authToken = authData?.state?.token;
+      if (!authToken) throw new Error('No authentication token');
+
+      const baseURL = process.env.NEXT_PUBLIC_API_URL;
+      const response = await axios.get(
+        `${baseURL}/api/client/subscribers/${subscriptionId}/trades?page=${page}&limit=20`,
+        { headers: { Authorization: `Bearer ${authToken}` } }
+      );
+      setTradesData(prev => ({
+        ...prev,
+        [subscriptionId]: {
+          trades: response.data.trades || [],
+          pagination: response.data.pagination || { page: 1, totalPages: 1, totalCount: 0, hasMore: false },
+          summary: response.data.summary || { netPnl: 0, closedTrades: 0, openTrades: 0 },
+        }
+      }));
+    } catch (err) {
+      console.error('Failed to load trades:', err);
+      toast.error('Failed to load trades');
+    } finally {
+      setLoadingTrades(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(subscriptionId);
+        return newSet;
+      });
+    }
+  };
+
+  const toggleRow = async (subscriptionId: string) => {
+    const newExpanded = new Set(expandedRows);
+
+    if (newExpanded.has(subscriptionId)) {
+      newExpanded.delete(subscriptionId);
+    } else {
+      newExpanded.add(subscriptionId);
+      if (!tradesData[subscriptionId]) {
+        await fetchTrades(subscriptionId, 1);
+      }
+    }
+
+    setExpandedRows(newExpanded);
+  };
+
+  return (
+    <div className="space-y-6">
+      <DialogHeader>
+        <div className="flex items-center justify-between pr-8">
+          <div>
+            <DialogTitle className="text-xl">{strategy.name}</DialogTitle>
+            <p className="text-sm text-muted-foreground font-mono">{strategy.code}</p>
+            <p className="text-xs text-muted-foreground mt-1">Owner: {strategy.client.email}</p>
+          </div>
+          <Badge variant={strategy.isActive ? 'default' : 'secondary'}>
+            {strategy.isActive ? 'Active' : 'Paused'}
+          </Badge>
+        </div>
+      </DialogHeader>
+
+      {/* Emergency Exit All Button */}
+      <div className="flex justify-end border-b pb-4">
+        <Button variant="destructive" size="sm" onClick={onExitAll}>
+          <Power className="h-4 w-4 mr-2" />
+          Square Off All Positions
+        </Button>
+      </div>
+
+      {/* Subscribers Table */}
       <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center">
-            <Activity className="h-5 w-5 mr-2" />
-            Strategy Health Overview
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <Users className="h-4 w-4" />
+            Subscribers ({subscribers.length})
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3">
-            {strategies.length === 0 ? (
-              <div className="text-center text-muted-foreground py-8">
-                No active strategies found
-              </div>
-            ) : (
-              strategies.map((strategy) => (
-                <div
-                  key={strategy.id}
-                  className="flex items-start justify-between p-4 border border-border rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors"
-                >
-                  <div className="flex-1 space-y-2">
-                    <div className="flex items-center gap-3">
-                      {getHealthStatusIcon(strategy.healthStatus)}
-                      <div>
-                        <h3 className="font-semibold text-foreground">{strategy.name}</h3>
-                        <p className="text-sm text-muted-foreground">
-                          {strategy.code} • {strategy.symbol} • {strategy.resolution}
-                        </p>
-                      </div>
-                      <Badge variant={getHealthStatusBadge(strategy.healthStatus)} className="ml-2">
-                        {strategy.healthStatus.toUpperCase()}
-                      </Badge>
-                    </div>
+          {subscribersLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : subscribers.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              No subscribers yet
+            </p>
+          ) : (
+            <div className="border rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="w-8"></th>
+                    <th className="text-left py-2 px-3 font-medium">User</th>
+                    <th className="text-right py-2 px-3 font-medium">Capital</th>
+                    <th className="text-right py-2 px-3 font-medium">Leverage</th>
+                    <th className="text-right py-2 px-3 font-medium">Total PnL</th>
+                    <th className="text-center py-2 px-3 font-medium">Status</th>
+                    <th className="text-center py-2 px-3 font-medium">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {subscribers.map((sub) => {
+                    const isExpanded = expandedRows.has(sub.id);
+                    const isLoadingTrades = loadingTrades.has(sub.id);
+                    const tradeInfo = tradesData[sub.id];
+                    const trades = tradeInfo?.trades || [];
+                    const pagination = tradeInfo?.pagination;
+                    const summary = tradeInfo?.summary;
 
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                      <div>
-                        <p className="text-muted-foreground">Subscribers</p>
-                        <p className="font-medium text-foreground">{strategy.metrics.subscriberCount}</p>
-                      </div>
-                      <div>
-                        <p className="text-muted-foreground">Success Rate</p>
-                        <p className="font-medium text-foreground">{strategy.metrics.successRate}%</p>
-                      </div>
-                      <div>
-                        <p className="text-muted-foreground">Executions (24h)</p>
-                        <p className="font-medium text-foreground">
-                          {strategy.metrics.successfulExecutions}/{strategy.metrics.totalExecutions}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-muted-foreground">Last Execution</p>
-                        <p className="font-medium text-foreground">
-                          {strategy.metrics.lastExecutedAt
-                            ? formatDistanceToNow(new Date(strategy.metrics.lastExecutedAt), {
-                                addSuffix: true,
-                              })
-                            : 'Never'}
-                        </p>
-                      </div>
-                    </div>
+                    return (
+                      <React.Fragment key={sub.id}>
+                        <tr className="hover:bg-muted/30">
+                          <td className="py-2 px-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 w-6 p-0"
+                              onClick={() => toggleRow(sub.id)}
+                            >
+                              {isExpanded ? (
+                                <ChevronDown className="h-4 w-4" />
+                              ) : (
+                                <ChevronRight className="h-4 w-4" />
+                              )}
+                            </Button>
+                          </td>
+                          <td className="py-2 px-3">
+                            <div>
+                              <p className="font-medium">{sub.userName}</p>
+                              <p className="text-xs text-muted-foreground">{sub.userEmail}</p>
+                            </div>
+                          </td>
+                          <td className="text-right py-2 px-3">
+                            ₹{sub.capital.toLocaleString()}
+                          </td>
+                          <td className="text-right py-2 px-3">
+                            {sub.leverage}x
+                          </td>
+                          <td className={`text-right py-2 px-3 font-medium ${sub.totalPnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {formatCurrency(sub.totalPnl)}
+                          </td>
+                          <td className="text-center py-2 px-3">
+                            {sub.isPaused ? (
+                              <Badge variant="secondary" className="bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">
+                                <Pause className="h-3 w-3 mr-1" />
+                                Paused
+                              </Badge>
+                            ) : sub.isActive ? (
+                              <Badge variant="secondary" className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                                <Play className="h-3 w-3 mr-1" />
+                                Active
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary">Inactive</Badge>
+                            )}
+                          </td>
+                          <td className="text-center py-2 px-3">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2 text-red-600 hover:text-red-700 hover:bg-red-50"
+                              onClick={() => onForceCloseSubscriber(sub.id, sub.userName)}
+                              title="Exit position"
+                            >
+                              <Power className="h-4 w-4 mr-1" />
+                              Exit
+                            </Button>
+                          </td>
+                        </tr>
+                        {/* Expanded Trades Row */}
+                        {isExpanded && (
+                          <tr key={`${sub.id}-trades`}>
+                            <td colSpan={7} className="bg-muted/30 p-3">
+                              {isLoadingTrades ? (
+                                <div className="flex items-center justify-center py-4">
+                                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                                  <span className="ml-2 text-sm text-muted-foreground">Loading trades...</span>
+                                </div>
+                              ) : trades.length === 0 ? (
+                                <p className="text-sm text-muted-foreground text-center py-2">
+                                  No trades found for this subscriber
+                                </p>
+                              ) : (
+                                <div className="space-y-2">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <p className="text-xs font-medium text-muted-foreground">
+                                      Recent Trades ({pagination?.totalCount || trades.length})
+                                      {summary && (
+                                        <span className="ml-2">
+                                          • {summary.closedTrades} closed{summary.openTrades > 0 ? `, ${summary.openTrades} open` : ''}
+                                        </span>
+                                      )}
+                                    </p>
+                                  </div>
+                                  <div className="border rounded bg-background">
+                                    <table className="w-full text-xs">
+                                      <thead className="bg-muted/50">
+                                        <tr>
+                                          <th className="text-left py-1.5 px-2 font-medium">Symbol</th>
+                                          <th className="text-center py-1.5 px-2 font-medium">Side</th>
+                                          <th className="text-right py-1.5 px-2 font-medium">Qty</th>
+                                          <th className="text-right py-1.5 px-2 font-medium">Entry</th>
+                                          <th className="text-right py-1.5 px-2 font-medium">Exit</th>
+                                          <th className="text-right py-1.5 px-2 font-medium">PnL</th>
+                                          <th className="text-center py-1.5 px-2 font-medium">Status</th>
+                                          <th className="text-right py-1.5 px-2 font-medium">Date</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-border">
+                                        {trades.map((trade) => {
+                                          let calculatedPnl = trade.pnl;
+                                          if (!calculatedPnl && trade.entryPrice && trade.exitPrice) {
+                                            const priceDiff = trade.side === 'BUY'
+                                              ? trade.exitPrice - trade.entryPrice
+                                              : trade.entryPrice - trade.exitPrice;
+                                            calculatedPnl = priceDiff * trade.quantity;
+                                          }
 
-                    {strategy.metrics.lastExecutionStatus === 'FAILED' && strategy.metrics.lastExecutionError && (
-                      <div className="mt-2 p-2 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded text-sm">
-                        <p className="text-red-600 dark:text-red-400 font-medium">Last Error:</p>
-                        <p className="text-red-700 dark:text-red-300 text-xs mt-1">
-                          {strategy.metrics.lastExecutionError}
-                        </p>
-                      </div>
-                    )}
-
-                    {strategy.recentFailures.length > 0 && (
-                      <div className="mt-2">
-                        <p className="text-xs text-muted-foreground mb-1">
-                          Recent Failures: {strategy.recentFailures.length}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="text-right text-sm">
-                    <Badge variant="outline" className="mb-2">
-                      {strategy.metrics.lastExecutionStatus || 'N/A'}
-                    </Badge>
-                    {strategy.metrics.minutesSinceLastExecution !== null && (
-                      <p className="text-xs text-muted-foreground">
-                        {strategy.metrics.minutesSinceLastExecution}m ago
-                      </p>
-                    )}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Execution Feed */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-lg flex items-center">
-              <Zap className="h-5 w-5 mr-2" />
-              Recent Executions
-            </CardTitle>
-            <Select value={executionFilter} onValueChange={setExecutionFilter}>
-              <SelectTrigger className="w-[160px]">
-                <SelectValue placeholder="Filter status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="SUCCESS">Success</SelectItem>
-                <SelectItem value="FAILED">Failed</SelectItem>
-                <SelectItem value="SKIPPED">Skipped</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Strategy</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Executed At</TableHead>
-                  <TableHead>Duration</TableHead>
-                  <TableHead>Subscribers</TableHead>
-                  <TableHead>Trades</TableHead>
-                  <TableHead>Error</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredExecutions.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                      No executions found
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  filteredExecutions.map((exec) => (
-                    <TableRow key={exec.id}>
-                      <TableCell className="font-medium">
-                        <div>
-                          <p className="text-sm">{exec.strategy.name}</p>
-                          <p className="text-xs text-muted-foreground">{exec.strategy.code}</p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          {getExecutionStatusIcon(exec.status)}
-                          <Badge variant={getExecutionStatusBadge(exec.status)} className="text-xs">
-                            {exec.status}
-                          </Badge>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {formatDistanceToNow(new Date(exec.executedAt), { addSuffix: true })}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {exec.duration ? `${exec.duration.toFixed(1)}s` : 'N/A'}
-                      </TableCell>
-                      <TableCell className="text-sm">{exec.subscribersCount || 0}</TableCell>
-                      <TableCell className="text-sm">{exec.tradesGenerated || 0}</TableCell>
-                      <TableCell>
-                        {exec.error && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => alert(exec.error)}
-                            className="text-xs h-7"
-                          >
-                            View Error
-                          </Button>
+                                          return (
+                                            <tr key={trade.id}>
+                                              <td className="py-1.5 px-2 font-mono">{trade.symbol}</td>
+                                              <td className="text-center py-1.5 px-2">
+                                                <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
+                                                  trade.side === 'BUY' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                                                }`}>
+                                                  {trade.side}
+                                                </span>
+                                              </td>
+                                              <td className="text-right py-1.5 px-2">{trade.quantity}</td>
+                                              <td className="text-right py-1.5 px-2">
+                                                {trade.entryPrice?.toFixed(2) || '-'}
+                                              </td>
+                                              <td className="text-right py-1.5 px-2">
+                                                {trade.exitPrice?.toFixed(2) || '-'}
+                                              </td>
+                                              <td className={`text-right py-1.5 px-2 font-medium ${
+                                                (calculatedPnl || 0) >= 0 ? 'text-green-600' : 'text-red-600'
+                                              }`}>
+                                                {calculatedPnl ? formatCurrency(calculatedPnl) : '-'}
+                                              </td>
+                                              <td className="text-center py-1.5 px-2">
+                                                <span className={`px-1.5 py-0.5 rounded text-xs ${
+                                                  trade.status === 'OPEN' ? 'bg-blue-100 text-blue-700' :
+                                                  trade.status === 'CLOSED' ? 'bg-gray-100 text-gray-700' :
+                                                  'bg-yellow-100 text-yellow-700'
+                                                }`}>
+                                                  {trade.status}
+                                                </span>
+                                              </td>
+                                              <td className="text-right py-1.5 px-2 text-muted-foreground">
+                                                {new Date(trade.createdAt).toLocaleDateString()}
+                                              </td>
+                                            </tr>
+                                          );
+                                        })}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                  {/* Pagination */}
+                                  {pagination && pagination.totalPages > 1 && (
+                                    <div className="flex items-center justify-between pt-2">
+                                      <p className="text-xs text-muted-foreground">
+                                        Page {pagination.page} of {pagination.totalPages}
+                                      </p>
+                                      <div className="flex gap-1">
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          className="h-7 px-2 text-xs"
+                                          disabled={pagination.page <= 1 || isLoadingTrades}
+                                          onClick={() => fetchTrades(sub.id, pagination.page - 1)}
+                                        >
+                                          ← Prev
+                                        </Button>
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          className="h-7 px-2 text-xs"
+                                          disabled={!pagination.hasMore || isLoadingTrades}
+                                          onClick={() => fetchTrades(sub.id, pagination.page + 1)}
+                                        >
+                                          Next →
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                          </tr>
                         )}
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
-
-          {filteredExecutions.length > 0 && (
-            <div className="flex items-center justify-between mt-4">
-              <p className="text-sm text-muted-foreground">
-                Showing {filteredExecutions.length} of {executions.length} executions
-              </p>
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </CardContent>

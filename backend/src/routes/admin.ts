@@ -1711,4 +1711,203 @@ router.post('/users/validate-bulk', async (req: AuthenticatedRequest, res, next)
   }
 });
 
+/**
+ * GET /api/admin/dashboard
+ * Get all strategies across all clients for admin monitoring
+ * Similar to client dashboard but shows ALL strategies with client ownership info
+ */
+router.get('/dashboard', async (req: AuthenticatedRequest, res, next) => {
+  try {
+    // Get ALL strategies (no clientId filter) with subscriber data
+    const strategies = await prisma.strategy.findMany({
+      include: {
+        client: {
+          select: { id: true, email: true, name: true }
+        },
+        subscriptions: {
+          where: { isActive: true },
+          include: {
+            user: {
+              select: { id: true, name: true, email: true }
+            }
+          }
+        },
+        _count: {
+          select: {
+            subscriptions: { where: { isActive: true } }
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    // Get trades for last 30 days only (for performance)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const strategyIds = strategies.map(s => s.id);
+
+    // Get trades for all strategies
+    const allTrades = await prisma.trade.findMany({
+      where: {
+        subscription: {
+          strategyId: { in: strategyIds }
+        },
+        OR: [
+          { createdAt: { gte: thirtyDaysAgo } },
+          { status: 'OPEN' }
+        ]
+      },
+      select: {
+        id: true,
+        subscriptionId: true,
+        status: true,
+        side: true,
+        quantity: true,
+        entryPrice: true,
+        exitPrice: true,
+        pnl: true,
+        createdAt: true,
+        exitedAt: true,
+        updatedAt: true,
+        subscription: {
+          select: {
+            strategyId: true,
+            capital: true,
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    // Get today's date range
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date();
+    todayEnd.setHours(23, 59, 59, 999);
+
+    // Helper to calculate PnL from trade data
+    const getTradePnl = (trade: typeof allTrades[0]): number => {
+      if (trade.pnl) return trade.pnl;
+      if (trade.entryPrice && trade.exitPrice && trade.quantity) {
+        const priceDiff = trade.side === 'BUY'
+          ? trade.exitPrice - trade.entryPrice
+          : trade.entryPrice - trade.exitPrice;
+        return priceDiff * trade.quantity;
+      }
+      return 0;
+    };
+
+    // Process each strategy
+    const enhancedStrategies = strategies.map(strategy => {
+      const strategyTrades = allTrades.filter(t => t.subscription.strategyId === strategy.id);
+      const openTrades = strategyTrades.filter(t => t.status === 'OPEN');
+      const closedTrades = strategyTrades.filter(t => t.status === 'CLOSED');
+
+      // Group by subscriber to find representative
+      const tradesBySubscriber = new Map<string, typeof closedTrades>();
+      closedTrades.forEach(trade => {
+        const subId = trade.subscriptionId;
+        if (!tradesBySubscriber.has(subId)) {
+          tradesBySubscriber.set(subId, []);
+        }
+        tradesBySubscriber.get(subId)!.push(trade);
+      });
+
+      // Find subscriber with most closed trades
+      let representativeSubId: string | null = null;
+      let maxClosedCount = 0;
+      tradesBySubscriber.forEach((trades, subId) => {
+        if (trades.length > maxClosedCount) {
+          maxClosedCount = trades.length;
+          representativeSubId = subId;
+        }
+      });
+
+      const representativeTrades = representativeSubId
+        ? tradesBySubscriber.get(representativeSubId) || []
+        : [];
+
+      // Today's closed trades
+      const todayClosedTrades = representativeTrades.filter(t =>
+        t.exitedAt && t.exitedAt >= todayStart && t.exitedAt <= todayEnd
+      );
+
+      // Calculate P&L
+      const totalRealizedPnl = representativeTrades.reduce((sum, t) => sum + getTradePnl(t), 0);
+      const todayRealizedPnl = todayClosedTrades.reduce((sum, t) => sum + getTradePnl(t), 0);
+
+      // Calculate percentage
+      const totalCapital = strategy.subscriptions.reduce((sum, sub) => sum + sub.capital, 0);
+      const representativeCapital = representativeSubId
+        ? strategy.subscriptions.find(s => s.id === representativeSubId)?.capital || totalCapital
+        : totalCapital;
+      const todayPnlPercent = representativeCapital > 0 ? (todayRealizedPnl / representativeCapital) * 100 : 0;
+
+      // Subscriber counts
+      const activeSubscribers = strategy.subscriptions.filter(s => !s.isPaused).length;
+      const pausedSubscribers = strategy.subscriptions.filter(s => s.isPaused).length;
+
+      // Health status
+      let healthStatus: 'healthy' | 'warning' | 'error' = 'healthy';
+      let healthMessage = 'All systems normal';
+
+      const staleThreshold = Date.now() - 24 * 60 * 60 * 1000;
+      const staleTrades = openTrades.filter(t => t.updatedAt.getTime() < staleThreshold);
+      if (staleTrades.length > 0) {
+        healthStatus = 'warning';
+        healthMessage = `${staleTrades.length} position(s) not updated recently`;
+      }
+
+      return {
+        id: strategy.id,
+        name: strategy.name,
+        code: strategy.code,
+        description: strategy.description,
+        isPublic: strategy.isPublic,
+        isActive: strategy.isActive,
+        // Client ownership info
+        client: {
+          id: strategy.client?.id || '',
+          email: strategy.client?.email || 'Unknown',
+          name: strategy.client?.name || null
+        },
+        // Subscriber info
+        subscriberCount: strategy._count.subscriptions,
+        activeSubscribers,
+        pausedSubscribers,
+        // P&L data
+        todayPnl: todayRealizedPnl,
+        todayPnlPercent,
+        totalPnl: totalRealizedPnl,
+        // Health
+        health: {
+          status: healthStatus,
+          message: healthMessage,
+        },
+        // Basic stats
+        totalTrades: representativeTrades.length,
+        openPositions: openTrades.length,
+        totalCapital,
+      };
+    });
+
+    // Summary
+    const summary = {
+      totalStrategies: strategies.length,
+      activeStrategies: strategies.filter(s => s.isActive).length,
+      totalSubscribers: enhancedStrategies.reduce((sum, s) => sum + s.subscriberCount, 0),
+      totalTodayPnl: enhancedStrategies.reduce((sum, s) => sum + s.todayPnl, 0),
+      totalPnl: enhancedStrategies.reduce((sum, s) => sum + s.totalPnl, 0),
+    };
+
+    res.json({
+      strategies: enhancedStrategies,
+      summary,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 export { router as adminRoutes };
