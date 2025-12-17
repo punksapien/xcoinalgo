@@ -81,6 +81,22 @@ router.post('/run', authenticate, async (req: AuthenticatedRequest, res, next) =
       commission,
     });
 
+    // Update Strategy table with latest backtest metrics
+    await prisma.strategy.update({
+      where: { id: strategyId },
+      data: {
+        winRate: result.metrics.winRate,
+        roi: result.metrics.totalPnlPct,
+        riskReward: result.metrics.avgLoss > 0 ? result.metrics.avgWin / result.metrics.avgLoss : 0,
+        maxDrawdown: result.metrics.maxDrawdownPct,
+        sharpeRatio: result.metrics.sharpeRatio,
+        totalTrades: result.metrics.totalTrades,
+        profitFactor: result.metrics.profitFactor,
+        avgTradeReturn: result.metrics.avgTrade,
+        updatedAt: new Date(),
+      },
+    });
+
     res.json({
       success: true,
       result: {
@@ -89,6 +105,16 @@ router.post('/run', authenticate, async (req: AuthenticatedRequest, res, next) =
         executionTime: result.executionTime,
         equityCurve: result.equityCurve.slice(-100), // Last 100 points
         recentTrades: result.trades.slice(-20), // Last 20 trades
+        config: {
+          initialCapital,
+          riskPerTrade,
+          leverage,
+          commission,
+          startDate: start,
+          endDate: end,
+          symbol,
+          resolution,
+        },
       },
     });
   } catch (error) {
