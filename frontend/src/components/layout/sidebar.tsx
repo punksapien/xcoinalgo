@@ -100,7 +100,10 @@ export function Sidebar({ onNavigate }: SidebarProps = {}) {
       {/* Navigation */}
       <nav className="flex-1 px-4 py-6 space-y-2">
         {navigation.map((item) => {
-          const isActive = pathname === item.href;
+          // Special handling for "Ready Bots" to keep it highlighted on strategy detail pages
+          const isActive = item.href === '/dashboard'
+            ? pathname === '/dashboard' || pathname?.startsWith('/dashboard/strategy/')
+            : pathname === item.href;
           return (
             <Link
               key={item.name}
