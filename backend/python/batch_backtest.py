@@ -601,6 +601,19 @@ class BatchBacktestRunner:
 
         return equity_curve
 
+    def _convert_timestamp(self, ts) -> int:
+        """Convert pandas Timestamp to milliseconds since epoch"""
+        if isinstance(ts, pd.Timestamp):
+            return int(ts.timestamp() * 1000)
+        elif isinstance(ts, str):
+            try:
+                return int(pd.Timestamp(ts).timestamp() * 1000)
+            except:
+                return 0
+        elif isinstance(ts, (int, float)):
+            return int(ts)
+        return 0
+
     def _format_trades_for_output(self, trades: List[Dict]) -> List[Dict]:
         """Format trades to match expected output schema"""
         formatted = []
@@ -608,8 +621,8 @@ class BatchBacktestRunner:
         for trade in trades:
             # Map common field names
             formatted_trade = {
-                'entry_time': trade.get('entry_time', trade.get('open_time', 0)),
-                'exit_time': trade.get('exit_time', trade.get('close_time', 0)),
+                'entry_time': self._convert_timestamp(trade.get('entry_time', trade.get('open_time', 0))),
+                'exit_time': self._convert_timestamp(trade.get('exit_time', trade.get('close_time', 0))),
                 'side': trade.get('side', trade.get('direction', 'UNKNOWN')).upper(),
                 'entry_price': float(trade.get('entry_price', trade.get('open_price', 0))),
                 'exit_price': float(trade.get('exit_price', trade.get('close_price', 0))),
@@ -1057,7 +1070,7 @@ def main():
 
         # Output result
         logger.info(f"Backtest finished - Success: {result['success']}")
-        print(json.dumps(result))
+        print(json.dumps(result, default=str))  # Handle pandas Timestamp and other non-serializable objects
         sys.exit(0 if result['success'] else 1)
 
     except Exception as e:
