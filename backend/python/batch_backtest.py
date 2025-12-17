@@ -1029,9 +1029,16 @@ class BatchBacktestRunner:
 
 def main():
     """Main entry point"""
+    # Save original stdout for final JSON output
+    original_stdout = sys.stdout
+
     try:
         # Configure logging first
         log_file = configure_logging()
+
+        # Redirect stdout to stderr to prevent user code print() from polluting JSON output
+        sys.stdout = sys.stderr
+
         logger.info(f"Backtest process started - PID: {os.getpid()}")
 
         # Read input from file if provided, otherwise from stdin
@@ -1070,7 +1077,8 @@ def main():
 
         # Output result
         logger.info(f"Backtest finished - Success: {result['success']}")
-        print(json.dumps(result, default=str))  # Handle pandas Timestamp and other non-serializable objects
+        # Write JSON to original stdout (not redirected stderr)
+        print(json.dumps(result, default=str), file=original_stdout)
         sys.exit(0 if result['success'] else 1)
 
     except Exception as e:
@@ -1088,7 +1096,8 @@ def main():
         # Log to stderr for debugging
         print(f"FATAL ERROR: {str(e)}", file=sys.stderr)
         print(traceback.format_exc(), file=sys.stderr)
-        print(json.dumps(error_result))
+        # Write error JSON to original stdout
+        print(json.dumps(error_result), file=original_stdout)
         sys.exit(1)
 
 
