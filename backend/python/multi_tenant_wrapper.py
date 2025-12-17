@@ -709,7 +709,7 @@ def execute_multi_tenant_strategy(input_data: Dict[str, Any], log_capture: LogCa
                         subscriber_trader.check_and_manage_position(df_with_signals)
                     else:
                         logging.warning(f"   Strategy missing check_and_manage_position method, skipping position management")
-                else:
+                if not subscriber_trader.in_position: #if not subscriber in position, so that it doesn't miss a candle on that particular next candle
                     # User not in position - check for new entry signals
                     # Get capital for position sizing
                     capital = subscriber.get('capital', None)
