@@ -82,6 +82,10 @@ router.post('/run', authenticate, async (req: AuthenticatedRequest, res, next) =
     });
 
     // Update Strategy table with latest backtest metrics
+    const avgTradeReturn = result.metrics.totalTrades > 0
+      ? result.metrics.totalPnl / result.metrics.totalTrades
+      : 0;
+
     await prisma.strategy.update({
       where: { id: strategyId },
       data: {
@@ -92,7 +96,7 @@ router.post('/run', authenticate, async (req: AuthenticatedRequest, res, next) =
         sharpeRatio: result.metrics.sharpeRatio,
         totalTrades: result.metrics.totalTrades,
         profitFactor: result.metrics.profitFactor,
-        avgTradeReturn: result.metrics.avgTrade,
+        avgTradeReturn,
         updatedAt: new Date(),
       },
     });
