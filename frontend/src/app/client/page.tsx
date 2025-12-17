@@ -168,6 +168,10 @@ export default function ClientDashboardPage() {
     subscriberName?: string;
   }>({ open: false, type: 'exitAll' });
 
+  // Currency toggle state
+  const [currency, setCurrency] = useState<'USD' | 'INR'>('USD');
+  const USD_TO_INR = 96;
+
   // ============================================================================
   // Auth Check & Data Loading
   // ============================================================================
@@ -413,8 +417,15 @@ export default function ClientDashboardPage() {
   // ============================================================================
 
   const formatCurrency = (value: number) => {
-    const prefix = value >= 0 ? '+' : '';
-    return `${prefix}₹${Math.abs(value).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const prefix = value >= 0 ? '+' : '-';
+    const absValue = Math.abs(value);
+
+    if (currency === 'USD') {
+      return `${prefix}$${absValue.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    } else {
+      const inrValue = absValue * USD_TO_INR;
+      return `${prefix}₹${inrValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
   };
 
   const formatPercent = (value: number) => {
@@ -451,12 +462,33 @@ export default function ClientDashboardPage() {
               Monitor and manage your trading strategies
             </p>
           </div>
-          {refreshing && (
-            <span className="text-xs text-muted-foreground flex items-center gap-1">
-              <RefreshCw className="h-3 w-3 animate-spin" />
-              Syncing...
-            </span>
-          )}
+          <div className="flex items-center gap-4">
+            {/* Currency Toggle */}
+            <div className="flex items-center gap-1 bg-muted rounded-lg p-1">
+              <Button
+                variant={currency === 'USD' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setCurrency('USD')}
+                className="h-7 px-3"
+              >
+                USD
+              </Button>
+              <Button
+                variant={currency === 'INR' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setCurrency('INR')}
+                className="h-7 px-3"
+              >
+                INR
+              </Button>
+            </div>
+            {refreshing && (
+              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                <RefreshCw className="h-3 w-3 animate-spin" />
+                Syncing...
+              </span>
+            )}
+          </div>
         </div>
 
         {error && (
