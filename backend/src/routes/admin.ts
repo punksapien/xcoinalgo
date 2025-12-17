@@ -1756,7 +1756,14 @@ router.get('/dashboard', async (req: AuthenticatedRequest, res, next) => {
         OR: [
           { createdAt: { gte: thirtyDaysAgo } },
           { status: 'OPEN' }
-        ]
+        ],
+        // For specific strategy, only show trades from 2025-12-17 onwards
+        NOT: {
+          AND: [
+            { subscription: { strategyId: 'cmi7h7dle0000p9mp9rab3yhx' } },
+            { createdAt: { lt: new Date('2025-12-17T00:00:00Z') } }
+          ]
+        }
       },
       select: {
         id: true,
@@ -2038,7 +2045,8 @@ router.get('/subscribers/:id/trades', async (req: AuthenticatedRequest, res, nex
 
     // Verify the subscription exists
     const subscription = await prisma.strategySubscription.findUnique({
-      where: { id: subscriptionId }
+      where: { id: subscriptionId },
+      select: { id: true, strategyId: true }
     });
 
     if (!subscription) {
@@ -2047,7 +2055,14 @@ router.get('/subscribers/:id/trades', async (req: AuthenticatedRequest, res, nex
 
     // Get trades from database
     const dbTrades = await prisma.trade.findMany({
-      where: { subscriptionId },
+      where: {
+        subscriptionId,
+        // For specific strategy, only show trades from 2025-12-17 onwards
+        ...(subscription.strategyId === 'cmi7h7dle0000p9mp9rab3yhx'
+          ? { createdAt: { gte: new Date('2025-12-17T00:00:00Z') } }
+          : {}
+        )
+      },
       orderBy: { createdAt: 'desc' },
       take: 100,
       select: {
