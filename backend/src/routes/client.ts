@@ -987,13 +987,38 @@ router.get('/dashboard', async (req: AuthenticatedRequest, res, next) => {
       const openTrades = strategyTrades.filter(t => t.status === 'OPEN');
       const closedTrades = strategyTrades.filter(t => t.status === 'CLOSED');
 
-      // Today's closed trades
-      const todayClosedTrades = closedTrades.filter(t =>
+      // Group closed trades by subscriber to find the most complete execution
+      const tradesBySubscriber = new Map<string, typeof closedTrades>();
+      closedTrades.forEach(trade => {
+        const subId = trade.subscriptionId;
+        if (!tradesBySubscriber.has(subId)) {
+          tradesBySubscriber.set(subId, []);
+        }
+        tradesBySubscriber.get(subId)!.push(trade);
+      });
+
+      // Find subscriber with most closed trades (most complete execution = most accurate PnL)
+      let representativeSubId: string | null = null;
+      let maxClosedCount = 0;
+      tradesBySubscriber.forEach((trades, subId) => {
+        if (trades.length > maxClosedCount) {
+          maxClosedCount = trades.length;
+          representativeSubId = subId;
+        }
+      });
+
+      // Use representative subscriber's trades for PnL calculations
+      const representativeTrades = representativeSubId
+        ? tradesBySubscriber.get(representativeSubId) || []
+        : [];
+
+      // Today's closed trades (from representative subscriber only)
+      const todayClosedTrades = representativeTrades.filter(t =>
         t.exitedAt && t.exitedAt >= todayStart && t.exitedAt <= todayEnd
       );
 
-      // Calculate P&L metrics (use helper to get actual PnL)
-      const totalRealizedPnl = closedTrades.reduce((sum, t) => sum + getTradePnl(t), 0);
+      // Calculate P&L metrics from representative subscriber only
+      const totalRealizedPnl = representativeTrades.reduce((sum, t) => sum + getTradePnl(t), 0);
       const todayRealizedPnl = todayClosedTrades.reduce((sum, t) => sum + getTradePnl(t), 0);
 
       // Calculate unrealized P&L (simplified - would need current prices from exchange)
@@ -1003,16 +1028,16 @@ router.get('/dashboard', async (req: AuthenticatedRequest, res, next) => {
         return sum;
       }, 0);
 
-      // Win/Loss calculations (use getTradePnl for accurate calculations)
-      const winningTrades = closedTrades.filter(t => getTradePnl(t) > 0).length;
-      const losingTrades = closedTrades.filter(t => getTradePnl(t) < 0).length;
-      const winRate = closedTrades.length > 0 ? (winningTrades / closedTrades.length) * 100 : 0;
+      // Win/Loss calculations (from representative subscriber)
+      const winningTrades = representativeTrades.filter(t => getTradePnl(t) > 0).length;
+      const losingTrades = representativeTrades.filter(t => getTradePnl(t) < 0).length;
+      const winRate = representativeTrades.length > 0 ? (winningTrades / representativeTrades.length) * 100 : 0;
 
-      // Calculate max drawdown (simplified)
+      // Calculate max drawdown (from representative subscriber)
       let maxDrawdown = 0;
       let peak = 0;
       let runningPnl = 0;
-      closedTrades
+      [...representativeTrades]
         .sort((a, b) => (a.exitedAt?.getTime() || 0) - (b.exitedAt?.getTime() || 0))
         .forEach(trade => {
           runningPnl += getTradePnl(trade);
@@ -1024,10 +1049,10 @@ router.get('/dashboard', async (req: AuthenticatedRequest, res, next) => {
       // Calculate max drawdown percentage (relative to peak)
       const maxDrawdownPct = peak > 0 ? (maxDrawdown / peak) * 100 : 0;
 
-      // Calculate Sharpe Ratio (simplified - daily returns)
+      // Calculate Sharpe Ratio (from representative subscriber)
       const dailyReturns: number[] = [];
       const dailyPnlMap = new Map<string, number>();
-      closedTrades.forEach(trade => {
+      representativeTrades.forEach(trade => {
         if (trade.exitedAt) {
           const dateStr = trade.exitedAt.toISOString().split('T')[0];
           dailyPnlMap.set(dateStr, (dailyPnlMap.get(dateStr) || 0) + getTradePnl(trade));
@@ -1043,9 +1068,9 @@ router.get('/dashboard', async (req: AuthenticatedRequest, res, next) => {
         sharpeRatio = stdDev > 0 ? (avgReturn / stdDev) * Math.sqrt(252) : 0; // Annualized
       }
 
-      // Calculate average trade duration
+      // Calculate average trade duration (from representative subscriber)
       let avgTradeDurationMs = 0;
-      const tradesWithDuration = closedTrades.filter(t => t.exitedAt && t.createdAt);
+      const tradesWithDuration = representativeTrades.filter(t => t.exitedAt && t.createdAt);
       if (tradesWithDuration.length > 0) {
         avgTradeDurationMs = tradesWithDuration.reduce((sum, t) => {
           return sum + ((t.exitedAt?.getTime() || 0) - t.createdAt.getTime());
@@ -1072,9 +1097,12 @@ router.get('/dashboard', async (req: AuthenticatedRequest, res, next) => {
         };
       });
 
-      // Calculate today's P&L percentage
+      // Calculate today's P&L percentage (using representative subscriber's capital for accuracy)
       const totalCapital = strategy.subscriptions.reduce((sum, sub) => sum + sub.capital, 0);
-      const todayPnlPercent = totalCapital > 0 ? (todayRealizedPnl / totalCapital) * 100 : 0;
+      const representativeCapital = representativeSubId
+        ? strategy.subscriptions.find(s => s.id === representativeSubId)?.capital || totalCapital
+        : totalCapital;
+      const todayPnlPercent = representativeCapital > 0 ? (todayRealizedPnl / representativeCapital) * 100 : 0;
 
       // Subscriber health check (simplified - would need state file comparison)
       const activeSubscribers = strategy.subscriptions.filter(s => !s.isPaused).length;
@@ -1117,9 +1145,9 @@ router.get('/dashboard', async (req: AuthenticatedRequest, res, next) => {
           message: healthMessage,
           errors: healthErrors,
         },
-        // Performance metrics
+        // Performance metrics (from representative subscriber)
         sparklineData,
-        totalTrades: closedTrades.length,
+        totalTrades: representativeTrades.length,
         winRate,
         maxDrawdown: maxDrawdownPct,
         sharpeRatio,
