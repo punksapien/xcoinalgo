@@ -1964,6 +1964,13 @@ router.get('/subscribers', async (req: AuthenticatedRequest, res, next) => {
           }
         },
         trades: {
+          where: {
+            // For specific strategy, only include trades from 2025-12-17 onwards
+            ...(strategyId === 'cmi7h7dle0000p9mp9rab3yhx'
+              ? { createdAt: { gte: new Date('2025-12-17T00:00:00Z') } }
+              : {}
+            )
+          },
           select: {
             id: true,
             side: true,
