@@ -1334,6 +1334,10 @@ router.get('/subscription/:id/verify-live', authenticate, async (req: Authentica
 /**
  * POST /api/strategies/:id/admin/bulk-subscribe
  * Bulk subscribe multiple users to a strategy (admin only)
+ *
+ * Supports two formats:
+ * 1. Array of objects with per-user settings: { users: [{ email, capital, riskPerTrade, leverage }, ...] }
+ * 2. Legacy format: { users: ["email1", ...], capital, riskPerTrade, leverage }
  */
 router.post('/:id/admin/bulk-subscribe', authenticate, async (req: AuthenticatedRequest, res, next) => {
   try {
@@ -1348,18 +1352,40 @@ router.post('/:id/admin/bulk-subscribe', authenticate, async (req: Authenticated
     }
 
     if (!Array.isArray(users) || users.length === 0) {
-      return res.status(400).json({ error: 'users array is required (array of email addresses)' });
+      return res.status(400).json({ error: 'users array is required' });
     }
 
-    if (!capital) {
-      return res.status(400).json({ error: 'capital is required' });
-    }
+    // Normalize users to array of objects format
+    const normalizedUsers = users.map((u: any) => {
+      if (typeof u === 'string') {
+        // Legacy format: array of email strings
+        if (!capital) {
+          throw new Error('capital is required when using email array format');
+        }
+        return {
+          email: u,
+          capital: Number(capital),
+          riskPerTrade: riskPerTrade || 0.1,
+          leverage: leverage || 10
+        };
+      } else if (typeof u === 'object' && u.email) {
+        // New format: array of user objects with individual settings
+        return {
+          email: u.email,
+          capital: Number(u.capital),
+          riskPerTrade: u.riskPerTrade || u.risk_per_trade || 0.1,
+          leverage: u.leverage || 10
+        };
+      } else {
+        throw new Error('Invalid user format: must be email string or object with email, capital, riskPerTrade, leverage');
+      }
+    });
 
-    const results = await Promise.all(users.map(async (email: string) => {
-      const result: any = { email, status: 'failed', error: null, subscriptionId: null };
+    const results = await Promise.all(normalizedUsers.map(async (userData: any) => {
+      const result: any = { email: userData.email, status: 'failed', error: null, subscriptionId: null };
 
       try {
-        const targetUser = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+        const targetUser = await prisma.user.findUnique({ where: { email: userData.email.toLowerCase() } });
         if (!targetUser) {
           result.error = 'User not found';
           return result;
@@ -1392,17 +1418,17 @@ router.post('/:id/admin/bulk-subscribe', authenticate, async (req: Authenticated
         }
 
         const available = calculateAvailable(primaryWallet);
-        if (!isFinite(available) || available < Number(capital)) {
-          result.error = `Insufficient funds: ${available.toFixed(2)} < ${capital}`;
+        if (!isFinite(available) || available < Number(userData.capital)) {
+          result.error = `Insufficient funds: ${available.toFixed(2)} < ${userData.capital}`;
           return result;
         }
 
         const subscription = await subscriptionService.createSubscription({
           userId: targetUser.id,
           strategyId,
-          capital: Number(capital),
-          riskPerTrade: riskPerTrade || 0.1,
-          leverage: leverage || 10,
+          capital: Number(userData.capital),
+          riskPerTrade: userData.riskPerTrade,
+          leverage: userData.leverage,
           brokerCredentialId: brokerCredential.id,
           maxPositions: 1,
           maxDailyLoss: 0.05
@@ -1410,6 +1436,11 @@ router.post('/:id/admin/bulk-subscribe', authenticate, async (req: Authenticated
 
         result.status = 'success';
         result.subscriptionId = subscription.subscriptionId;
+        result.settings = {
+          capital: userData.capital,
+          riskPerTrade: userData.riskPerTrade,
+          leverage: userData.leverage
+        };
       } catch (error: any) {
         result.error = error.message || String(error);
       }

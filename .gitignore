@@ -69,3 +69,4 @@ DEPLOYMENT_GUIDE.md
 TESTING_GUIDE.md
 AWS_*.md
 *credentials*.md
+backend/scripts/*.csv
