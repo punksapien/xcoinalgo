@@ -214,10 +214,7 @@ async function bulkSubscribeUsers(usersData: UserData[], strategyId: string) {
       console.log(`  💰 Available balance: ${available.toFixed(2)} ${primaryWallet.currency_short_name}`);
 
       if (!isFinite(available) || available < Number(userData.capital)) {
-        result.error = `Insufficient funds: ${available.toFixed(2)} < ${userData.capital}`;
-        console.log(`  ❌ ${result.error}\n`);
-        results.push(result);
-        continue;
+        console.log(`  ⚠️  Low balance: ${available.toFixed(2)} < ${userData.capital} (proceeding anyway)`);
       }
 
       // Create subscription
