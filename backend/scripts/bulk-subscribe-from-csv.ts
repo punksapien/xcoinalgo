@@ -15,7 +15,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import prisma from '../src/utils/database';
-import { CoinDCXClient } from '../src/services/coindcx-client';
+import CoinDCXClient from '../src/services/coindcx-client';
 
 interface UserData {
   email: string;
