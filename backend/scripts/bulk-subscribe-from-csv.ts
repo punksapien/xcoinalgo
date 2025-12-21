@@ -63,10 +63,24 @@ function parseCSV(filePath: string): UserData[] {
   return users;
 }
 
-async function setupBrokerCredentials(usersData: UserData[]) {
-  console.log('🔧 Setting up broker credentials for users...\n');
+// Helper function to process items in parallel batches
+async function processBatch<T>(
+  items: T[],
+  batchSize: number,
+  processor: (item: T) => Promise<void>
+): Promise<void> {
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+    await Promise.all(batch.map(processor));
+  }
+}
 
-  for (const userData of usersData) {
+async function setupBrokerCredentials(usersData: UserData[]) {
+  console.log('🔧 Setting up broker credentials for users (parallel processing)...\n');
+
+  const BATCH_SIZE = 5; // Process 5 users concurrently
+
+  await processBatch(usersData, BATCH_SIZE, async (userData) => {
     console.log(`Processing ${userData.email}...`);
 
     try {
@@ -77,7 +91,7 @@ async function setupBrokerCredentials(usersData: UserData[]) {
 
       if (!user) {
         console.log(`  ❌ User not found: ${userData.email}\n`);
-        continue;
+        return;
       }
 
       // Check if credentials already exist
@@ -97,7 +111,7 @@ async function setupBrokerCredentials(usersData: UserData[]) {
         console.log(`  ✅ Credentials valid! Found ${wallets.length} wallets`);
       } catch (error: any) {
         console.log(`  ❌ Invalid credentials: ${error.message}\n`);
-        continue;
+        return;
       }
 
       if (existingCred) {
@@ -127,125 +141,131 @@ async function setupBrokerCredentials(usersData: UserData[]) {
     } catch (error: any) {
       console.log(`  ❌ Error: ${error.message}\n`);
     }
-  }
+  });
 }
 
 async function bulkSubscribeUsers(usersData: UserData[], strategyId: string) {
-  console.log('\n📊 Subscribing users to strategy...\n');
+  console.log('\n📊 Subscribing users to strategy (parallel processing)...\n');
 
   const { subscriptionService } = await import('../src/services/strategy-execution/subscription-service');
 
-  const results = [];
+  const BATCH_SIZE = 5; // Process 5 users concurrently
+  const results: any[] = [];
 
-  for (const userData of usersData) {
-    const result: any = {
-      email: userData.email,
-      status: 'failed',
-      error: null,
-      subscriptionId: null
-    };
+  // Process users in parallel batches
+  for (let i = 0; i < usersData.length; i += BATCH_SIZE) {
+    const batch = usersData.slice(i, i + BATCH_SIZE);
 
-    try {
-      console.log(`Processing ${userData.email}...`);
+    const batchResults = await Promise.all(
+      batch.map(async (userData) => {
+        const result: any = {
+          email: userData.email,
+          status: 'failed',
+          error: null,
+          subscriptionId: null
+        };
 
-      // Find user
-      const user = await prisma.user.findUnique({
-        where: { email: userData.email.toLowerCase() }
-      });
+        try {
+          console.log(`Processing ${userData.email}...`);
 
-      if (!user) {
-        result.error = 'User not found';
-        console.log(`  ❌ ${result.error}\n`);
-        results.push(result);
-        continue;
-      }
+          // Find user
+          const user = await prisma.user.findUnique({
+            where: { email: userData.email.toLowerCase() }
+          });
 
-      // Get broker credentials
-      const brokerCredential = await prisma.brokerCredential.findFirst({
-        where: { userId: user.id, isActive: true }
-      });
+          if (!user) {
+            result.error = 'User not found';
+            console.log(`  ❌ ${result.error}\n`);
+            return result;
+          }
 
-      if (!brokerCredential) {
-        result.error = 'No active broker credentials';
-        console.log(`  ❌ ${result.error}\n`);
-        results.push(result);
-        continue;
-      }
+          // Get broker credentials
+          const brokerCredential = await prisma.brokerCredential.findFirst({
+            where: { userId: user.id, isActive: true }
+          });
 
-      // Check if already subscribed
-      const existing = await prisma.strategySubscription.findFirst({
-        where: {
-          userId: user.id,
-          strategyId,
-          isActive: true
+          if (!brokerCredential) {
+            result.error = 'No active broker credentials';
+            console.log(`  ❌ ${result.error}\n`);
+            return result;
+          }
+
+          // Check if already subscribed
+          const existing = await prisma.strategySubscription.findFirst({
+            where: {
+              userId: user.id,
+              strategyId,
+              isActive: true
+            }
+          });
+
+          if (existing) {
+            result.status = 'already_subscribed';
+            result.subscriptionId = existing.id;
+            console.log(`  ⚠️  Already subscribed (ID: ${existing.id})\n`);
+            return result;
+          }
+
+          // Check wallet balance
+          const wallets = await CoinDCXClient.getFuturesWallets(
+            brokerCredential.apiKey,
+            brokerCredential.apiSecret
+          );
+
+          const calculateAvailable = (w: any) =>
+            Number(w.balance || 0) -
+            (Number(w.cross_order_margin || 0) + Number(w.cross_user_margin || 0));
+
+          const primaryWallet =
+            wallets.find((w: any) => w.currency_short_name === 'INR') ||
+            wallets.find((w: any) => w.currency_short_name === 'USDT');
+
+          if (!primaryWallet) {
+            result.error = 'No futures wallet found';
+            console.log(`  ❌ ${result.error}\n`);
+            return result;
+          }
+
+          const available = calculateAvailable(primaryWallet);
+          console.log(`  💰 Available balance: ${available.toFixed(2)} ${primaryWallet.currency_short_name}`);
+
+          if (!isFinite(available) || available < Number(userData.capital)) {
+            console.log(`  ⚠️  Low balance: ${available.toFixed(2)} < ${userData.capital} (proceeding anyway)`);
+          }
+
+          // Create subscription
+          const subscription = await subscriptionService.createSubscription({
+            userId: user.id,
+            strategyId,
+            capital: Number(userData.capital),
+            riskPerTrade: userData.risk_per_trade,
+            leverage: userData.leverage,
+            brokerCredentialId: brokerCredential.id,
+            maxPositions: 1,
+            maxDailyLoss: 0.05
+          });
+
+          result.status = 'success';
+          result.subscriptionId = subscription.subscriptionId;
+          result.settings = {
+            capital: userData.capital,
+            riskPerTrade: userData.risk_per_trade,
+            leverage: userData.leverage
+          };
+
+          console.log(`  ✅ Subscribed! ID: ${subscription.subscriptionId}`);
+          console.log(`     Capital: ${userData.capital}, Risk: ${userData.risk_per_trade}, Leverage: ${userData.leverage}\n`);
+
+          return result;
+        } catch (error: any) {
+          result.error = error.message || String(error);
+          console.log(`  ❌ Error: ${result.error}\n`);
+          return result;
         }
-      });
+      })
+    );
 
-      if (existing) {
-        result.status = 'already_subscribed';
-        result.subscriptionId = existing.id;
-        console.log(`  ⚠️  Already subscribed (ID: ${existing.id})\n`);
-        results.push(result);
-        continue;
-      }
-
-      // Check wallet balance
-      const wallets = await CoinDCXClient.getFuturesWallets(
-        brokerCredential.apiKey,
-        brokerCredential.apiSecret
-      );
-
-      const calculateAvailable = (w: any) =>
-        Number(w.balance || 0) -
-        (Number(w.cross_order_margin || 0) + Number(w.cross_user_margin || 0));
-
-      const primaryWallet =
-        wallets.find((w: any) => w.currency_short_name === 'INR') ||
-        wallets.find((w: any) => w.currency_short_name === 'USDT');
-
-      if (!primaryWallet) {
-        result.error = 'No futures wallet found';
-        console.log(`  ❌ ${result.error}\n`);
-        results.push(result);
-        continue;
-      }
-
-      const available = calculateAvailable(primaryWallet);
-      console.log(`  💰 Available balance: ${available.toFixed(2)} ${primaryWallet.currency_short_name}`);
-
-      if (!isFinite(available) || available < Number(userData.capital)) {
-        console.log(`  ⚠️  Low balance: ${available.toFixed(2)} < ${userData.capital} (proceeding anyway)`);
-      }
-
-      // Create subscription
-      const subscription = await subscriptionService.createSubscription({
-        userId: user.id,
-        strategyId,
-        capital: Number(userData.capital),
-        riskPerTrade: userData.risk_per_trade,
-        leverage: userData.leverage,
-        brokerCredentialId: brokerCredential.id,
-        maxPositions: 1,
-        maxDailyLoss: 0.05
-      });
-
-      result.status = 'success';
-      result.subscriptionId = subscription.subscriptionId;
-      result.settings = {
-        capital: userData.capital,
-        riskPerTrade: userData.risk_per_trade,
-        leverage: userData.leverage
-      };
-
-      console.log(`  ✅ Subscribed! ID: ${subscription.subscriptionId}`);
-      console.log(`     Capital: ${userData.capital}, Risk: ${userData.risk_per_trade}, Leverage: ${userData.leverage}\n`);
-
-      results.push(result);
-    } catch (error: any) {
-      result.error = error.message || String(error);
-      console.log(`  ❌ Error: ${result.error}\n`);
-      results.push(result);
-    }
+    results.push(...batchResults);
   }
 
   // Summary
