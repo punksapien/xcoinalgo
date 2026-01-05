@@ -115,6 +115,7 @@ interface StrategyData {
     symbol: string
     resolution: string
     lookbackPeriod?: number
+    minMargin?: number
   }
   latestBacktest?: BacktestResult
   createdAt: string
@@ -1333,6 +1334,13 @@ export default function StrategyDetailPage() {
           onOpenChange={setSubscribeModalOpen}
           strategyId={strategy.id}
           strategyName={strategy.name}
+          strategyMetrics={{
+            minMargin: strategy.executionConfig?.minMargin,
+            winRate: strategy.winRate,
+            roi: strategy.roi,
+            riskReward: strategy.riskReward,
+            maxDrawdown: strategy.maxDrawdown,
+          }}
           onSuccess={handleSubscribeSuccess}
         />
       )}
